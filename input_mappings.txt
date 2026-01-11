@@ -1,0 +1,58 @@
+# Input Mappings Configuration
+# This file defines how input actions are mapped to physical inputs
+# Format: action:name,platform,type,code,actionType,deadzone,sensitivity,axis
+# 
+# Platforms:
+#   PC    - Linux/Windows builds
+#   VITA  - PlayStation Vita builds
+#   ALL   - Both platforms
+#
+# Input Types:
+#   0 = Keyboard Key (PC only)
+#   1 = Vita Button (VITA only)
+#   2 = Analog Stick (both platforms)
+#   3 = Mouse Button (PC only)
+#   4 = Mouse Axis (PC only)
+#
+# Action Types:
+#   0 = Pressed (triggered once when pressed)
+#   1 = Held (triggered continuously while held)
+#   2 = Released (triggered once when released)
+#
+# Axis (for analog sticks):
+#   0 = X axis
+#   1 = Y axis
+#   -1 = Magnitude (both axes combined)
+#
+# Invert Axis (optional, for analog sticks only):
+#   0 = Use raw axis value (default)
+#   1 = Invert axis value (negative becomes positive, used for MoveForward/MoveLeft)
+
+action:MoveForward,PC,0,87,1,0.1,1,-1,0
+action:MoveForward,ALL,2,0,1,0.1,1,1,0
+action:MoveBackward,PC,0,83,1,0.1,1,-1,0
+action:MoveBackward,ALL,2,0,1,0.1,1,1,0
+action:MoveHorizontal,ALL,2,0,1,0.1,1,0,0
+action:MoveVertical,ALL,2,0,1,0.1,1,1,0
+action:MoveLeft,PC,0,65,1,0.1,1,-1,0
+action:MoveRight,PC,0,68,1,0.1,1,-1,0
+action:LookHorizontal,ALL,2,1,1,0.1,1,0,0
+action:LookVertical,ALL,2,1,1,0.1,1,1,0
+action:LookHorizontal,PC,4,0,1,0.1,1,-1,0
+action:LookVertical,PC,4,1,1,0.1,1,-1,0
+action:LookLeft,PC,0,263,1,0.1,1,-1,0
+action:LookRight,PC,0,262,1,0.1,1,-1,0
+action:LookUp,PC,0,265,1,0.1,1,-1,0
+action:LookDown,PC,0,264,1,0.1,1,-1,0
+action:Jump,PC,0,32,0,0.1,1,-1,0
+action:menu_up,PC,0,265,0,0.1,1,-1,0
+action:menu_up,VITA,1,16,0,0.1,1,-1,0
+action:menu_down,PC,0,264,0,0.1,1,-1,0
+action:menu_down,VITA,1,64,0,0.1,1,-1,0
+action:menu_confirm,PC,0,257,0,0.1,1,-1,0
+action:menu_confirm,PC,0,32,0,0.1,1,-1,0
+action:menu_confirm,VITA,1,16384,0,0.1,1,-1,0
+action:menu_cancel,PC,0,256,0,0.1,1,-1,0
+action:menu_cancel,VITA,1,8,0,0.1,1,-1,0
+action:pause,PC,0,256,0,0.1,1,-1,0
+action:pause,VITA,1,8,0,0.1,1,-1,0

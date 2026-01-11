@@ -1,0 +1,736 @@
+{
+  "activeCamera": "PlayerCamera",
+  "name": "Pickup Zone Example",
+  "rootNode": {
+    "active": true,
+    "children": [
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "monitorMode": true,
+                    "radius": 1.0,
+                    "shapeType": "SPHERE",
+                    "showDebugShape": true,
+                    "type": "Area3DComponent"
+                  }
+                ],
+                "name": "LemonArea3D",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "components": [
+              {
+                "angularDamping": 0.10000000149011612,
+                "bodyType": "STATIC",
+                "collisionShapeType": "SPHERE",
+                "friction": 0.5,
+                "linearDamping": 0.10000000149011612,
+                "mass": 0.0,
+                "restitution": 0.10000000149011612,
+                "showCollisionShape": false,
+                "type": "PhysicsComponent"
+              },
+              {
+                "castShadows": false,
+                "isLoaded": true,
+                "modelName": "lemon_1k.gltf",
+                "modelPath": "assets/models/lemon_1k.gltf/lemon_1k.gltf",
+                "receiveShadows": true,
+                "type": "ModelRenderer"
+              }
+            ],
+            "name": "Lemon",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "LemonRoot",
+        "transform": {
+          "position": [
+            0.0,
+            -1.5,
+            -5.199999809265137
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ]
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "Game Cube 0",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "KINEMATIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.5,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "BoxCollision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "GroundRoot",
+        "transform": {
+          "position": [
+            3.5,
+            -3.200000047683716,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            38.5,
+            1.0,
+            22.399999618530273
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "pauseExempt": true,
+            "scriptPath": "scripts/collectible_behavior.lua",
+            "type": "ScriptComponent"
+          }
+        ],
+        "name": "collectible_behavior",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "pauseExempt": false,
+            "scriptPath": "scripts/player_controller.lua",
+            "type": "ScriptComponent"
+          }
+        ],
+        "name": "Player Controller",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            -4.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "pauseExempt": true,
+            "scriptPath": "scripts/pause_menu.lua",
+            "type": "ScriptComponent"
+          }
+        ],
+        "name": "Pause Menu Controller",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "color": [
+              1.0,
+              0.800000011920929,
+              0.6000000238418579
+            ],
+            "cutOff": 0.21816615760326385,
+            "direction": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "intensity": 6.339000225067139,
+            "lightType": "POINT",
+            "outerCutOff": 0.30543261766433716,
+            "range": 19.174999237060547,
+            "showGizmo": true,
+            "type": "LightComponent"
+          }
+        ],
+        "name": "Light 0",
+        "transform": {
+          "position": [
+            4.699999809265137,
+            2.4000000953674316,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            0.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ]
+                },
+                "meshType": "CAPSULE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "PlayerMesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "KINEMATIC",
+                "collisionShapeType": "CAPSULE",
+                "friction": 0.5,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "PlayerCollision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "height": 1.0,
+                "monitorMode": true,
+                "radius": 0.5,
+                "shapeType": "CAPSULE",
+                "showDebugShape": true,
+                "type": "Area3DComponent"
+              }
+            ],
+            "name": "PlayerArea3D",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                -1.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "alignment": "CENTER",
+                    "color": [
+                      1.0,
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "fontPath": "assets/fonts/DroidSans.ttf",
+                    "fontSize": 48.0,
+                    "lineSpacing": 1.2000000476837158,
+                    "renderMode": "SCREEN_SPACE",
+                    "scale": 1.0,
+                    "text": "Resume",
+                    "type": "TextComponent"
+                  }
+                ],
+                "name": "PauseMenuResume",
+                "transform": {
+                  "position": [
+                    0.0,
+                    2.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": false
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "alignment": "CENTER",
+                    "color": [
+                      1.0,
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "fontPath": "assets/fonts/DroidSans.ttf",
+                    "fontSize": 48.0,
+                    "lineSpacing": 1.2000000476837158,
+                    "renderMode": "SCREEN_SPACE",
+                    "scale": 1.0,
+                    "text": "Options",
+                    "type": "TextComponent"
+                  }
+                ],
+                "name": "PauseMenuOptions",
+                "transform": {
+                  "position": [
+                    0.0,
+                    -2.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": false
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "alignment": "CENTER",
+                    "color": [
+                      1.0,
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "fontPath": "assets/fonts/DroidSans.ttf",
+                    "fontSize": 48.0,
+                    "lineSpacing": 1.2000000476837158,
+                    "renderMode": "SCREEN_SPACE",
+                    "scale": 0.699999988079071,
+                    "text": "Return to Menu",
+                    "type": "TextComponent"
+                  }
+                ],
+                "name": "PauseMenuReturn",
+                "transform": {
+                  "position": [
+                    0.0,
+                    -4.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": false
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "alignment": "CENTER",
+                    "color": [
+                      1.0,
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "fontPath": "assets/fonts/DroidSans.ttf",
+                    "fontSize": 32.0,
+                    "lineSpacing": 1.2000000476837158,
+                    "renderMode": "SCREEN_SPACE",
+                    "scale": 1.0,
+                    "text": "=>",
+                    "type": "TextComponent"
+                  }
+                ],
+                "name": "PauseMenuSelector",
+                "transform": {
+                  "position": [
+                    -10.0,
+                    2.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": false
+              },
+              {
+                "active": true,
+                "children": [
+                  {
+                    "active": true,
+                    "components": [
+                      {
+                        "alignment": "CENTER",
+                        "color": [
+                          1.0,
+                          1.0,
+                          1.0,
+                          1.0
+                        ],
+                        "fontPath": "assets/fonts/DroidSans.ttf",
+                        "fontSize": 20.0,
+                        "lineSpacing": 1.0,
+                        "renderMode": "SCREEN_SPACE",
+                        "scale": 1.0,
+                        "text": "COLLETED LEMONS : 0",
+                        "type": "TextComponent"
+                      }
+                    ],
+                    "name": "Score",
+                    "transform": {
+                      "position": [
+                        -8.199999809265137,
+                        7.400000095367432,
+                        0.0
+                      ],
+                      "rotation": [
+                        0.0,
+                        -0.0,
+                        0.0
+                      ],
+                      "scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                      ]
+                    },
+                    "visible": true
+                  }
+                ],
+                "name": "UI",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "components": [
+              {
+                "active": true,
+                "farPlane": 1000.0,
+                "fov": 45.0,
+                "nearPlane": 0.10000000149011612,
+                "type": "CameraComponent"
+              }
+            ],
+            "name": "PlayerCamera",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                -0.853424072265625
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "Player",
+        "transform": {
+          "position": [
+            0.0,
+            -1.5,
+            0.8999999761581421
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      }
+    ],
+    "name": "Root",
+    "transform": {
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "visible": true
+  },
+  "version": "1.0"
+}

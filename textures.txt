@@ -1,0 +1,13 @@
+checkered_pavement_tiles_arm_1k.png
+checkered_pavement_tiles_diff_1k.png
+checkered_pavement_tiles_nor_gl_1k.png
+asu_diff_.png
+yuri_diff_.png
+asusad_diff_.png
+biden_diff_.png
+spider_diff_.png
+saul_diff_.png
+retard_diff_.png
+red_brick_diff_1k.png
+red_brick_arm_1k.png
+red_brick_nor_gl_1k.png

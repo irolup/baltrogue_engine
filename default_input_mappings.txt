@@ -1,0 +1,90 @@
+# Input Mappings Configuration
+# This file defines how input actions are mapped to physical inputs
+# Format: action:name,platform,type,code,actionType,deadzone,sensitivity,axis
+# 
+# Platforms:
+#   PC    - Linux/Windows builds
+#   VITA  - PlayStation Vita builds
+#   ALL   - Both platforms
+#
+# Input Types:
+#   0 = Keyboard Key (PC only)
+#   1 = Vita Button (VITA only)
+#   2 = Analog Stick (both platforms)
+#   3 = Mouse Button (PC only)
+#   4 = Mouse Axis (PC only)
+#
+# Action Types:
+#   0 = Pressed (triggered once when pressed)
+#   1 = Held (triggered continuously while held)
+#   2 = Released (triggered once when released)
+#
+# Axis (for analog sticks):
+#   0 = X axis
+#   1 = Y axis
+#   -1 = Magnitude (both axes combined)
+#
+# Invert Axis (optional, 9th parameter, for analog sticks only):
+#   0 = Use raw axis value (default)
+#   1 = Invert axis value (negative becomes positive, used for MoveForward/MoveLeft)
+
+# Movement Actions
+# Format: action:name,platform,type,code,actionType,deadzone,sensitivity,axis,invertAxis
+# invertAxis: 0=use raw axis value, 1=invert axis value (use for MoveForward/MoveLeft which use negative axis values)
+action:MoveForward,PC,0,87,1,0.1,1.0,-1,0
+action:MoveForward,VITA,2,0,1,0.1,1.0,1,1
+action:MoveBackward,PC,0,83,1,0.1,1.0,-1,0
+action:MoveBackward,VITA,2,0,1,0.1,1.0,1,0
+action:MoveLeft,PC,0,65,1,0.1,1.0,-1,0
+action:MoveLeft,VITA,2,0,1,0.1,1.0,0,1
+action:MoveRight,PC,0,68,1,0.1,1.0,-1,0
+action:MoveRight,VITA,2,0,1,0.1,1.0,0,0
+
+# Vertical Movement
+action:MoveUp,PC,0,32,1,0.1,1.0,-1
+action:MoveDown,PC,0,340,1,0.1,1.0,-1
+
+# Camera Controls
+action:LookHorizontal,PC,4,0,1,0.1,1.0,-1
+action:LookHorizontal,VITA,2,1,1,0.1,1.0,0
+action:LookVertical,PC,4,1,1,0.1,1.0,-1
+action:LookVertical,VITA,2,1,1,0.1,1.0,1
+
+# Action Buttons
+action:Jump,PC,0,32,0,0.1,1.0,-1
+action:Jump,VITA,1,16384,0,0.1,1.0,-1
+action:Run,PC,0,341,1,0.1,1.0,-1
+action:Run,VITA,1,256,1,0.1,1.0,-1
+action:Interact,PC,0,69,0,0.1,1.0,-1
+action:Interact,VITA,1,32768,0,0.1,1.0,-1
+action:Menu,PC,0,256,0,0.1,1.0,-1
+action:Menu,VITA,1,8,0,0.1,1.0,-1
+action:pause,PC,0,256,0,0.1,1.0,-1
+action:pause,VITA,1,8,0,0.1,1.0,-1
+
+# Menu Navigation
+action:menu_up,PC,0,265,0,0.1,1.0,-1
+action:menu_up,VITA,1,16,0,0.1,1.0,-1
+action:menu_down,PC,0,264,0,0.1,1.0,-1
+action:menu_down,VITA,1,64,0,0.1,1.0,-1
+action:menu_confirm,PC,0,257,0,0.1,1.0,-1
+action:menu_confirm,PC,0,32,0,0.1,1.0,-1
+action:menu_confirm,VITA,1,16384,0,0.1,1.0,-1
+action:menu_cancel,PC,0,256,0,0.1,1.0,-1
+action:menu_cancel,VITA,1,8,0,0.1,1.0,-1
+
+# Combat/Action
+action:PrimaryFire,PC,3,0,1,0.1,1.0,-1
+action:PrimaryFire,VITA,1,8192,1,0.1,1.0,-1
+action:SecondaryFire,PC,3,1,1,0.1,1.0,-1
+action:SecondaryFire,VITA,1,4096,1,0.1,1.0,-1
+
+# D-pad Controls (VITA only)
+action:DpadUp,VITA,1,16,0,0.1,1.0,-1
+action:DpadDown,VITA,1,64,0,0.1,1.0,-1
+action:DpadLeft,VITA,1,128,0,0.1,1.0,-1
+action:DpadRight,VITA,1,32,0,0.1,1.0,-1
+
+# Analog Stick Movement (for both platforms)
+action:MoveHorizontal,ALL,2,0,1,0.1,1.0,0
+action:MoveVertical,ALL,2,0,1,0.1,1.0,1

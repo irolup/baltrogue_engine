@@ -1,0 +1,291 @@
+{
+  "activeCamera": "Game Camera",
+  "name": "Default Scene",
+  "rootNode": {
+    "active": true,
+    "children": [
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 32.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "Start Game",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "MainMenuStart",
+            "transform": {
+              "position": [
+                0.0,
+                3.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 32.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "Load Game",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "MainMenuLoad",
+            "transform": {
+              "position": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 32.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "Options",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "MainMenuOptions",
+            "transform": {
+              "position": [
+                0.0,
+                -1.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 32.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "Quit",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "MainMenuQuit",
+            "transform": {
+              "position": [
+                0.0,
+                -3.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 32.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "=>",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "MainMenuSelector",
+            "transform": {
+              "position": [
+                -10.0,
+                3.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "components": [
+          {
+            "active": true,
+            "farPlane": 1000.0,
+            "fov": 45.0,
+            "nearPlane": 0.10000000149011612,
+            "type": "CameraComponent"
+          }
+        ],
+        "name": "Game Camera",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "pauseExempt": true,
+            "scriptPath": "scripts/main_menu.lua",
+            "type": "ScriptComponent"
+          }
+        ],
+        "name": "Main Menu Controller",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      }
+    ],
+    "name": "Root",
+    "transform": {
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "visible": true
+  },
+  "version": "1.0"
+}
