@@ -182,7 +182,7 @@
         "transform": {
           "position": [
             3.5,
-            -3.200000047683716,
+            -3.299999952316284,
             0.0
           ],
           "rotation": [
@@ -375,7 +375,7 @@
                 "collisionShapeType": "CAPSULE",
                 "friction": 0.5,
                 "linearDamping": 0.0,
-                "mass": 0.0,
+                "mass": 0.8999999761581421,
                 "restitution": 0.0,
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
@@ -697,6 +697,194 @@
             0.0,
             -1.5,
             0.8999999761581421
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ]
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "CubeMesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "STATIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.5,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "WallCollision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "Wall",
+        "transform": {
+          "position": [
+            1.7000000476837158,
+            -2.0,
+            -11.399999618530273
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            8.0,
+            1.5,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ]
+                },
+                "meshType": "SPHERE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "SphereMesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "DYNAMIC",
+                "collisionShapeType": "SPHERE",
+                "friction": 0.5,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "SphereCollision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "BallTest",
+        "transform": {
+          "position": [
+            -0.30000001192092896,
+            0.0,
+            -6.800000190734863
           ],
           "rotation": [
             0.0,

@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <functional>
 
 #ifdef LINUX_BUILD
 #include <GLFW/glfw3.h>
@@ -1426,11 +1427,19 @@ void ScriptComponent::bindCommonFunctions() {
                         node->getTransform().setPosition(worldPos);
                     }
                     
-                    // Force update of physics component if present (for KINEMATIC bodies)
-                    auto physicsComp = node->getComponent<PhysicsComponent>();
-                    if (physicsComp) {
-                        physicsComp->forceUpdateCollisionShape();
-                    }
+                    std::function<void(std::shared_ptr<SceneNode>)> updatePhysicsRecursive = [&](std::shared_ptr<SceneNode> n) {
+                        auto physicsComp = n->getComponent<PhysicsComponent>();
+                        if (physicsComp) {
+                            physicsComp->forceUpdateCollisionShape();
+                        }
+                        for (size_t i = 0; i < n->getChildCount(); ++i) {
+                            auto child = n->getChild(i);
+                            if (child) {
+                                updatePhysicsRecursive(child);
+                            }
+                        }
+                    };
+                    updatePhysicsRecursive(node);
                 } else {
                     #ifdef _DEBUG
                     std::cout << "setNodePosition: Node '" << nodeName << "' not found!" << std::endl;

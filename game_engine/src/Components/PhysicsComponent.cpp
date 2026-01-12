@@ -395,6 +395,21 @@ void PhysicsComponent::syncTransformToPhysics() {
         transform.setRotation(btQuaternion(worldRot.x, worldRot.y, worldRot.z, worldRot.w));
         
         rigidBody->getMotionState()->setWorldTransform(transform);
+        
+        if (bodyType == PhysicsBodyType::KINEMATIC) {
+            rigidBody->setWorldTransform(transform);
+            rigidBody->setActivationState(ACTIVE_TAG);
+
+            btVector3 aabbMin, aabbMax;
+            if (collisionShape) {
+                collisionShape->getAabb(transform, aabbMin, aabbMax);
+                btBroadphaseInterface* broadphase = PhysicsManager::getInstance().getDynamicsWorld()->getBroadphase();
+                if (broadphase) {
+                    broadphase->setAabb(rigidBody->getBroadphaseHandle(), aabbMin, aabbMax, 
+                                      PhysicsManager::getInstance().getDynamicsWorld()->getDispatcher());
+                }
+            }
+        }
 #endif
     }
 }
