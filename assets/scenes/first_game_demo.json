@@ -116,7 +116,8 @@
                     1.0,
                     0.5,
                     0.20000000298023224
-                  ]
+                  ],
+                  "diffuseTexture": "assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_diff_1k.png"
                 },
                 "meshType": "CUBE",
                 "type": "MeshRenderer"
@@ -375,7 +376,7 @@
                 "collisionShapeType": "CAPSULE",
                 "friction": 0.5,
                 "linearDamping": 0.0,
-                "mass": 0.8999999761581421,
+                "mass": 0.0,
                 "restitution": 0.0,
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"

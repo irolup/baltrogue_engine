@@ -8,9 +8,9 @@ local inputState = {
 
 local menuPositions = {
     {x = 0.0, y = 3.0, z = 0.0},
-    {x = 0.0, y = 1.0, z = 0.0},
-    {x = 0.0, y = -1.0, z = 0.0},
-    {x = 0.0, y = -3.0, z = 0.0}
+    {x = 0.0, y = -0.5, z = 0.0},
+    {x = 0.0, y = -4.0, z = 0.0},
+    {x = 0.0, y = -7.0, z = 0.0}
 }
 
 local menuNodeNames = {

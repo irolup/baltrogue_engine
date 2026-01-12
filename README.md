@@ -10,6 +10,22 @@ The game engine follows a modern architecture with:
 - **Cross-Platform Support**: Shared codebase for PS Vita and Linux
 - **Editor Interface**: Visual scene editing tools (Linux only)
 
+## Visual References
+
+The `docs/references/` folder contains visual references to help understand the engine:
+
+### Editor Screenshot
+
+**`screenshot_first_demo.png`**: A screenshot showing the editor interface in action. This demonstrates the editor's layout including the scene graph panel, viewport, and properties panel while working with the first game demo scene.
+
+![Editor Screenshot](docs/references/screenshot_first_demo.png)
+
+### First Demo Scene Animation
+
+**`first_demo.gif`**: An animated demonstration of the `first_game_demo` scene running in the game engine. This GIF showcases the gameplay, physics interactions, and visual features of the demo scene, including player movement, physics-based ball interactions, and the overall scene dynamics.
+
+![First Demo Scene](docs/references/first_demo.gif)
+
 ## Directory Structure
 
 ```
@@ -26,9 +42,20 @@ first_game/
 ├── src/                  # Your original game code
 ├── include/              # Your original game headers
 ├── assets/               # Game assets (models, shaders, textures)
+│   └── scenes/          # Demo scenes (see Demo Scenes section below)
 ├── editor_main.cpp       # Editor entry point
 └── Makefile             # Updated build system
 ```
+
+## Demo Scenes
+
+The `assets/scenes/` folder contains several demo scenes that showcase different features of the engine:
+
+- **`first_game_demo.json`**: A comprehensive demo scene featuring player movement, physics interactions (kinematic player pushing dynamic objects), static collision walls, and camera controls. This scene demonstrates the physics system, input handling, and scene composition.
+
+- **`drop_ball_scene.json`**: A physics demonstration scene showing dynamic objects interacting with static collision surfaces.
+
+- **`main_menu.json`**: A menu scene demonstrating UI elements and scene transitions.
 
 ## Building
 
