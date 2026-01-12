@@ -1456,6 +1456,181 @@ void ScriptComponent::bindCommonFunctions() {
     });
     lua_setglobal(luaState, "setNodePosition");
     
+    // Set velocity on a node's PhysicsComponent (for dynamic bodies)
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float x = luaL_checknumber(L, 2);
+        float y = luaL_checknumber(L, 3);
+        float z = luaL_checknumber(L, 4);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->setLinearVelocity(glm::vec3(x, y, z));
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        return 0;
+    });
+    lua_setglobal(luaState, "setNodeVelocity");
+    
+    // Get velocity from a node's PhysicsComponent
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        glm::vec3 velocity = physicsComp->getLinearVelocity();
+                        lua_pushnumber(L, velocity.x);
+                        lua_pushnumber(L, velocity.y);
+                        lua_pushnumber(L, velocity.z);
+                        return 3;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+        return 3;
+    });
+    lua_setglobal(luaState, "getNodeVelocity");
+    
+    // Set gravity enabled/disabled on a node's PhysicsComponent
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        bool enabled = lua_toboolean(L, 2) != 0;
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->setGravityEnabled(enabled);
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        return 0;
+    });
+    lua_setglobal(luaState, "setNodeGravityEnabled");
+    
+    // Set angular factor (rotation lock) on a node's PhysicsComponent
+    // Use (0, 0, 0) to lock all rotation, (0, 1, 0) to allow only Y-axis rotation, etc.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float x = luaL_checknumber(L, 2);
+        float y = luaL_checknumber(L, 3);
+        float z = luaL_checknumber(L, 4);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->setAngularFactor(glm::vec3(x, y, z));
+                        if (x == 0.0f && y == 0.0f && z == 0.0f) {
+                            physicsComp->setAngularVelocity(glm::vec3(0, 0, 0));
+                        }
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        return 0;
+    });
+    lua_setglobal(luaState, "setNodeAngularFactor");
+    
+    // Get angular factor from a node's PhysicsComponent
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        glm::vec3 factor = physicsComp->getAngularFactor();
+                        lua_pushnumber(L, factor.x);
+                        lua_pushnumber(L, factor.y);
+                        lua_pushnumber(L, factor.z);
+                        return 3;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        lua_pushnumber(L, 1);
+        lua_pushnumber(L, 1);
+        lua_pushnumber(L, 1);
+        return 3;
+    });
+    lua_setglobal(luaState, "getNodeAngularFactor");
+    
     // Generic node rotation setter - sets any node's rotation by name
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         const char* nodeName = luaL_checkstring(L, 1);
@@ -1491,6 +1666,40 @@ void ScriptComponent::bindCommonFunctions() {
         return 0;
     });
     lua_setglobal(luaState, "setNodeRotation");
+    
+    // Generic node rotation getter - gets any node's rotation by name
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    glm::vec3 rot = node->getTransform().getEulerAngles();
+                    lua_pushnumber(L, rot.x);
+                    lua_pushnumber(L, rot.y);
+                    lua_pushnumber(L, rot.z);
+                    return 3;
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+        return 3;
+    });
+    lua_setglobal(luaState, "getNodeRotation");
     
     // Generic node scale setter - sets any node's scale by name
     lua_pushcfunction(luaState, [](lua_State* L) -> int {

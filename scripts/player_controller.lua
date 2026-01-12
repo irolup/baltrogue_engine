@@ -24,6 +24,11 @@ function update(deltaTime)
 		return
 	end
 	
+	-- Lock rotation to prevent capsule from rolling
+	if setNodeAngularFactor then
+		setNodeAngularFactor("PlayerCollision", 0, 0, 0)
+	end
+	
 	local moveH = input.getActionAxis("MoveHorizontal")
 	local moveV = input.getActionAxis("MoveVertical")
 	
@@ -83,14 +88,42 @@ function update(deltaTime)
 	
 	local moveY = moveUp - moveDown
 	
-	if moveH ~= 0 or moveV ~= 0 or moveY ~= 0 then
-		local forwardX = math.sin(math.rad(cameraYaw))
-		local forwardZ = math.cos(math.rad(cameraYaw))
-		local rightX = math.cos(math.rad(cameraYaw))
-		local rightZ = -math.sin(math.rad(cameraYaw))
+	-- Calculate movement direction based on camera orientation
+	local forwardX = math.sin(math.rad(cameraYaw))
+	local forwardZ = math.cos(math.rad(cameraYaw))
+	local rightX = math.cos(math.rad(cameraYaw))
+	local rightZ = -math.sin(math.rad(cameraYaw))
+	
+	local desiredVelX = rightX * moveH * moveSpeed + forwardX * moveV * moveSpeed
+	local desiredVelZ = rightZ * moveH * moveSpeed + forwardZ * moveV * moveSpeed
+	
+	if setNodeVelocity then
+		local currentVelX, currentVelY, currentVelZ = 0, 0, 0
+		if getNodeVelocity then
+			local vx, vy, vz = getNodeVelocity("PlayerCollision")
+			if vx ~= nil and vy ~= nil and vz ~= nil then
+				currentVelX = vx
+				currentVelY = vy
+				currentVelZ = vz
+			end
+		end
 		
-		local worldMoveX = rightX * moveH * moveSpeed * deltaTime + forwardX * moveV * moveSpeed * deltaTime
-		local worldMoveZ = rightZ * moveH * moveSpeed * deltaTime + forwardZ * moveV * moveSpeed * deltaTime
+		if moveH ~= 0 or moveV ~= 0 then
+			currentVelX = desiredVelX
+			currentVelZ = desiredVelZ
+		else
+			currentVelX = 0
+			currentVelZ = 0
+		end
+		
+		if moveY ~= 0 then
+			currentVelY = moveY * moveSpeed
+		end
+		
+		setNodeVelocity("PlayerCollision", currentVelX, currentVelY, currentVelZ)
+	else
+		local worldMoveX = desiredVelX * deltaTime
+		local worldMoveZ = desiredVelZ * deltaTime
 		local worldMoveY = moveY * moveSpeed * deltaTime
 		
 		local px, py, pz = getNodePosition("Player")

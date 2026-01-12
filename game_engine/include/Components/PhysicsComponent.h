@@ -70,6 +70,15 @@ public:
     void setAngularVelocity(const glm::vec3& velocity);
     glm::vec3 getAngularVelocity() const;
     
+    void setGravityEnabled(bool enabled);
+    bool isGravityEnabled() const;
+    
+    void setAngularFactor(const glm::vec3& factor);
+    glm::vec3 getAngularFactor() const;
+    
+    void setLinearFactor(const glm::vec3& factor);
+    glm::vec3 getLinearFactor() const;
+    
     void applyForce(const glm::vec3& force, const glm::vec3& point = glm::vec3(0.0f));
     void applyImpulse(const glm::vec3& impulse, const glm::vec3& point = glm::vec3(0.0f));
     void applyTorque(const glm::vec3& torque);
@@ -107,6 +116,8 @@ private:
     float restitution;
     float linearDamping;
     float angularDamping;
+    
+    bool gravityEnabled;
     
     btRigidBody* rigidBody;
     btCollisionShape* collisionShape;

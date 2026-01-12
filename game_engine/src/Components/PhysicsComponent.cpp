@@ -36,6 +36,7 @@ PhysicsComponent::PhysicsComponent()
     , restitution(0.0f)
     , linearDamping(0.0f)
     , angularDamping(0.0f)
+    , gravityEnabled(true)
     , rigidBody(nullptr)
     , collisionShape(nullptr)
     , motionState(nullptr)
@@ -137,7 +138,7 @@ void PhysicsComponent::setBodyType(PhysicsBodyType type) {
         if (type == PhysicsBodyType::STATIC) {
             flags |= btCollisionObject::CF_STATIC_OBJECT;
             mass = 0.0f;
-        } else if (type == PhysicsBodyType::KINEMATIC) {
+        } else         if (type == PhysicsBodyType::KINEMATIC) {
             flags |= btCollisionObject::CF_KINEMATIC_OBJECT;
             mass = 0.0f;
         } else {
@@ -154,6 +155,12 @@ void PhysicsComponent::setBodyType(PhysicsBodyType type) {
         
         if (type == PhysicsBodyType::KINEMATIC) {
             rigidBody->setGravity(btVector3(0, 0, 0));
+        } else if (type == PhysicsBodyType::DYNAMIC) {
+            if (!gravityEnabled) {
+                rigidBody->setGravity(btVector3(0, 0, 0));
+            } else {
+                rigidBody->setGravity(PhysicsManager::getInstance().getDynamicsWorld()->getGravity());
+            }
         }
         
         rigidBody->setActivationState(ACTIVE_TAG);
@@ -229,6 +236,52 @@ glm::vec3 PhysicsComponent::getAngularVelocity() const {
     return glm::vec3(0.0f);
 }
 
+void PhysicsComponent::setGravityEnabled(bool enabled) {
+    gravityEnabled = enabled;
+    if (rigidBody) {
+        if (enabled) {
+            rigidBody->setGravity(PhysicsManager::getInstance().getDynamicsWorld()->getGravity());
+        } else {
+            rigidBody->setGravity(btVector3(0, 0, 0));
+        }
+    }
+}
+
+bool PhysicsComponent::isGravityEnabled() const {
+    return gravityEnabled;
+}
+
+void PhysicsComponent::setAngularFactor(const glm::vec3& factor) {
+    if (rigidBody) {
+        rigidBody->setAngularFactor(btVector3(factor.x, factor.y, factor.z));
+        if (factor.x == 0.0f && factor.y == 0.0f && factor.z == 0.0f) {
+            rigidBody->setAngularVelocity(btVector3(0, 0, 0));
+        }
+    }
+}
+
+glm::vec3 PhysicsComponent::getAngularFactor() const {
+    if (rigidBody) {
+        btVector3 factor = rigidBody->getAngularFactor();
+        return glm::vec3(factor.x(), factor.y(), factor.z());
+    }
+    return glm::vec3(1.0f);
+}
+
+void PhysicsComponent::setLinearFactor(const glm::vec3& factor) {
+    if (rigidBody) {
+        rigidBody->setLinearFactor(btVector3(factor.x, factor.y, factor.z));
+    }
+}
+
+glm::vec3 PhysicsComponent::getLinearFactor() const {
+    if (rigidBody) {
+        btVector3 factor = rigidBody->getLinearFactor();
+        return glm::vec3(factor.x(), factor.y(), factor.z());
+    }
+    return glm::vec3(1.0f);
+}
+
 void PhysicsComponent::applyForce(const glm::vec3& force, const glm::vec3& point) {
     if (rigidBody) {
         rigidBody->applyForce(btVector3(force.x, force.y, force.z), 
@@ -290,16 +343,20 @@ void PhysicsComponent::syncTransformFromPhysics() {
         
         // For DYNAMIC and KINEMATIC bodies, we need to handle transform synchronization
         if (bodyType == PhysicsBodyType::DYNAMIC || bodyType == PhysicsBodyType::KINEMATIC) {
+            bool rotationLocked = false;
+            if (rigidBody) {
+                btVector3 angularFactor = rigidBody->getAngularFactor();
+                rotationLocked = (angularFactor.x() == 0.0f && angularFactor.y() == 0.0f && angularFactor.z() == 0.0f);
+            }
+            
             if (owner->getParent()) {
-                // PARENT-CHILD HIERARCHY: 
-                // For KINEMATIC bodies that are children, the PARENT controls movement (not physics)
-                // So we should NOT sync from physics back to parent - parent is authoritative
-                // Only sync if this is a DYNAMIC body (physics controls it)
                 if (bodyType == PhysicsBodyType::DYNAMIC) {
-                    // DYNAMIC body: Physics controls movement, update parent
                     auto& parentTransform = owner->getParent()->getTransform();
                     parentTransform.setPosition(physicsWorldPos);
-                    parentTransform.setRotation(physicsWorldRot);
+                    if (!rotationLocked) {
+                        parentTransform.setRotation(physicsWorldRot);
+                    }
+                    // If rotation is locked, keep the parent's rotation unchanged (don't sync from physics)
                 } else {
                     // KINEMATIC body: Parent (PlayerRoot) controls movement via scripts
                     // DO NOT sync from physics to parent - parent is authoritative!
@@ -310,7 +367,11 @@ void PhysicsComponent::syncTransformFromPhysics() {
             } else {
                 // ROOT LEVEL: Direct synchronization (no parent-child hierarchy)
                 owner->getTransform().setPosition(physicsWorldPos);
-                owner->getTransform().setRotation(physicsWorldRot);
+                // Only sync rotation if rotation is NOT locked
+                if (!rotationLocked) {
+                    owner->getTransform().setRotation(physicsWorldRot);
+                }
+                // If rotation is locked, keep the node's rotation unchanged (don't sync from physics)
             }
         } else {
             // For STATIC bodies, DO NOT sync from physics - static bodies never move
@@ -516,6 +577,8 @@ void PhysicsComponent::createRigidBody() {
         rigidBody->setCcdMotionThreshold(0.1f);
         rigidBody->setCcdSweptSphereRadius(0.1f);
         
+        // Default: allow full rotation and linear movement
+        // Can be customized via setAngularFactor/setLinearFactor
         rigidBody->setAngularFactor(btVector3(1.0f, 1.0f, 1.0f));
         rigidBody->setLinearFactor(btVector3(1.0f, 1.0f, 1.0f));
         
@@ -526,6 +589,13 @@ void PhysicsComponent::createRigidBody() {
     
     if (bodyType == PhysicsBodyType::KINEMATIC) {
         rigidBody->setGravity(btVector3(0, 0, 0));
+    } else if (bodyType == PhysicsBodyType::DYNAMIC) {
+        // For dynamic bodies, respect gravityEnabled setting
+        if (!gravityEnabled) {
+            rigidBody->setGravity(btVector3(0, 0, 0));
+        } else {
+            rigidBody->setGravity(PhysicsManager::getInstance().getDynamicsWorld()->getGravity());
+        }
     }
     
     btVector3 localInertiaFinal(0, 0, 0);
