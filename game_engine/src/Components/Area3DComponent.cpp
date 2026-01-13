@@ -17,6 +17,7 @@
 // Bullet includes
 #include <btBulletDynamicsCommon.h>
 #include <btBulletCollisionCommon.h>
+#include <BulletCollision/CollisionDispatch/btGhostObject.h>
 
 // ImGui for editor
 #ifdef EDITOR_BUILD
@@ -96,6 +97,16 @@ void Area3DComponent::update(float deltaTime) {
     
     // Update the ghost object's world transform
     ghostObject->setWorldTransform(transform);
+    
+    btVector3 aabbMin, aabbMax;
+    if (collisionShape) {
+        collisionShape->getAabb(transform, aabbMin, aabbMax);
+        btBroadphaseInterface* broadphase = PhysicsManager::getInstance().getDynamicsWorld()->getBroadphase();
+        if (broadphase && ghostObject->getBroadphaseHandle()) {
+            broadphase->setAabb(ghostObject->getBroadphaseHandle(), aabbMin, aabbMax, 
+                              PhysicsManager::getInstance().getDynamicsWorld()->getDispatcher());
+        }
+    }
     
     // Perform collision detection
     performCollisionDetection();
@@ -190,10 +201,15 @@ void Area3DComponent::createGhostObject() {
         return;
     }
     
-    // Create ghost object for trigger detection
-    ghostObject = new btCollisionObject();
-    ghostObject->setCollisionShape(collisionShape);
-    ghostObject->setCollisionFlags(btCollisionObject::CF_NO_CONTACT_RESPONSE | btCollisionObject::CF_STATIC_OBJECT);
+    // Create pair caching ghost object for trigger detection (sensor/trigger zone)
+    // This type of object detects collisions but doesn't generate contact responses
+    // Optimized for PS Vita - uses pair caching for efficient overlap detection
+    btPairCachingGhostObject* pairCachingGhost = new btPairCachingGhostObject();
+    pairCachingGhost->setCollisionShape(collisionShape);
+    // CF_NO_CONTACT_RESPONSE tells Bullet this is a sensor - no collision response
+    pairCachingGhost->setCollisionFlags(btCollisionObject::CF_NO_CONTACT_RESPONSE);
+    // Also set activation state to prevent any physics processing
+    pairCachingGhost->setActivationState(DISABLE_DEACTIVATION);
     
     // Set initial transform
     glm::mat4 worldMatrix = getWorldTransformMatrix();
@@ -204,19 +220,28 @@ void Area3DComponent::createGhostObject() {
     transform.setIdentity();
     transform.setOrigin(btVector3(worldPos.x, worldPos.y, worldPos.z));
     transform.setRotation(btQuaternion(worldRot.x, worldRot.y, worldRot.z, worldRot.w));
-    ghostObject->setWorldTransform(transform);
+    pairCachingGhost->setWorldTransform(transform);
     
     // Store pointer to this component in user data
-    ghostObject->setUserPointer(this);
+    pairCachingGhost->setUserPointer(this);
     
-    // Add to physics world for collision detection
-    PhysicsManager::getInstance().getDynamicsWorld()->addCollisionObject(ghostObject);
+    // Cast to base class for storage
+    ghostObject = pairCachingGhost;
+    
+    // Add to physics world for collision detection (as a sensor/trigger)
+    PhysicsManager::getInstance().getDynamicsWorld()->addCollisionObject(ghostObject, btBroadphaseProxy::SensorTrigger, btBroadphaseProxy::AllFilter);
 }
 
 void Area3DComponent::destroyGhostObject() {
     if (ghostObject) {
         PhysicsManager::getInstance().getDynamicsWorld()->removeCollisionObject(ghostObject);
-        delete ghostObject;
+        // Cast back to btPairCachingGhostObject for proper deletion
+        btPairCachingGhostObject* pairCachingGhost = dynamic_cast<btPairCachingGhostObject*>(ghostObject);
+        if (pairCachingGhost) {
+            delete pairCachingGhost;
+        } else {
+            delete ghostObject;
+        }
         ghostObject = nullptr;
     }
     
@@ -243,8 +268,8 @@ void Area3DComponent::updateCollisionShape() {
     collisionShape = createBulletCollisionShape();
     ghostObject->setCollisionShape(collisionShape);
     
-    // Add back to world
-    PhysicsManager::getInstance().getDynamicsWorld()->addCollisionObject(ghostObject);
+    // Add back to world as sensor/trigger
+    PhysicsManager::getInstance().getDynamicsWorld()->addCollisionObject(ghostObject, btBroadphaseProxy::SensorTrigger, btBroadphaseProxy::AllFilter);
 }
 
 void Area3DComponent::performCollisionDetection() {
@@ -252,39 +277,54 @@ void Area3DComponent::performCollisionDetection() {
         return;
     }
     
-    // Get the dynamics world
-    btDiscreteDynamicsWorld* world = PhysicsManager::getInstance().getDynamicsWorld();
-    if (!world) {
-        return;
-    }
-    
     // Save previous state
     previousBodiesInArea = bodiesInArea;
     bodiesInArea.clear();
     
-    // Get area world position
+    // Use the ghost object's built-in overlap detection (optimized for PS Vita)
+    // The btGhostPairCallback automatically tracks overlapping objects via AABB
+    // We use AABB as a fast culling pass, then do precise shape-based checks
+    btGhostObject* ghost = btGhostObject::upcast(ghostObject);
+    if (!ghost) {
+        return;
+    }
+    
+    // Get area world position for precise shape checks
     glm::vec3 areaPos = getWorldPosition();
     
-    // Check all collision objects in the world
-    for (int i = 0; i < world->getNumCollisionObjects(); i++) {
-        btCollisionObject* obj = world->getCollisionObjectArray()[i];
+    // Get all overlapping objects directly from the ghost object (AABB-based, fast)
+    // Then do precise shape-based checks to filter out false positives
+    int numOverlapping = ghost->getNumOverlappingObjects();
+    for (int i = 0; i < numOverlapping; i++) {
+        btCollisionObject* obj = ghost->getOverlappingObject(i);
+        if (!obj) {
+            continue;
+        }
         
-        // Skip if this is our own ghost object (prevents self-detection)
+        // Skip if this is our own ghost object (shouldn't happen, but safety check)
         if (obj == ghostObject) {
             continue;
         }
         
-        // Additional check: if the user pointer points to this Area3DComponent, skip it
-        // We need to check this safely since userPointer might be a PhysicsComponent
-        void* userPtr = obj->getUserPointer();
-        if (userPtr) {
-            // Try casting to Area3DComponent - only compare if cast is valid
-            // (Note: This is safe even if it's actually a PhysicsComponent - the comparison will be false)
-            Area3DComponent* otherAreaComp = static_cast<Area3DComponent*>(userPtr);
-            // Only skip if it's actually our own component
-            // We can verify this by checking if the owner matches
-            if (otherAreaComp == this) {
-                continue; // Skip self
+        // Get object identifier first
+        std::string bodyName = "";
+        PhysicsComponent* physicsComp = static_cast<PhysicsComponent*>(obj->getUserPointer());
+        Area3DComponent* areaComp = nullptr;
+        
+        if (physicsComp && physicsComp->getOwner()) {
+            bodyName = physicsComp->getOwner()->getName();
+        } else {
+            // Try to get from Area3DComponent
+            areaComp = static_cast<Area3DComponent*>(obj->getUserPointer());
+            if (areaComp && areaComp->getOwner()) {
+                // Skip if this is our own component (triple-check to prevent self-detection)
+                if (areaComp == this) {
+                    continue; // Skip self
+                }
+                bodyName = areaComp->getOwner()->getName();
+            } else {
+                // Skip objects we can't identify
+                continue;
             }
         }
         
@@ -293,13 +333,7 @@ void Area3DComponent::performCollisionDetection() {
         btVector3 objPos = objTransform.getOrigin();
         glm::vec3 objectPos = glm::vec3(objPos.x(), objPos.y(), objPos.z());
         
-        // Get collision shape for intersection test
-        btCollisionShape* objShape = obj->getCollisionShape();
-        if (!objShape) {
-            continue;
-        }
-        
-        // Check if object is within detection area based on shape
+        // Check if object is actually within the precise detection area shape
         bool isInside = false;
         
         if (shapeType == Area3DShape::BOX) {
@@ -314,12 +348,9 @@ void Area3DComponent::performCollisionDetection() {
             float distance = glm::length(objectPos - areaPos);
             
             // If detecting another Area3DComponent with sphere shape, use sphere-sphere overlap
-            // Check if the other object is also a sphere Area3DComponent
-            Area3DComponent* otherAreaComp = static_cast<Area3DComponent*>(obj->getUserPointer());
-            if (otherAreaComp && otherAreaComp != this && otherAreaComp->getOwner() && 
-                otherAreaComp->getShape() == Area3DShape::SPHERE) {
+            if (areaComp && areaComp->getShape() == Area3DShape::SPHERE) {
                 // Sphere-sphere overlap: distance between centers <= sum of radii
-                float otherRadius = otherAreaComp->getRadius();
+                float otherRadius = areaComp->getRadius();
                 float combinedRadius = radius + otherRadius;
                 isInside = (distance <= combinedRadius);
             } else {
@@ -334,9 +365,6 @@ void Area3DComponent::performCollisionDetection() {
             
             if (shapeType == Area3DShape::CAPSULE) {
                 // Capsule: Bullet convention - height is distance between cap centers
-                // Total height = height + 2*radius
-                // Cylinder goes from -height/2 to +height/2
-                // Sphere caps centered at -height/2 and +height/2
                 float halfHeight = height * 0.5f;
                 float bottomCapCenter = -halfHeight;
                 float topCapCenter = halfHeight;
@@ -365,31 +393,6 @@ void Area3DComponent::performCollisionDetection() {
         }
         
         if (isInside) {
-            // Get object identifier
-            std::string bodyName = "";
-            void* userData = nullptr;
-            
-            // Try to get name from PhysicsComponent first
-            PhysicsComponent* physicsComp = static_cast<PhysicsComponent*>(obj->getUserPointer());
-            if (physicsComp && physicsComp->getOwner()) {
-                bodyName = physicsComp->getOwner()->getName();
-                userData = physicsComp;
-            } else {
-                // Try to get from Area3DComponent
-                Area3DComponent* areaComp = static_cast<Area3DComponent*>(obj->getUserPointer());
-                if (areaComp && areaComp->getOwner()) {
-                    // Skip if this is our own component (triple-check to prevent self-detection)
-                    if (areaComp == this) {
-                        continue; // Skip self - should never reach here due to earlier check
-                    }
-                    bodyName = areaComp->getOwner()->getName();
-                    userData = areaComp;
-                } else {
-                    // Fallback to generic name
-                    bodyName = "Object_" + std::to_string(i);
-                }
-            }
-            
             // Check if this object matches our detection tags (if any specified)
             if (detectionTags.empty() || 
                 std::find(detectionTags.begin(), detectionTags.end(), bodyName) != detectionTags.end()) {

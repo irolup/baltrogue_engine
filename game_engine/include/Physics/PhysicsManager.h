@@ -14,6 +14,7 @@ class btConstraintSolver;
 class btRigidBody;
 class btCollisionShape;
 class btMotionState;
+class btGhostPairCallback;
 
 // Forward declarations for rendering
 namespace GameEngine {
@@ -75,6 +76,7 @@ private:
     btCollisionDispatcher* dispatcher;
     btBroadphaseInterface* broadphase;
     btConstraintSolver* solver;
+    btGhostPairCallback* ghostPairCallback;
     
     // Physics components
     std::vector<PhysicsComponent*> physicsComponents;

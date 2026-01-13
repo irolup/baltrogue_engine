@@ -1192,12 +1192,61 @@ void EditorUI::renderProperties() {
             ImGui::Separator();
             
             const auto& components = selected->getAllComponents();
-            for (const auto& component : components) {
+            std::string componentToRemove;
+            
+            for (size_t i = 0; i < components.size(); i++) {
+                const auto& component = components[i];
                 if (component && component->isEnabled()) {
-                    if (ImGui::TreeNode(component->getTypeName().c_str())) {
+                    ImGui::PushID(static_cast<int>(i));
+                    
+                    std::string componentName = component->getTypeName();
+                    std::string popupId = "ComponentContextMenu_" + std::to_string(i);
+                    
+                    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowItemOverlap;
+                    bool treeOpen = ImGui::TreeNodeEx(componentName.c_str(), flags);
+                    
+                    if (ImGui::BeginPopupContextItem(popupId.c_str())) {
+                        if (ImGui::MenuItem("Remove Component")) {
+                            componentToRemove = componentName;
+                        }
+                        ImGui::EndPopup();
+                    }
+                    
+                    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 20);
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.1f, 0.1f, 1.0f));
+                    if (ImGui::SmallButton("X")) {
+                        componentToRemove = componentName;
+                    }
+                    ImGui::PopStyleColor(3);
+                    
+                    if (treeOpen) {
                         component->drawInspector();
                         ImGui::TreePop();
                     }
+                    
+                    ImGui::PopID();
+                }
+            }
+            
+            if (!componentToRemove.empty()) {
+                if (componentToRemove == "CameraComponent") {
+                    selected->removeComponent<CameraComponent>();
+                } else if (componentToRemove == "MeshRenderer") {
+                    selected->removeComponent<MeshRenderer>();
+                } else if (componentToRemove == "ModelRenderer") {
+                    selected->removeComponent<ModelRenderer>();
+                } else if (componentToRemove == "LightComponent") {
+                    selected->removeComponent<LightComponent>();
+                } else if (componentToRemove == "PhysicsComponent") {
+                    selected->removeComponent<PhysicsComponent>();
+                } else if (componentToRemove == "Area3DComponent") {
+                    selected->removeComponent<Area3DComponent>();
+                } else if (componentToRemove == "TextComponent") {
+                    selected->removeComponent<TextComponent>();
+                } else if (componentToRemove == "ScriptComponent") {
+                    selected->removeComponent<ScriptComponent>();
                 }
             }
             

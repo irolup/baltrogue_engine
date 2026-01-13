@@ -5,6 +5,7 @@
 // Bullet includes
 #include <btBulletDynamicsCommon.h>
 #include <btBulletCollisionCommon.h>
+#include <BulletCollision/CollisionDispatch/btGhostObject.h>
 #include <algorithm>
 
 namespace GameEngine {
@@ -15,6 +16,7 @@ PhysicsManager::PhysicsManager()
     , dispatcher(nullptr)
     , broadphase(nullptr)
     , solver(nullptr)
+    , ghostPairCallback(nullptr)
     , debugDrawEnabled(false)
 {
 }
@@ -40,6 +42,9 @@ bool PhysicsManager::initialize() {
     solver = new btSequentialImpulseConstraintSolver();
     
     dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
+    
+    ghostPairCallback = new btGhostPairCallback();
+    dynamicsWorld->getPairCache()->setInternalGhostPairCallback(ghostPairCallback);
     
     dynamicsWorld->setGravity(btVector3(0, -9.81f, 0));
     
@@ -87,6 +92,11 @@ void PhysicsManager::shutdown() {
     if (collisionConfiguration) {
         delete collisionConfiguration;
         collisionConfiguration = nullptr;
+    }
+    
+    if (ghostPairCallback) {
+        delete ghostPairCallback;
+        ghostPairCallback = nullptr;
     }
     
     physicsComponents.clear();

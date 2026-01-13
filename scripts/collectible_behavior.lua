@@ -156,10 +156,11 @@ function update(deltaTime)
             accumulatedPauseTime = 0
             pauseStartTime = 0
             
+            setNodePosition(lemonRootName, originalLemonX, originalLemonY, originalLemonZ)
+            
             if lemonArea3D then
                 lemonArea3D.setMonitorMode(true)
             end
-            setNodePosition(lemonRootName, originalLemonX, originalLemonY, originalLemonZ)
         end
     end
 end

@@ -44,17 +44,6 @@
             ],
             "components": [
               {
-                "angularDamping": 0.10000000149011612,
-                "bodyType": "STATIC",
-                "collisionShapeType": "SPHERE",
-                "friction": 0.5,
-                "linearDamping": 0.10000000149011612,
-                "mass": 0.0,
-                "restitution": 0.10000000149011612,
-                "showCollisionShape": false,
-                "type": "PhysicsComponent"
-              },
-              {
                 "castShadows": false,
                 "isLoaded": true,
                 "modelName": "lemon_1k.gltf",
