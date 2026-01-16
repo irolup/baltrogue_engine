@@ -7,6 +7,9 @@
 
 #ifdef EDITOR_BUILD
     #include "imgui.h"
+    #include "Rendering/Mesh.h"
+    #include "Rendering/Material.h"
+    #include "Rendering/Shader.h"
 #endif
 
 namespace GameEngine {
@@ -21,16 +24,30 @@ CameraComponent::CameraComponent()
     , viewport(0.0f, 0.0f, 1.0f, 1.0f)
     , isActiveCamera(false)
     , controlsEnabled(false)
-    , projectionMatrix(1.0f)
-    , projectionDirty(true)
     , yaw(-90.0f)
     , pitch(0.0f)
     , movementSpeed(5.0f)
     , mouseSensitivity(0.1f)
+    , projectionMatrix(1.0f)
+    , projectionDirty(true)
+#ifdef EDITOR_BUILD
+    , showGizmo(false)
+    , showFrustum(true)
+    , gizmoMesh(nullptr)
+    , gizmoMaterial(nullptr)
+    , frustumMesh(nullptr)
+    , frustumMaterial(nullptr)
+#endif
 {
+#ifdef EDITOR_BUILD
+    // Create gizmo in constructor (doesn't need owner)
+    createGizmo();
+    // Frustum will be created when owner is set and updateFrustumMesh() is called
+#endif
 }
 
 CameraComponent::~CameraComponent() {
+    // Shared pointers will automatically clean up, no need to explicitly reset
 }
 
 void CameraComponent::update(float deltaTime) {
@@ -338,6 +355,20 @@ void CameraComponent::drawInspector() {
             if (ImGui::DragFloat4("Viewport", &viewport.x, 0.01f, 0.0f, 1.0f)) {
             }
         }
+        
+        ImGui::Separator();
+        if (ImGui::Checkbox("Show Gizmo", &showGizmo)) {
+            if (showGizmo && !gizmoMesh) {
+                createGizmo();
+            }
+        }
+        if (ImGui::Checkbox("Show Frustum", &showFrustum)) {
+            if (showFrustum) {
+                updateFrustumMesh();
+            } else {
+                frustumMesh.reset();
+            }
+        }
     }
 #endif
 }
@@ -352,6 +383,183 @@ void CameraComponent::updateProjection() {
     }
     
     projectionDirty = false;
+    
+#ifdef EDITOR_BUILD
+    updateFrustumMesh();
+#endif
 }
+
+#ifdef EDITOR_BUILD
+void CameraComponent::createGizmo() {
+    // Create a simple pyramid shape to represent the camera
+    // The pyramid points forward (negative Z in camera space)
+    std::vector<glm::vec3> vertices = {
+        // Base of pyramid (near plane)
+        {-0.2f, -0.15f, -0.3f},  // 0: bottom-left
+        { 0.2f, -0.15f, -0.3f},  // 1: bottom-right
+        { 0.2f,  0.15f, -0.3f},  // 2: top-right
+        {-0.2f,  0.15f, -0.3f},  // 3: top-left
+        // Tip of pyramid (camera position)
+        { 0.0f,  0.0f,  0.0f}    // 4: tip
+    };
+    
+    std::vector<unsigned int> indices = {
+        // Base
+        0, 1, 2, 2, 3, 0,
+        // Sides
+        0, 4, 1,
+        1, 4, 2,
+        2, 4, 3,
+        3, 4, 0
+    };
+    
+    gizmoMesh = std::make_shared<Mesh>();
+    
+    std::vector<Vertex> meshVertices;
+    for (const auto& pos : vertices) {
+        Vertex vertex;
+        vertex.position = pos;
+        vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        vertex.texCoords = glm::vec2(0.0f, 0.0f);
+        meshVertices.push_back(vertex);
+    }
+    
+    gizmoMesh->setVertices(meshVertices);
+    gizmoMesh->setIndices(indices);
+    gizmoMesh->upload();
+    
+    gizmoMaterial = std::make_shared<Material>();
+    gizmoMaterial->setColor(glm::vec3(0.2f, 0.8f, 0.2f)); // Green color for camera
+    gizmoMaterial->setShader(Shader::getDefaultShader());
+}
+
+void CameraComponent::updateGizmo() {
+    // Gizmo doesn't need updating based on camera properties
+    // It's just a visual indicator
+}
+
+void CameraComponent::calculateFrustumCorners(std::vector<glm::vec3>& corners) const {
+    corners.clear();
+    corners.resize(8);
+    
+    if (!owner) return;
+    
+    // Calculate frustum corners in camera local space (camera looks down -Z)
+    // The world transform will position them correctly
+    if (projectionType == ProjectionType::PERSPECTIVE) {
+        float tanHalfFOV = tan(glm::radians(fov * 0.5f));
+        float nearHeight = nearPlane * tanHalfFOV;
+        float nearWidth = nearHeight * aspectRatio;
+        float farHeight = farPlane * tanHalfFOV;
+        float farWidth = farHeight * aspectRatio;
+        
+        // Near plane corners (in camera local space, camera at origin looking down -Z)
+        corners[0] = glm::vec3(-nearWidth, -nearHeight, -nearPlane); // bottom-left
+        corners[1] = glm::vec3( nearWidth, -nearHeight, -nearPlane); // bottom-right
+        corners[2] = glm::vec3( nearWidth,  nearHeight, -nearPlane); // top-right
+        corners[3] = glm::vec3(-nearWidth,  nearHeight, -nearPlane); // top-left
+        
+        // Far plane corners
+        corners[4] = glm::vec3(-farWidth, -farHeight, -farPlane); // bottom-left
+        corners[5] = glm::vec3( farWidth, -farHeight, -farPlane); // bottom-right
+        corners[6] = glm::vec3( farWidth,  farHeight, -farPlane); // top-right
+        corners[7] = glm::vec3(-farWidth,  farHeight, -farPlane); // top-left
+    } else {
+        // Orthographic projection
+        float halfWidth = orthographicSize * aspectRatio * 0.5f;
+        float halfHeight = orthographicSize * 0.5f;
+        
+        // Near plane corners
+        corners[0] = glm::vec3(-halfWidth, -halfHeight, -nearPlane); // bottom-left
+        corners[1] = glm::vec3( halfWidth, -halfHeight, -nearPlane); // bottom-right
+        corners[2] = glm::vec3( halfWidth,  halfHeight, -nearPlane); // top-right
+        corners[3] = glm::vec3(-halfWidth,  halfHeight, -nearPlane); // top-left
+        
+        // Far plane corners
+        corners[4] = glm::vec3(-halfWidth, -halfHeight, -farPlane); // bottom-left
+        corners[5] = glm::vec3( halfWidth, -halfHeight, -farPlane); // bottom-right
+        corners[6] = glm::vec3( halfWidth,  halfHeight, -farPlane); // top-right
+        corners[7] = glm::vec3(-halfWidth,  halfHeight, -farPlane); // top-left
+    }
+}
+
+void CameraComponent::createFrustumMesh() {
+    updateFrustumMesh();
+}
+
+void CameraComponent::updateFrustumMesh() {
+    if (!showFrustum || !owner) {
+        frustumMesh.reset();
+        return;
+    }
+    
+    std::vector<glm::vec3> corners;
+    calculateFrustumCorners(corners);
+    
+    if (corners.size() != 8) {
+        frustumMesh.reset();
+        return;
+    }
+    
+    // Corners are already in camera local space, so we can use them directly
+    std::vector<Vertex> vertices;
+    for (const auto& corner : corners) {
+        Vertex vertex;
+        vertex.position = corner;
+        vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        vertex.texCoords = glm::vec2(0.0f, 0.0f);
+        vertices.push_back(vertex);
+    }
+    
+    // Create wireframe indices for frustum
+    std::vector<unsigned int> indices = {
+        // Near plane
+        0, 1, 1, 2, 2, 3, 3, 0,
+        // Far plane
+        4, 5, 5, 6, 6, 7, 7, 4,
+        // Connecting edges
+        0, 4, 1, 5, 2, 6, 3, 7
+    };
+    
+    // Reset old mesh first to ensure proper cleanup
+    frustumMesh.reset();
+    
+    frustumMesh = std::make_shared<Mesh>();
+    frustumMesh->setVertices(vertices);
+    frustumMesh->setIndices(indices);
+    frustumMesh->setRenderMode(GL_LINES);
+    frustumMesh->upload();
+    
+    if (!frustumMaterial) {
+        frustumMaterial = std::make_shared<Material>();
+        frustumMaterial->setColor(glm::vec3(0.8f, 0.8f, 0.2f)); // Yellow color for frustum
+        
+        auto frustumShader = std::make_shared<Shader>();
+        std::string vertexShaderSource = 
+            "#version 330 core\n"
+            "layout (location = 0) in vec3 aPos;\n"
+            "uniform mat4 modelMatrix;\n"
+            "uniform mat4 viewMatrix;\n"
+            "uniform mat4 projectionMatrix;\n"
+            "void main() {\n"
+            "    gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(aPos, 1.0);\n"
+            "}\n";
+        
+        std::string fragmentShaderSource = 
+            "#version 330 core\n"
+            "out vec4 FragColor;\n"
+            "uniform vec3 u_Color;\n"
+            "void main() {\n"
+            "    FragColor = vec4(u_Color, 1.0);\n"
+            "}\n";
+        
+        if (frustumShader->loadFromSource(vertexShaderSource, fragmentShaderSource)) {
+            frustumMaterial->setShader(frustumShader);
+        } else {
+            frustumMaterial->setShader(Shader::getDefaultShader());
+        }
+    }
+}
+#endif
 
 } // namespace GameEngine

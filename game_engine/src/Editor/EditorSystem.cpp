@@ -657,6 +657,66 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
             gizmoMesh->draw();
         }
     }
+    
+    auto cameraComponent = node->getComponent<CameraComponent>();
+    if (cameraComponent && cameraComponent->isEnabled()) {
+        // Render camera gizmo
+        if (cameraComponent->getShowGizmo()) {
+            auto gizmoMesh = cameraComponent->getGizmoMesh();
+            auto gizmoMaterial = cameraComponent->getGizmoMaterial();
+            
+            if (gizmoMesh && gizmoMaterial) {
+                gizmoMaterial->apply();
+                
+                auto shader = gizmoMaterial->getShader();
+                if (shader) {
+                    shader->setMat4("modelMatrix", worldTransform);
+                    shader->setMat4("viewMatrix", viewMatrix);
+                    shader->setMat4("projectionMatrix", projectionMatrix);
+                    
+                    glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(worldTransform)));
+                    shader->setMat3("normalMatrix", normalMatrix);
+                }
+                
+                gizmoMesh->draw();
+            }
+        }
+        
+        // Render camera frustum
+        if (cameraComponent->getShowFrustum()) {
+            auto frustumMesh = cameraComponent->getFrustumMesh();
+            auto frustumMaterial = cameraComponent->getFrustumMaterial();
+            
+            if (frustumMesh && frustumMaterial) {
+                // Store OpenGL state
+                GLint currentPolygonMode[2];
+                glGetIntegerv(GL_POLYGON_MODE, currentPolygonMode);
+                GLboolean depthTestEnabled;
+                glGetBooleanv(GL_DEPTH_TEST, &depthTestEnabled);
+                
+                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+                glEnable(GL_DEPTH_TEST);
+                
+                frustumMaterial->apply();
+                
+                auto shader = frustumMaterial->getShader();
+                if (shader) {
+                    shader->setMat4("modelMatrix", worldTransform);
+                    shader->setMat4("viewMatrix", viewMatrix);
+                    shader->setMat4("projectionMatrix", projectionMatrix);
+                    shader->setVec3("u_Color", frustumMaterial->getColor());
+                }
+                
+                frustumMesh->draw();
+                
+                // Restore OpenGL state
+                glPolygonMode(GL_FRONT_AND_BACK, currentPolygonMode[0]);
+                if (!depthTestEnabled) {
+                    glDisable(GL_DEPTH_TEST);
+                }
+            }
+        }
+    }
 #endif
     
     for (size_t i = 0; i < node->getChildCount(); ++i) {

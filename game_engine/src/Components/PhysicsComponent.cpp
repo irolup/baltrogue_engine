@@ -211,6 +211,7 @@ void PhysicsComponent::setAngularDamping(float newDamping) {
 void PhysicsComponent::setLinearVelocity(const glm::vec3& velocity) {
     if (rigidBody) {
         rigidBody->setLinearVelocity(btVector3(velocity.x, velocity.y, velocity.z));
+        rigidBody->activate();
     }
 }
 
@@ -225,6 +226,7 @@ glm::vec3 PhysicsComponent::getLinearVelocity() const {
 void PhysicsComponent::setAngularVelocity(const glm::vec3& velocity) {
     if (rigidBody) {
         rigidBody->setAngularVelocity(btVector3(velocity.x, velocity.y, velocity.z));
+        rigidBody->activate();
     }
 }
 

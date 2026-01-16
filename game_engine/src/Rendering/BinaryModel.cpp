@@ -13,7 +13,7 @@
 namespace GameEngine {
 
 BinaryModel::BinaryModel() : loaded(false) {
-    strncpy(data.header.magic, "BMOD", 4);
+    memcpy(data.header.magic, "BMOD", 4);
     data.header.version = 1;
     data.header.meshCount = 0;
     data.header.materialCount = 0;

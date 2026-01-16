@@ -556,9 +556,6 @@ void ScriptComponent::bindTransformToLua() {
                 lua_pop(L, 1);
                 
                 if (self && self->owner && self->owner->getParent() && self->owner->getParent()->getParent()) {
-                    auto parentNode = self->owner->getParent();
-                    auto grandparentNode = parentNode->getParent();
-                    
                     lua_newtable(L);
                     
                     lua_pushstring(L, "getName");

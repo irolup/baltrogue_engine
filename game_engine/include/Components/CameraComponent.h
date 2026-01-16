@@ -4,8 +4,13 @@
 #include "Components/Component.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <memory>
+#include <vector>
 
 namespace GameEngine {
+
+class Mesh;
+class Material;
 
 enum class ProjectionType {
     PERSPECTIVE,
@@ -66,6 +71,19 @@ public:
         viewport = glm::vec4(x, y, width, height); 
     }
     
+#ifdef EDITOR_BUILD
+    bool getShowGizmo() const { return showGizmo; }
+    void setShowGizmo(bool show) { showGizmo = show; }
+    
+    bool getShowFrustum() const { return showFrustum; }
+    void setShowFrustum(bool show) { showFrustum = show; }
+    
+    std::shared_ptr<Mesh> getGizmoMesh() const { return gizmoMesh; }
+    std::shared_ptr<Material> getGizmoMaterial() const { return gizmoMaterial; }
+    std::shared_ptr<Mesh> getFrustumMesh() const { return frustumMesh; }
+    std::shared_ptr<Material> getFrustumMaterial() const { return frustumMaterial; }
+#endif
+    
 private:
     ProjectionType projectionType;
     
@@ -94,6 +112,21 @@ private:
     void handleKeyboardInput(float deltaTime);
     void handleMouseInput();
     void updateRotation();
+    
+#ifdef EDITOR_BUILD
+    bool showGizmo;
+    bool showFrustum;
+    std::shared_ptr<Mesh> gizmoMesh;
+    std::shared_ptr<Material> gizmoMaterial;
+    std::shared_ptr<Mesh> frustumMesh;
+    std::shared_ptr<Material> frustumMaterial;
+    
+    void createGizmo();
+    void updateGizmo();
+    void createFrustumMesh();
+    void updateFrustumMesh();
+    void calculateFrustumCorners(std::vector<glm::vec3>& corners) const;
+#endif
 };
 
 } // namespace GameEngine
