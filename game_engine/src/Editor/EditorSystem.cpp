@@ -660,7 +660,6 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
     
     auto cameraComponent = node->getComponent<CameraComponent>();
     if (cameraComponent && cameraComponent->isEnabled()) {
-        // Render camera gizmo
         if (cameraComponent->getShowGizmo()) {
             auto gizmoMesh = cameraComponent->getGizmoMesh();
             auto gizmoMaterial = cameraComponent->getGizmoMaterial();
@@ -682,13 +681,11 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
             }
         }
         
-        // Render camera frustum
         if (cameraComponent->getShowFrustum()) {
             auto frustumMesh = cameraComponent->getFrustumMesh();
             auto frustumMaterial = cameraComponent->getFrustumMaterial();
             
             if (frustumMesh && frustumMaterial) {
-                // Store OpenGL state
                 GLint currentPolygonMode[2];
                 glGetIntegerv(GL_POLYGON_MODE, currentPolygonMode);
                 GLboolean depthTestEnabled;

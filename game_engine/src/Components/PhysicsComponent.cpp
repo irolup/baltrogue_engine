@@ -319,11 +319,9 @@ void PhysicsComponent::syncTransformFromPhysics() {
         btQuaternion rot = transform.getRotation();
         
 #ifdef EDITOR_BUILD
-        // EDITOR MODE: Simple synchronization (no bidirectional sync)
         owner->getTransform().setPosition(glm::vec3(pos.x(), pos.y(), pos.z()));
         owner->getTransform().setRotation(glm::quat(rot.w(), rot.x(), rot.y(), rot.z()));
 #else
-        // GAME MODE: Handle both root-level and parent-child physics objects
         glm::vec3 physicsWorldPos = glm::vec3(pos.x(), pos.y(), pos.z());
         glm::quat physicsWorldRot = glm::quat(rot.w(), rot.x(), rot.y(), rot.z());
         
@@ -343,7 +341,6 @@ void PhysicsComponent::syncTransformFromPhysics() {
             }
         }
         
-        // For DYNAMIC and KINEMATIC bodies, we need to handle transform synchronization
         if (bodyType == PhysicsBodyType::DYNAMIC || bodyType == PhysicsBodyType::KINEMATIC) {
             bool rotationLocked = false;
             if (rigidBody) {
@@ -358,28 +355,15 @@ void PhysicsComponent::syncTransformFromPhysics() {
                     if (!rotationLocked) {
                         parentTransform.setRotation(physicsWorldRot);
                     }
-                    // If rotation is locked, keep the parent's rotation unchanged (don't sync from physics)
                 } else {
-                    // KINEMATIC body: Parent (PlayerRoot) controls movement via scripts
-                    // DO NOT sync from physics to parent - parent is authoritative!
-                    // The parent's position is set by Lua scripts (setNodePosition)
-                    // Physics should sync TO parent's position (done in syncTransformToPhysics)
-                    // We do NOTHING here - don't overwrite the parent's position
                 }
             } else {
-                // ROOT LEVEL: Direct synchronization (no parent-child hierarchy)
                 owner->getTransform().setPosition(physicsWorldPos);
-                // Only sync rotation if rotation is NOT locked
                 if (!rotationLocked) {
                     owner->getTransform().setRotation(physicsWorldRot);
                 }
-                // If rotation is locked, keep the node's rotation unchanged (don't sync from physics)
             }
         } else {
-            // For STATIC bodies, DO NOT sync from physics - static bodies never move
-            // The node controls physics, not the other way around
-            // If physics position is wrong, sync TO physics instead (done in syncTransformToPhysics)
-            // Do nothing here - static bodies maintain their position from the node
         }
 #endif
     }
@@ -391,37 +375,29 @@ void PhysicsComponent::syncTransformToPhysics() {
         transform.setIdentity();
         
 #ifdef EDITOR_BUILD
-        // EDITOR MODE: Simple synchronization (no complex position correction)
         glm::mat4 worldTransform = owner->getWorldMatrix();
         glm::vec3 worldPos = glm::vec3(worldTransform[3]);
         
-        // Basic validation only
         if (std::isnan(worldPos.x) || std::isnan(worldPos.y) || std::isnan(worldPos.z) ||
             std::isinf(worldPos.x) || std::isinf(worldPos.y) || std::isinf(worldPos.z)) {
             printf("PhysicsComponent::syncTransformToPhysics - ERROR: Invalid world position detected!\n");
-            return; // Skip update in editor if position is invalid
+            return;
         }
         
         transform.setOrigin(btVector3(worldPos.x, worldPos.y, worldPos.z));
-        transform.setRotation(btQuaternion(0, 0, 0, 1)); // Identity rotation
+        transform.setRotation(btQuaternion(0, 0, 0, 1));
         
         rigidBody->getMotionState()->setWorldTransform(transform);
 #else
-        // GAME MODE: Full synchronization with position correction
-        // Use WORLD transform (including parent transforms)
         glm::mat4 worldTransform = owner->getWorldMatrix();
         
-        // SAFER matrix extraction with validation
         glm::vec3 worldPos;
         
-        // Extract position from the last column of the matrix
         worldPos = glm::vec3(worldTransform[3]);
         
-        // Validate the extracted position
         if (std::isnan(worldPos.x) || std::isnan(worldPos.y) || std::isnan(worldPos.z) ||
             std::isinf(worldPos.x) || std::isinf(worldPos.y) || std::isinf(worldPos.z)) {
             
-            // Fallback to local position if world transform is invalid
             auto& localTransform = owner->getTransform();
             worldPos = localTransform.getPosition();
         }
@@ -453,7 +429,6 @@ void PhysicsComponent::syncTransformToPhysics() {
         
         transform.setOrigin(btVector3(worldPos.x, worldPos.y, worldPos.z));
         
-        // Extract and use the actual world rotation from the transform matrix
         glm::quat worldRot = glm::quat_cast(worldTransform);
         transform.setRotation(btQuaternion(worldRot.x, worldRot.y, worldRot.z, worldRot.w));
         
@@ -579,8 +554,6 @@ void PhysicsComponent::createRigidBody() {
         rigidBody->setCcdMotionThreshold(0.1f);
         rigidBody->setCcdSweptSphereRadius(0.1f);
         
-        // Default: allow full rotation and linear movement
-        // Can be customized via setAngularFactor/setLinearFactor
         rigidBody->setAngularFactor(btVector3(1.0f, 1.0f, 1.0f));
         rigidBody->setLinearFactor(btVector3(1.0f, 1.0f, 1.0f));
         
@@ -592,7 +565,6 @@ void PhysicsComponent::createRigidBody() {
     if (bodyType == PhysicsBodyType::KINEMATIC) {
         rigidBody->setGravity(btVector3(0, 0, 0));
     } else if (bodyType == PhysicsBodyType::DYNAMIC) {
-        // For dynamic bodies, respect gravityEnabled setting
         if (!gravityEnabled) {
             rigidBody->setGravity(btVector3(0, 0, 0));
         } else {
@@ -772,7 +744,6 @@ void PhysicsComponent::glmToBullet(const glm::vec3& glmVec, void* bulletVec) con
 }
 
 void PhysicsComponent::render(Renderer& renderer) {
-    // Only render collision shapes if enabled
     if (!showCollisionShape || !collisionShape || !owner) {
         return;
     }

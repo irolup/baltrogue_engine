@@ -40,14 +40,11 @@ CameraComponent::CameraComponent()
 #endif
 {
 #ifdef EDITOR_BUILD
-    // Create gizmo in constructor (doesn't need owner)
     createGizmo();
-    // Frustum will be created when owner is set and updateFrustumMesh() is called
 #endif
 }
 
 CameraComponent::~CameraComponent() {
-    // Shared pointers will automatically clean up, no need to explicitly reset
 }
 
 void CameraComponent::update(float deltaTime) {
@@ -391,22 +388,16 @@ void CameraComponent::updateProjection() {
 
 #ifdef EDITOR_BUILD
 void CameraComponent::createGizmo() {
-    // Create a simple pyramid shape to represent the camera
-    // The pyramid points forward (negative Z in camera space)
     std::vector<glm::vec3> vertices = {
-        // Base of pyramid (near plane)
-        {-0.2f, -0.15f, -0.3f},  // 0: bottom-left
-        { 0.2f, -0.15f, -0.3f},  // 1: bottom-right
-        { 0.2f,  0.15f, -0.3f},  // 2: top-right
-        {-0.2f,  0.15f, -0.3f},  // 3: top-left
-        // Tip of pyramid (camera position)
-        { 0.0f,  0.0f,  0.0f}    // 4: tip
+        {-0.2f, -0.15f, -0.3f},
+        { 0.2f, -0.15f, -0.3f},
+        { 0.2f,  0.15f, -0.3f},
+        {-0.2f,  0.15f, -0.3f},
+        { 0.0f,  0.0f,  0.0f}
     };
     
     std::vector<unsigned int> indices = {
-        // Base
         0, 1, 2, 2, 3, 0,
-        // Sides
         0, 4, 1,
         1, 4, 2,
         2, 4, 3,
@@ -429,13 +420,11 @@ void CameraComponent::createGizmo() {
     gizmoMesh->upload();
     
     gizmoMaterial = std::make_shared<Material>();
-    gizmoMaterial->setColor(glm::vec3(0.2f, 0.8f, 0.2f)); // Green color for camera
+    gizmoMaterial->setColor(glm::vec3(0.2f, 0.8f, 0.2f));
     gizmoMaterial->setShader(Shader::getDefaultShader());
 }
 
 void CameraComponent::updateGizmo() {
-    // Gizmo doesn't need updating based on camera properties
-    // It's just a visual indicator
 }
 
 void CameraComponent::calculateFrustumCorners(std::vector<glm::vec3>& corners) const {
@@ -444,8 +433,6 @@ void CameraComponent::calculateFrustumCorners(std::vector<glm::vec3>& corners) c
     
     if (!owner) return;
     
-    // Calculate frustum corners in camera local space (camera looks down -Z)
-    // The world transform will position them correctly
     if (projectionType == ProjectionType::PERSPECTIVE) {
         float tanHalfFOV = tan(glm::radians(fov * 0.5f));
         float nearHeight = nearPlane * tanHalfFOV;
@@ -453,33 +440,28 @@ void CameraComponent::calculateFrustumCorners(std::vector<glm::vec3>& corners) c
         float farHeight = farPlane * tanHalfFOV;
         float farWidth = farHeight * aspectRatio;
         
-        // Near plane corners (in camera local space, camera at origin looking down -Z)
-        corners[0] = glm::vec3(-nearWidth, -nearHeight, -nearPlane); // bottom-left
-        corners[1] = glm::vec3( nearWidth, -nearHeight, -nearPlane); // bottom-right
-        corners[2] = glm::vec3( nearWidth,  nearHeight, -nearPlane); // top-right
-        corners[3] = glm::vec3(-nearWidth,  nearHeight, -nearPlane); // top-left
+        corners[0] = glm::vec3(-nearWidth, -nearHeight, -nearPlane);
+        corners[1] = glm::vec3( nearWidth, -nearHeight, -nearPlane);
+        corners[2] = glm::vec3( nearWidth,  nearHeight, -nearPlane);
+        corners[3] = glm::vec3(-nearWidth,  nearHeight, -nearPlane);
         
-        // Far plane corners
-        corners[4] = glm::vec3(-farWidth, -farHeight, -farPlane); // bottom-left
-        corners[5] = glm::vec3( farWidth, -farHeight, -farPlane); // bottom-right
-        corners[6] = glm::vec3( farWidth,  farHeight, -farPlane); // top-right
-        corners[7] = glm::vec3(-farWidth,  farHeight, -farPlane); // top-left
+        corners[4] = glm::vec3(-farWidth, -farHeight, -farPlane);
+        corners[5] = glm::vec3( farWidth, -farHeight, -farPlane);
+        corners[6] = glm::vec3( farWidth,  farHeight, -farPlane);
+        corners[7] = glm::vec3(-farWidth,  farHeight, -farPlane);
     } else {
-        // Orthographic projection
         float halfWidth = orthographicSize * aspectRatio * 0.5f;
         float halfHeight = orthographicSize * 0.5f;
         
-        // Near plane corners
-        corners[0] = glm::vec3(-halfWidth, -halfHeight, -nearPlane); // bottom-left
-        corners[1] = glm::vec3( halfWidth, -halfHeight, -nearPlane); // bottom-right
-        corners[2] = glm::vec3( halfWidth,  halfHeight, -nearPlane); // top-right
-        corners[3] = glm::vec3(-halfWidth,  halfHeight, -nearPlane); // top-left
+        corners[0] = glm::vec3(-halfWidth, -halfHeight, -nearPlane);
+        corners[1] = glm::vec3( halfWidth, -halfHeight, -nearPlane);
+        corners[2] = glm::vec3( halfWidth,  halfHeight, -nearPlane);
+        corners[3] = glm::vec3(-halfWidth,  halfHeight, -nearPlane);
         
-        // Far plane corners
-        corners[4] = glm::vec3(-halfWidth, -halfHeight, -farPlane); // bottom-left
-        corners[5] = glm::vec3( halfWidth, -halfHeight, -farPlane); // bottom-right
-        corners[6] = glm::vec3( halfWidth,  halfHeight, -farPlane); // top-right
-        corners[7] = glm::vec3(-halfWidth,  halfHeight, -farPlane); // top-left
+        corners[4] = glm::vec3(-halfWidth, -halfHeight, -farPlane);
+        corners[5] = glm::vec3( halfWidth, -halfHeight, -farPlane);
+        corners[6] = glm::vec3( halfWidth,  halfHeight, -farPlane);
+        corners[7] = glm::vec3(-halfWidth,  halfHeight, -farPlane);
     }
 }
 
@@ -501,7 +483,6 @@ void CameraComponent::updateFrustumMesh() {
         return;
     }
     
-    // Corners are already in camera local space, so we can use them directly
     std::vector<Vertex> vertices;
     for (const auto& corner : corners) {
         Vertex vertex;
@@ -511,17 +492,12 @@ void CameraComponent::updateFrustumMesh() {
         vertices.push_back(vertex);
     }
     
-    // Create wireframe indices for frustum
     std::vector<unsigned int> indices = {
-        // Near plane
         0, 1, 1, 2, 2, 3, 3, 0,
-        // Far plane
         4, 5, 5, 6, 6, 7, 7, 4,
-        // Connecting edges
         0, 4, 1, 5, 2, 6, 3, 7
     };
     
-    // Reset old mesh first to ensure proper cleanup
     frustumMesh.reset();
     
     frustumMesh = std::make_shared<Mesh>();
@@ -532,7 +508,7 @@ void CameraComponent::updateFrustumMesh() {
     
     if (!frustumMaterial) {
         frustumMaterial = std::make_shared<Material>();
-        frustumMaterial->setColor(glm::vec3(0.8f, 0.8f, 0.2f)); // Yellow color for frustum
+        frustumMaterial->setColor(glm::vec3(0.8f, 0.8f, 0.2f));
         
         auto frustumShader = std::make_shared<Shader>();
         std::string vertexShaderSource = 
