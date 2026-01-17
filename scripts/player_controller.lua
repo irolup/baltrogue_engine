@@ -8,10 +8,14 @@ local isMouseCaptured = false
 local cameraName = "PlayerCamera"
 local playerRootName = "Player"
 local arrowLookStrength = 1.0
+local jumpForce = 8.0
+local jumpCooldown = 0.1
+local lastJumpTime = 0
 
 function start()
 	cameraYaw = 0.0
-	cameraPitch = 0.0
+	cameraPitch = -25.0
+	lastJumpTime = getTime()
 	
 	if input and input.setMouseCapture then
 		input.setMouseCapture(true)
@@ -120,6 +124,19 @@ function update(deltaTime)
 			currentVelY = moveY * moveSpeed
 		end
 		
+		-- Handle jump input
+		local currentTime = getTime()
+		if input.isActionPressed("Jump") then
+			local timeSinceLastJump = currentTime - lastJumpTime
+			if timeSinceLastJump >= jumpCooldown then
+				-- Check if player is on ground (vertical velocity is small)
+				if math.abs(currentVelY) < 0.5 then
+					currentVelY = jumpForce
+					lastJumpTime = currentTime
+				end
+			end
+		end
+		
 		setNodeVelocity("PlayerCollision", currentVelX, currentVelY, currentVelZ)
 	else
 		local worldMoveX = desiredVelX * deltaTime
@@ -145,7 +162,7 @@ end
 function render()
 	if renderer and renderer.drawText then
 		renderer.drawText("WASD/Left Stick: Move | Arrows/Right Stick: Look", 10, 10)
-		renderer.drawText("F: Toggle Camera", 10, 30)
+		renderer.drawText("Space/Cross: Jump | E/Circle: Toggle Camera", 10, 30)
 		renderer.drawText("Camera: " .. (isFirstPerson and "First Person" or "Third Person"), 10, 50)
 	end
 end

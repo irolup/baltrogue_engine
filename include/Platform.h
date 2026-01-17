@@ -7,19 +7,21 @@
     #include <GLFW/glfw3.h>
     #include <GL/glu.h>
     
-    // Linux input mapping (using bit flags like Vita)
-    #define SCE_CTRL_UP        0x0001
-    #define SCE_CTRL_DOWN      0x0002
-    #define SCE_CTRL_LEFT      0x0004
-    #define SCE_CTRL_RIGHT     0x0008
-    #define SCE_CTRL_CROSS     0x0010
-    #define SCE_CTRL_CIRCLE    0x0020
-    #define SCE_CTRL_SQUARE    0x0040
-    #define SCE_CTRL_TRIANGLE  0x0080
-    #define SCE_CTRL_LTRIGGER  0x0100
-    #define SCE_CTRL_RTRIGGER  0x0200
-    #define SCE_CTRL_START     0x0400
-    #define SCE_CTRL_SELECT    0x0800
+    // Linux input mapping (using bit flags matching Vita SDK values)
+    // These values match the official PlayStation Vita SDK (psp2/ctrl.h)
+    // to ensure consistency between Linux and Vita builds
+    #define SCE_CTRL_SELECT    0x0001  // 1
+    #define SCE_CTRL_START     0x0008  // 8
+    #define SCE_CTRL_UP        0x0010  // 16
+    #define SCE_CTRL_RIGHT     0x0020  // 32
+    #define SCE_CTRL_DOWN      0x0040  // 64
+    #define SCE_CTRL_LEFT      0x0080  // 128
+    #define SCE_CTRL_LTRIGGER  0x0100  // 256
+    #define SCE_CTRL_RTRIGGER  0x0200  // 512
+    #define SCE_CTRL_TRIANGLE  0x1000  // 4096
+    #define SCE_CTRL_SQUARE    0x2000  // 8192
+    #define SCE_CTRL_CROSS     0x4000  // 16384
+    #define SCE_CTRL_CIRCLE    0x8000  // 32768
     
     // Linux input structure
     struct SceCtrlData {

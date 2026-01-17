@@ -45,6 +45,7 @@ action:LookRight,PC,0,262,1,0.1,1,-1,0
 action:LookUp,PC,0,265,1,0.1,1,-1,0
 action:LookDown,PC,0,264,1,0.1,1,-1,0
 action:Jump,PC,0,32,0,0.1,1,-1,0
+action:Jump,VITA,1,16384,0,0.1,1,-1,0
 action:menu_up,PC,0,265,0,0.1,1,-1,0
 action:menu_up,VITA,1,16,0,0.1,1,-1,0
 action:menu_down,PC,0,264,0,0.1,1,-1,0
