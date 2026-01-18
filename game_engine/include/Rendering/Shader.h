@@ -29,6 +29,7 @@ public:
     void setVec4Array(const std::string& name, const glm::vec4* values, size_t count);
     void setMat3(const std::string& name, const glm::mat3& value);
     void setMat4(const std::string& name, const glm::mat4& value);
+    void setMat4Array(const std::string& name, const glm::mat4* values, size_t count);
 
     bool needsTranspose = false;
     

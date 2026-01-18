@@ -5,6 +5,8 @@
 #include "Components/TextComponent.h"
 #include "Components/Area3DComponent.h"
 #include "Components/PhysicsComponent.h"
+#include "Components/AnimationComponent.h"
+#include "Rendering/AnimationManager.h"
 #include "Scene/SceneNode.h"
 #include "Input/InputManager.h"
 #include "Physics/PhysicsManager.h"
@@ -343,6 +345,7 @@ void ScriptComponent::bindEngineToLua() {
     // bindPhysicsToLua();
     bindRendererToLua();
     bindSceneToLua();
+    bindAnimationToLua();
     
     // Bind MenuManager
     MenuManager::getInstance().bindToLua(luaState);
@@ -2639,6 +2642,340 @@ void ScriptComponent::bindSceneToLua() {
     lua_settable(luaState, -3);
     
     lua_setglobal(luaState, "scene");
+}
+
+void ScriptComponent::bindAnimationToLua() {
+    if (!luaState) {
+        return;
+    }
+    
+    // Create animation table
+    lua_newtable(luaState);
+    
+    // Add AnimationComponent to a node
+    lua_pushstring(luaState, "addComponent");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto animComp = node->addComponent<AnimationComponent>();
+                    if (animComp) {
+                        lua_pushboolean(L, true);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Set skeleton for animation component
+    lua_pushstring(luaState, "setSkeleton");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        const char* skeletonName = luaL_checkstring(L, 2);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName && skeletonName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto animComp = node->getComponent<AnimationComponent>();
+                    if (animComp) {
+                        animComp->setSkeleton(skeletonName);
+                        lua_pushboolean(L, true);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Set animation clip
+    lua_pushstring(luaState, "setAnimationClip");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        const char* clipName = luaL_checkstring(L, 2);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName && clipName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto animComp = node->getComponent<AnimationComponent>();
+                    if (animComp) {
+                        animComp->setAnimationClip(clipName);
+                        lua_pushboolean(L, true);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Play animation
+    lua_pushstring(luaState, "play");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto animComp = node->getComponent<AnimationComponent>();
+                    if (animComp) {
+                        animComp->play();
+                        lua_pushboolean(L, true);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Pause animation
+    lua_pushstring(luaState, "pause");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto animComp = node->getComponent<AnimationComponent>();
+                    if (animComp) {
+                        animComp->pause();
+                        lua_pushboolean(L, true);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Stop animation
+    lua_pushstring(luaState, "stop");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto animComp = node->getComponent<AnimationComponent>();
+                    if (animComp) {
+                        animComp->stop();
+                        lua_pushboolean(L, true);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Set animation speed
+    lua_pushstring(luaState, "setSpeed");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float speed = luaL_checknumber(L, 2);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto animComp = node->getComponent<AnimationComponent>();
+                    if (animComp) {
+                        animComp->setSpeed(speed);
+                        lua_pushboolean(L, true);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Set animation loop
+    lua_pushstring(luaState, "setLoop");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        bool loop = lua_toboolean(L, 2) != 0;
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto animComp = node->getComponent<AnimationComponent>();
+                    if (animComp) {
+                        animComp->setLoop(loop);
+                        lua_pushboolean(L, true);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Get available skeletons
+    lua_pushstring(luaState, "getAvailableSkeletons");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& animManager = AnimationManager::getInstance();
+            auto skeletons = animManager.getAvailableSkeletons();
+            
+            lua_newtable(L);
+            for (size_t i = 0; i < skeletons.size(); ++i) {
+                lua_pushinteger(L, i + 1);
+                lua_pushstring(L, skeletons[i].c_str());
+                lua_settable(L, -3);
+            }
+            return 1;
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        
+        lua_newtable(L);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Get available animation clips for a skeleton
+    lua_pushstring(luaState, "getAnimationClips");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* skeletonName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            if (skeletonName) {
+                auto& animManager = AnimationManager::getInstance();
+                auto clips = animManager.getAnimationClipsForSkeleton(skeletonName);
+                
+                lua_newtable(L);
+                for (size_t i = 0; i < clips.size(); ++i) {
+                    lua_pushinteger(L, i + 1);
+                    lua_pushstring(L, clips[i].c_str());
+                    lua_settable(L, -3);
+                }
+                return 1;
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        
+        lua_newtable(L);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    lua_setglobal(luaState, "animation");
 }
 
 } // namespace GameEngine

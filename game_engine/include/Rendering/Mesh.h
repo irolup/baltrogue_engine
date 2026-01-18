@@ -27,10 +27,14 @@ struct Vertex {
     glm::vec3 normal;
     glm::vec2 texCoords;
     glm::vec3 tangent;
+    glm::vec4 boneWeights;  // Bone weights (for skinning)
+    glm::vec4 boneIndices;  // Bone indices (for skinning)
     
-    Vertex() : position(0.0f), normal(0.0f, 1.0f, 0.0f), texCoords(0.0f), tangent(1.0f, 0.0f, 0.0f) {}
+    Vertex() : position(0.0f), normal(0.0f, 1.0f, 0.0f), texCoords(0.0f), tangent(1.0f, 0.0f, 0.0f), 
+               boneWeights(0.0f, 0.0f, 0.0f, 0.0f), boneIndices(0.0f, 0.0f, 0.0f, 0.0f) {}
     Vertex(const glm::vec3& pos, const glm::vec3& norm, const glm::vec2& tex)
-        : position(pos), normal(norm), texCoords(tex), tangent(1.0f, 0.0f, 0.0f) {}
+        : position(pos), normal(norm), texCoords(tex), tangent(1.0f, 0.0f, 0.0f),
+          boneWeights(0.0f, 0.0f, 0.0f, 0.0f), boneIndices(0.0f, 0.0f, 0.0f, 0.0f) {}
 };
 
 class Mesh {

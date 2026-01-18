@@ -19,6 +19,7 @@ struct RenderCommand {
     std::shared_ptr<Material> material;
     glm::mat4 modelMatrix;
     glm::mat3 normalMatrix;
+    std::vector<glm::mat4> boneTransforms;  // For animated/skinned meshes
 };
 
 class Renderer {

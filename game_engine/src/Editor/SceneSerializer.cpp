@@ -9,6 +9,7 @@
 #include "Components/TextComponent.h"
 #include "Components/ScriptComponent.h"
 #include "Components/Area3DComponent.h"
+#include "Components/AnimationComponent.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Rendering/TextureManager.h"
@@ -2014,6 +2015,23 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                         // Debug
                         componentJson["showDebugShape"] = area3DComp->getShowDebugShape();
                     }
+                } else if (component->getTypeName() == "AnimationComponent") {
+                    auto animComp = node->getComponent<AnimationComponent>();
+                    if (animComp) {
+                        auto skeleton = animComp->getSkeleton();
+                        if (skeleton) {
+                            componentJson["skeletonName"] = skeleton->getName();
+                        }
+                        
+                        auto clip = animComp->getCurrentAnimationClip();
+                        if (clip) {
+                            componentJson["animationClipName"] = clip->getName();
+                        }
+                        
+                        componentJson["loop"] = animComp->getLoop();
+                        componentJson["speed"] = animComp->getSpeed();
+                        componentJson["autoPlay"] = animComp->isPlaying();
+                    }
                 }
                 
                 componentsArray.push_back(componentJson);
@@ -2430,6 +2448,30 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     }
                     
                     area3DComp->start(); // Initialize the area3D component
+                } else if (type == "AnimationComponent") {
+                    auto animComp = node->addComponent<AnimationComponent>();
+                    
+                    if (componentJson.contains("skeletonName")) {
+                        std::string skeletonName = componentJson["skeletonName"];
+                        animComp->setSkeleton(skeletonName);
+                    }
+                    
+                    if (componentJson.contains("animationClipName")) {
+                        std::string clipName = componentJson["animationClipName"];
+                        animComp->setAnimationClip(clipName);
+                    }
+                    
+                    if (componentJson.contains("loop")) {
+                        animComp->setLoop(componentJson["loop"]);
+                    }
+                    
+                    if (componentJson.contains("speed")) {
+                        animComp->setSpeed(componentJson["speed"]);
+                    }
+                    
+                    if (componentJson.contains("autoPlay") && componentJson["autoPlay"]) {
+                        animComp->play();
+                    }
                 }
             }
         }

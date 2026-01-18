@@ -196,6 +196,37 @@ void Renderer::processRenderQueue() {
                 shader->setMat3("normalMatrix", command.normalMatrix);
                 shader->setMat4("viewMatrix", activeCamera->getViewMatrix());
                 shader->setMat4("projectionMatrix", activeCamera->getProjectionMatrix());
+                
+                // Pass bone transforms for animated/skinned meshes
+                if (!command.boneTransforms.empty()) {
+                    // Debug: Check which shader is being used
+                    static int bonePassCount = 0;
+                    bonePassCount++;
+                    if (bonePassCount == 1) {  // Log only first time
+                        std::cout << "Renderer: Using shader program ID: " << shader->getProgram() << std::endl;
+                        GLint boneMatLoc = glGetUniformLocation(shader->getProgram(), "u_BoneMatrices");
+                        GLint numBonesLoc = glGetUniformLocation(shader->getProgram(), "u_NumBones");
+                        std::cout << "Renderer: u_BoneMatrices location: " << boneMatLoc << ", u_NumBones location: " << numBonesLoc << std::endl;
+                        
+                        // List all active uniforms in the shader
+                        GLint numUniforms = 0;
+                        glGetProgramiv(shader->getProgram(), GL_ACTIVE_UNIFORMS, &numUniforms);
+                        std::cout << "Renderer: Shader has " << numUniforms << " active uniforms" << std::endl;
+                        for (int i = 0; i < numUniforms; ++i) {
+                            char name[256];
+                            GLint size;
+                            GLenum type;
+                            glGetActiveUniform(shader->getProgram(), i, 256, NULL, &size, &type, name);
+                            GLint loc = glGetUniformLocation(shader->getProgram(), name);
+                            std::cout << "  Uniform[" << i << "]: " << name << " (type=" << type << ", size=" << size << ", location=" << loc << ")" << std::endl;
+                        }
+                    }
+                    
+                    shader->setMat4Array("u_BoneMatrices", command.boneTransforms.data(), command.boneTransforms.size());
+                    shader->setInt("u_NumBones", static_cast<int>(command.boneTransforms.size()));
+                } else {
+                    shader->setInt("u_NumBones", 0);
+                }
             }
             
             command.mesh->draw();

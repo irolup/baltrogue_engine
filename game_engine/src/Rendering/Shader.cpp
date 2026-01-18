@@ -122,6 +122,31 @@ void Shader::setMat4(const std::string& name, const glm::mat4& value) {
     #endif
 }
 
+void Shader::setMat4Array(const std::string& name, const glm::mat4* values, size_t count) {
+    GLint location = getUniformLocation(name);
+    if (location == -1) {
+        static int warnCount = 0;
+        warnCount++;
+        if (warnCount % 60 == 0) {  // Log every 60 frames
+            std::cerr << "Shader: Uniform '" << name << "' not found! Shader may not support bone matrices." << std::endl;
+        }
+        return;
+    }
+    if (count == 0) return;
+
+    #ifdef LINUX_BUILD
+        glUniformMatrix4fv(location, static_cast<GLsizei>(count), GL_FALSE, &values[0][0][0]);
+    #else
+        glUniformMatrix4fv(location, static_cast<GLsizei>(count), needsTranspose ? GL_TRUE : GL_FALSE, &values[0][0][0]);
+    #endif
+    
+    static int setCount = 0;
+    setCount++;
+    if (setCount % 60 == 0) {  // Log every 60 frames
+        std::cout << "Shader: Set uniform '" << name << "' with " << count << " matrices (location=" << location << ")" << std::endl;
+    }
+}
+
 std::shared_ptr<Shader> Shader::getDefaultShader() {
     static std::shared_ptr<Shader> defaultShader = nullptr;
     
@@ -294,6 +319,10 @@ std::shared_ptr<Shader> Shader::getErrorShader() {
 std::shared_ptr<Shader> Shader::getLightingShader() {
     static std::shared_ptr<Shader> lightingShader = nullptr;
     
+    // Force recreation to pick up changes (for debugging)
+    // Remove this after confirming it works
+    // lightingShader = nullptr;
+    
     if (!lightingShader) {
         lightingShader = std::make_shared<Shader>();
         
@@ -303,35 +332,78 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
         std::cout << "Trying to load external lighting shaders..." << std::endl;
         
         if (lightingShader->loadFromFiles("assets/linux_shaders/lighting.vert", "assets/linux_shaders/lighting.frag")) {
-            std::cout << "Successfully loaded external lighting shaders from assets/linux_shaders/" << std::endl;
+            std::cout << "Successfully loaded EXTERNAL lighting shaders from assets/linux_shaders/" << std::endl;
+            // Verify bone matrix uniform exists in external shader
+            lightingShader->use();
+            GLint boneMatLoc = glGetUniformLocation(lightingShader->getProgram(), "u_BoneMatrices");
+            GLint numBonesLoc = glGetUniformLocation(lightingShader->getProgram(), "u_NumBones");
+            if (boneMatLoc == -1) {
+                std::cerr << "ERROR: u_BoneMatrices uniform NOT FOUND in EXTERNAL shader (assets/linux_shaders/lighting.vert)" << std::endl;
+                std::cerr << "The shader file needs bone animation support added!" << std::endl;
+            } else {
+                std::cout << "EXTERNAL shader: u_BoneMatrices found at location " << boneMatLoc << std::endl;
+            }
+            if (numBonesLoc == -1) {
+                std::cerr << "ERROR: u_NumBones uniform NOT FOUND in EXTERNAL shader" << std::endl;
+            } else {
+                std::cout << "EXTERNAL shader: u_NumBones found at location " << numBonesLoc << std::endl;
+            }
+            lightingShader->unuse();
             return lightingShader;
         }
         
         // Try relative to current directory
         if (lightingShader->loadFromFiles("./assets/linux_shaders/lighting.vert", "./assets/linux_shaders/lighting.frag")) {
-            std::cout << "Successfully loaded external lighting shaders from ./assets/linux_shaders/" << std::endl;
+            std::cout << "Successfully loaded EXTERNAL lighting shaders from ./assets/linux_shaders/" << std::endl;
+            // Verify bone matrix uniform exists
+            lightingShader->use();
+            GLint boneMatLoc = glGetUniformLocation(lightingShader->getProgram(), "u_BoneMatrices");
+            GLint numBonesLoc = glGetUniformLocation(lightingShader->getProgram(), "u_NumBones");
+            if (boneMatLoc == -1) {
+                std::cerr << "WARNING: u_BoneMatrices uniform NOT FOUND in EXTERNAL shader (./assets/linux_shaders/lighting.vert)" << std::endl;
+            } else {
+                std::cout << "EXTERNAL shader: u_BoneMatrices found at location " << boneMatLoc << std::endl;
+            }
+            lightingShader->unuse();
             return lightingShader;
         }
         
         // Try from project root
         if (lightingShader->loadFromFiles("../assets/linux_shaders/lighting.vert", "../assets/linux_shaders/lighting.frag")) {
-            std::cout << "Successfully loaded external lighting shaders from ../assets/linux_shaders/" << std::endl;
+            std::cout << "Successfully loaded EXTERNAL lighting shaders from ../assets/linux_shaders/" << std::endl;
+            // Verify bone matrix uniform exists
+            lightingShader->use();
+            GLint boneMatLoc = glGetUniformLocation(lightingShader->getProgram(), "u_BoneMatrices");
+            if (boneMatLoc == -1) {
+                std::cerr << "WARNING: u_BoneMatrices uniform NOT FOUND in EXTERNAL shader" << std::endl;
+            } else {
+                std::cout << "EXTERNAL shader: u_BoneMatrices found at location " << boneMatLoc << std::endl;
+            }
+            lightingShader->unuse();
             return lightingShader;
         }
         
         std::cout << "External lighting shaders not found, using embedded fallback" << std::endl;
         
         // Fallback to embedded lighting shader if files can't be loaded
+        // Note: Uses attribute names that match Mesh::setupBuffers() binding
         std::string vertexSource = R"(
             #version 120
-            attribute vec3 aPos;
-            attribute vec3 aNormal;
-            attribute vec2 aTexCoord;
+            attribute vec3 position;
+            attribute vec3 normal;
+            attribute vec2 texCoords;
+            attribute vec3 tangent;
+            attribute vec4 boneWeights;
+            attribute vec4 boneIndices;
             
             uniform mat4 modelMatrix;
             uniform mat4 viewMatrix;
             uniform mat4 projectionMatrix;
             uniform mat3 normalMatrix;
+            
+            // Bone animation uniforms
+            uniform mat4 u_BoneMatrices[100];
+            uniform int u_NumBones;
             
             varying vec3 vWorldPos;
             varying vec3 vNormal;
@@ -339,14 +411,58 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
             varying vec3 vViewPos;
             
             void main() {
-                vec4 worldPos = modelMatrix * vec4(aPos, 1.0);
+                vec4 skinnedPosition = vec4(position, 1.0);
+                vec3 skinnedNormal = normal;
+                
+                // Apply bone skinning if bones are available
+                if (u_NumBones > 0 && boneWeights.x > 0.0) {
+                    // Get bone indices (convert from float to int)
+                    // GLSL 120/Cg: Use ivec4 to convert all at once, then extract components
+                    ivec4 boneIndicesInt = ivec4(floor(boneIndices + 0.5));
+                    int boneIndex0 = boneIndicesInt.x;
+                    int boneIndex1 = boneIndicesInt.y;
+                    int boneIndex2 = boneIndicesInt.z;
+                    int boneIndex3 = boneIndicesInt.w;
+                    
+                    // Clamp bone indices to valid range (max 99 to match array size)
+                    int maxBoneIndex = u_NumBones - 1;
+                    if (maxBoneIndex > 99) maxBoneIndex = 99;
+                    // Manual clamping for GLSL 120 compatibility (clamp() may return float)
+                    if (boneIndex0 < 0) boneIndex0 = 0;
+                    if (boneIndex0 > maxBoneIndex) boneIndex0 = maxBoneIndex;
+                    if (boneIndex1 < 0) boneIndex1 = 0;
+                    if (boneIndex1 > maxBoneIndex) boneIndex1 = maxBoneIndex;
+                    if (boneIndex2 < 0) boneIndex2 = 0;
+                    if (boneIndex2 > maxBoneIndex) boneIndex2 = maxBoneIndex;
+                    if (boneIndex3 < 0) boneIndex3 = 0;
+                    if (boneIndex3 > maxBoneIndex) boneIndex3 = maxBoneIndex;
+                    
+                    // Apply bone transformations (blend matrices correctly)
+                    // Each bone transform is applied separately and then blended
+                    vec4 pos0 = u_BoneMatrices[boneIndex0] * vec4(position, 1.0);
+                    vec4 pos1 = u_BoneMatrices[boneIndex1] * vec4(position, 1.0);
+                    vec4 pos2 = u_BoneMatrices[boneIndex2] * vec4(position, 1.0);
+                    vec4 pos3 = u_BoneMatrices[boneIndex3] * vec4(position, 1.0);
+                    
+                    // Blend the transformed positions
+                    skinnedPosition = pos0 * boneWeights.x + pos1 * boneWeights.y + pos2 * boneWeights.z + pos3 * boneWeights.w;
+                    
+                    // Transform normal (blend separately)
+                    vec3 norm0 = normalize(mat3(u_BoneMatrices[boneIndex0]) * normal);
+                    vec3 norm1 = normalize(mat3(u_BoneMatrices[boneIndex1]) * normal);
+                    vec3 norm2 = normalize(mat3(u_BoneMatrices[boneIndex2]) * normal);
+                    vec3 norm3 = normalize(mat3(u_BoneMatrices[boneIndex3]) * normal);
+                    skinnedNormal = normalize(norm0 * boneWeights.x + norm1 * boneWeights.y + norm2 * boneWeights.z + norm3 * boneWeights.w);
+                }
+                
+                vec4 worldPos = modelMatrix * skinnedPosition;
                 vWorldPos = worldPos.xyz;
                 
                 vec4 viewPos = viewMatrix * worldPos;
                 vViewPos = viewPos.xyz;
                 
-                vNormal = normalize(normalMatrix * aNormal);
-                vTexCoord = aTexCoord;
+                vNormal = normalize(normalMatrix * skinnedNormal);
+                vTexCoord = texCoords;
                 
                 gl_Position = projectionMatrix * viewPos;
             }
@@ -379,6 +495,21 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
             lightingShader.reset();
         } else {
             std::cout << "Using embedded lighting shader (external files not found)" << std::endl;
+            // Verify bone matrix uniform exists
+            lightingShader->use();
+            GLint boneMatLoc = glGetUniformLocation(lightingShader->getProgram(), "u_BoneMatrices");
+            GLint numBonesLoc = glGetUniformLocation(lightingShader->getProgram(), "u_NumBones");
+            if (boneMatLoc == -1) {
+                std::cerr << "WARNING: u_BoneMatrices uniform not found in embedded lighting shader!" << std::endl;
+            } else {
+                std::cout << "Embedded lighting shader: u_BoneMatrices found at location " << boneMatLoc << std::endl;
+            }
+            if (numBonesLoc == -1) {
+                std::cerr << "WARNING: u_NumBones uniform not found in embedded lighting shader!" << std::endl;
+            } else {
+                std::cout << "Embedded lighting shader: u_NumBones found at location " << numBonesLoc << std::endl;
+            }
+            lightingShader->unuse();
         }
     #else
         // Vita builds use CG/HLSL shaders
@@ -412,6 +543,8 @@ bool Shader::compileShader(GLuint& shader, GLenum type, const std::string& sourc
     if (!success) {
         GLchar infoLog[1024];
         glGetShaderInfoLog(shader, 1024, NULL, infoLog);
+        std::cerr << "Shader compilation failed (" << (type == GL_VERTEX_SHADER ? "vertex" : "fragment") << "):" << std::endl;
+        std::cerr << infoLog << std::endl;
         
         glDeleteShader(shader);
         shader = 0;
@@ -425,6 +558,15 @@ bool Shader::linkProgram() {
     program = glCreateProgram();
     glAttachShader(program, vertexShader);
     glAttachShader(program, fragmentShader);
+    
+    // Bind attribute locations (for GLSL 120 compatibility)
+    glBindAttribLocation(program, 0, "position");
+    glBindAttribLocation(program, 1, "normal");
+    glBindAttribLocation(program, 2, "texCoords");
+    glBindAttribLocation(program, 3, "tangent");
+    glBindAttribLocation(program, 4, "boneWeights");
+    glBindAttribLocation(program, 5, "boneIndices");
+    
     glLinkProgram(program);
     
     GLint success;

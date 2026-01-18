@@ -64,6 +64,7 @@ private:
     void bindPhysicsToLua();
     void bindRendererToLua();
     void bindSceneToLua();
+    void bindAnimationToLua();
 };
 
 } // namespace GameEngine

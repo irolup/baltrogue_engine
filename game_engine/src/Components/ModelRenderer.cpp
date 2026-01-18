@@ -1,9 +1,11 @@
 #include "Components/ModelRenderer.h"
 #include "Rendering/Renderer.h"
 #include "Rendering/TextureManager.h"
+#include "Rendering/AnimationManager.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Scene/SceneNode.h"
+#include "Components/AnimationComponent.h"
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
@@ -25,6 +27,7 @@
 
 // Include tinygltf for GLTF loading
 #include "../../vendor/tinygltf/tiny_gltf.h"
+#include "../../vendor/tinygltf/stb_image.h"
 
 namespace GameEngine {
 
@@ -50,7 +53,15 @@ void ModelRenderer::render(Renderer& renderer) {
     // Get the world transform matrix
     glm::mat4 modelMatrix = owner->getWorldMatrix();
     
-    // Debug output removed for cleaner console
+    auto animComp = owner->getComponent<AnimationComponent>();
+    if (!animComp && owner->getParent()) {
+        animComp = owner->getParent()->getComponent<AnimationComponent>();
+    }
+    
+    std::vector<glm::mat4> boneTransforms;
+    if (animComp) {
+        boneTransforms = animComp->getBoneTransforms();
+    }
     
     // Render each mesh in the model
     for (size_t i = 0; i < modelData.meshes.size(); ++i) {
@@ -65,6 +76,7 @@ void ModelRenderer::render(Renderer& renderer) {
         command.material = material;
         command.modelMatrix = modelMatrix;
         command.normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
+        command.boneTransforms = boneTransforms;  // Pass bone transforms for skinning
         
         // Submit to renderer
         renderer.submitRenderCommand(command);
@@ -116,7 +128,6 @@ bool ModelRenderer::loadModel(const std::string& modelPath) {
         modelData.modelPath = modelPath;
         modelData.modelName = getFileName(modelPath);
         modelData.isLoaded = true;
-        std::cout << "ModelRenderer: Successfully loaded model: " << modelPath << std::endl;
     } else {
         std::cerr << "ModelRenderer: Failed to load model: " << modelPath << std::endl;
     }
@@ -155,9 +166,9 @@ bool ModelRenderer::loadGLTFModel(const std::string& modelPath) {
         return false;
     }
     
-    if (!warn.empty()) {
-        std::cout << "ModelRenderer: GLTF warnings: " << warn << std::endl;
-    }
+    
+    // Extract model name early for skeleton/animation extraction
+    std::string modelName = getFileName(modelPath);
     
     // Load materials first
     for (size_t i = 0; i < gltfModel.materials.size(); ++i) {
@@ -167,17 +178,48 @@ bool ModelRenderer::loadGLTFModel(const std::string& modelPath) {
         }
     }
     
-    // Load meshes
     for (size_t i = 0; i < gltfModel.meshes.size(); ++i) {
         const auto& gltfMesh = gltfModel.meshes[i];
         
         for (size_t j = 0; j < gltfMesh.primitives.size(); ++j) {
             const auto& primitive = gltfMesh.primitives[j];
             auto mesh = createMeshFromGLTF(gltfModel, gltfMesh, primitive);
-            if (mesh) {
+            if (mesh && mesh->getVertexCount() > 0) {
                 modelData.meshes.push_back(mesh);
+            } else {
+                std::cerr << "ModelRenderer: Failed to load primitive " << j 
+                          << " from mesh '" << gltfMesh.name << "'" << std::endl;
             }
         }
+    }
+    
+    // Extract skeletons from skins
+    auto& animManager = AnimationManager::getInstance();
+    std::string defaultSkeletonName = "";
+    for (size_t i = 0; i < gltfModel.skins.size(); ++i) {
+        std::string skeletonName = gltfModel.skins[i].name.empty() 
+            ? modelName + "_Skeleton_" + std::to_string(i)
+            : gltfModel.skins[i].name;
+        
+        if (i == 0) {
+            defaultSkeletonName = skeletonName;
+        }
+        
+        animManager.loadSkeleton(modelPath, skeletonName);
+    }
+    
+    // Extract animations
+    for (size_t i = 0; i < gltfModel.animations.size(); ++i) {
+        std::string animName = gltfModel.animations[i].name.empty()
+            ? modelName + "_Animation_" + std::to_string(i)
+            : gltfModel.animations[i].name;
+        
+        // Use the first skeleton as target (or default name if no skeletons)
+        std::string targetSkeleton = defaultSkeletonName.empty() 
+            ? (modelName + "_Skeleton_0")
+            : defaultSkeletonName;
+        
+        animManager.loadAnimationClip(modelPath, static_cast<int>(i), targetSkeleton, animName);
     }
     
     return !modelData.meshes.empty();
@@ -186,8 +228,13 @@ bool ModelRenderer::loadGLTFModel(const std::string& modelPath) {
 std::shared_ptr<Mesh> ModelRenderer::createMeshFromGLTF(const tinygltf::Model& gltfModel, const tinygltf::Mesh& gltfMesh, const tinygltf::Primitive& primitive) {
     auto mesh = std::make_shared<Mesh>();
     
-    // Get vertex positions
-    if (primitive.attributes.find("POSITION") != primitive.attributes.end()) {
+    // Get vertex positions (required)
+    if (primitive.attributes.find("POSITION") == primitive.attributes.end()) {
+        std::cerr << "ModelRenderer: Primitive missing POSITION attribute" << std::endl;
+        return nullptr;
+    }
+    
+    {
         const auto& posAccessor = gltfModel.accessors[primitive.attributes.at("POSITION")];
         const auto& posBufferView = gltfModel.bufferViews[posAccessor.bufferView];
         const auto& posBuffer = gltfModel.buffers[posBufferView.buffer];
@@ -215,6 +262,36 @@ std::shared_ptr<Mesh> ModelRenderer::createMeshFromGLTF(const tinygltf::Model& g
             texCoords = reinterpret_cast<const float*>(&texBuffer.data[texBufferView.byteOffset + texAccessor.byteOffset]);
         }
         
+        // Get bone weights if available (for skinning)
+        const float* boneWeights = nullptr;
+        bool hasBoneWeights = false;
+        if (primitive.attributes.find("WEIGHTS_0") != primitive.attributes.end()) {
+            const auto& weightsAccessor = gltfModel.accessors[primitive.attributes.at("WEIGHTS_0")];
+            const auto& weightsBufferView = gltfModel.bufferViews[weightsAccessor.bufferView];
+            const auto& weightsBuffer = gltfModel.buffers[weightsBufferView.buffer];
+            boneWeights = reinterpret_cast<const float*>(&weightsBuffer.data[weightsBufferView.byteOffset + weightsAccessor.byteOffset]);
+            hasBoneWeights = true;
+        }
+        
+        // Get bone indices if available (for skinning)
+        const unsigned short* boneIndices = nullptr;
+        const unsigned char* boneIndicesU8 = nullptr;
+        int boneIndicesComponentType = -1;
+        bool hasBoneIndices = false;
+        if (primitive.attributes.find("JOINTS_0") != primitive.attributes.end()) {
+            const auto& jointsAccessor = gltfModel.accessors[primitive.attributes.at("JOINTS_0")];
+            const auto& jointsBufferView = gltfModel.bufferViews[jointsAccessor.bufferView];
+            const auto& jointsBuffer = gltfModel.buffers[jointsBufferView.buffer];
+            boneIndicesComponentType = jointsAccessor.componentType;
+            hasBoneIndices = true;
+            
+            if (jointsAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                boneIndices = reinterpret_cast<const unsigned short*>(&jointsBuffer.data[jointsBufferView.byteOffset + jointsAccessor.byteOffset]);
+            } else if (jointsAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+                boneIndicesU8 = reinterpret_cast<const unsigned char*>(&jointsBuffer.data[jointsBufferView.byteOffset + jointsAccessor.byteOffset]);
+            }
+        }
+        
         // Create vertices
         std::vector<Vertex> vertices;
         vertices.reserve(vertexCount);
@@ -240,6 +317,38 @@ std::shared_ptr<Mesh> ModelRenderer::createMeshFromGLTF(const tinygltf::Model& g
 #endif
             } else {
                 vertex.texCoords = glm::vec2(0.0f, 0.0f); // Default UV
+            }
+            
+            // Load bone weights and indices for skinning
+            if (boneWeights) {
+                vertex.boneWeights = glm::vec4(
+                    boneWeights[i * 4], 
+                    boneWeights[i * 4 + 1], 
+                    boneWeights[i * 4 + 2], 
+                    boneWeights[i * 4 + 3]
+                );
+            } else {
+                vertex.boneWeights = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f); // Default: use first bone only
+            }
+            
+            if (boneIndices) {
+                // Convert unsigned short indices to float (shader expects float)
+                vertex.boneIndices = glm::vec4(
+                    static_cast<float>(boneIndices[i * 4]),
+                    static_cast<float>(boneIndices[i * 4 + 1]),
+                    static_cast<float>(boneIndices[i * 4 + 2]),
+                    static_cast<float>(boneIndices[i * 4 + 3])
+                );
+            } else if (boneIndicesU8) {
+                // Convert unsigned byte indices to float
+                vertex.boneIndices = glm::vec4(
+                    static_cast<float>(boneIndicesU8[i * 4]),
+                    static_cast<float>(boneIndicesU8[i * 4 + 1]),
+                    static_cast<float>(boneIndicesU8[i * 4 + 2]),
+                    static_cast<float>(boneIndicesU8[i * 4 + 3])
+                );
+            } else {
+                vertex.boneIndices = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
             }
             
             vertices.push_back(vertex);
@@ -274,10 +383,15 @@ std::shared_ptr<Mesh> ModelRenderer::createMeshFromGLTF(const tinygltf::Model& g
                 mesh->setIndices(indices);
             }
             mesh->upload();
+            return mesh;
+        } else {
+            std::cerr << "ModelRenderer: No vertices created for mesh" << std::endl;
+            return nullptr;
         }
     }
     
-    return mesh;
+    std::cerr << "ModelRenderer: Failed to process mesh primitive" << std::endl;
+    return nullptr;
 }
 
 std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::Model& gltfModel, int materialIndex, const std::string& modelPath) {
@@ -304,38 +418,55 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
         const auto& texture = gltfModel.textures[textureInfo.index];
         const auto& image = gltfModel.images[texture.source];
         
-        std::string texturePath;
+        bool textureLoaded = false;
         
         // Handle embedded images (data URI)
         if (image.uri.empty() && !image.image.empty()) {
-            // This is an embedded image - we need to save it to a temporary file
-            // For now, we'll skip embedded images and use a placeholder
-            std::cout << "ModelRenderer: Embedded texture detected, using placeholder" << std::endl;
-            texturePath = "assets/textures/default_diffuse.png";
-        } else if (!image.uri.empty()) {
-            // This is a file path
-            if (image.uri.substr(0, 4) == "data") {
-                // Data URI - skip for now
-                std::cout << "ModelRenderer: Data URI texture detected, using placeholder" << std::endl;
-                texturePath = "assets/textures/default_diffuse.png";
-            } else {
-                // Regular file path - construct full path
-                std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
-                texturePath = modelDir + image.uri;
-                std::cout << "ModelRenderer: Loading diffuse texture from: " << texturePath << std::endl;
+            auto embeddedTexture = std::make_shared<Texture>();
+            
+            if (!image.as_is && image.width > 0 && image.height > 0 && image.component > 0) {
+                TextureFormat texFormat = (image.component == 3) ? TextureFormat::RGB : TextureFormat::RGBA;
+                if (embeddedTexture->createFromData(image.image.data(), image.width, image.height, texFormat)) {
+                    material->setDiffuseTexture(embeddedTexture);
+                    textureLoaded = true;
+                }
+            } else if (image.as_is) {
+                int width, height, channels;
+                unsigned char* decodedData = stbi_load_from_memory(
+                    image.image.data(), 
+                    static_cast<int>(image.image.size()),
+                    &width, &height, &channels, 0
+                );
+                if (decodedData) {
+                    TextureFormat texFormat = (channels == 3) ? TextureFormat::RGB : TextureFormat::RGBA;
+                    if (embeddedTexture->createFromData(decodedData, width, height, texFormat)) {
+                        material->setDiffuseTexture(embeddedTexture);
+                        textureLoaded = true;
+                    }
+                    stbi_image_free(decodedData);
+                }
             }
-        } else {
-            // Fallback to placeholder
-            texturePath = "assets/textures/default_diffuse.png";
         }
         
-        auto textureManager = &TextureManager::getInstance();
-        auto diffuseTexture = textureManager->getTexture(texturePath);
-        if (diffuseTexture) {
-            material->setDiffuseTexture(diffuseTexture);
-            std::cout << "ModelRenderer: Successfully loaded diffuse texture: " << texturePath << std::endl;
-        } else {
-            std::cout << "ModelRenderer: Failed to load diffuse texture: " << texturePath << std::endl;
+        if (!textureLoaded) {
+            std::string texturePath;
+            
+            if (!image.uri.empty()) {
+                if (image.uri.substr(0, 4) == "data") {
+                    texturePath = "assets/textures/default_diffuse.png";
+                } else {
+                    std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
+                    texturePath = modelDir + image.uri;
+                }
+            } else {
+                texturePath = "assets/textures/default_diffuse.png";
+            }
+            
+            auto textureManager = &TextureManager::getInstance();
+            auto diffuseTexture = textureManager->getTexture(texturePath);
+            if (diffuseTexture) {
+                material->setDiffuseTexture(diffuseTexture);
+            }
         }
     }
     
@@ -345,31 +476,55 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
         const auto& texture = gltfModel.textures[textureInfo.index];
         const auto& image = gltfModel.images[texture.source];
         
-        std::string texturePath;
+        bool textureLoaded = false;
         
+        // Handle embedded images (data URI)
         if (image.uri.empty() && !image.image.empty()) {
-            std::cout << "ModelRenderer: Embedded normal texture detected, using placeholder" << std::endl;
-            texturePath = "assets/textures/default_normal.png";
-        } else if (!image.uri.empty()) {
-            if (image.uri.substr(0, 4) == "data") {
-                std::cout << "ModelRenderer: Data URI normal texture detected, using placeholder" << std::endl;
-                texturePath = "assets/textures/default_normal.png";
-            } else {
-                std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
-                texturePath = modelDir + image.uri;
-                std::cout << "ModelRenderer: Loading normal texture from: " << texturePath << std::endl;
+            auto embeddedTexture = std::make_shared<Texture>();
+            
+            if (!image.as_is && image.width > 0 && image.height > 0 && image.component > 0) {
+                TextureFormat texFormat = (image.component == 3) ? TextureFormat::RGB : TextureFormat::RGBA;
+                if (embeddedTexture->createFromData(image.image.data(), image.width, image.height, texFormat)) {
+                    material->setNormalTexture(embeddedTexture);
+                    textureLoaded = true;
+                }
+            } else if (image.as_is) {
+                int width, height, channels;
+                unsigned char* decodedData = stbi_load_from_memory(
+                    image.image.data(), 
+                    static_cast<int>(image.image.size()),
+                    &width, &height, &channels, 0
+                );
+                if (decodedData) {
+                    TextureFormat texFormat = (channels == 3) ? TextureFormat::RGB : TextureFormat::RGBA;
+                    if (embeddedTexture->createFromData(decodedData, width, height, texFormat)) {
+                        material->setNormalTexture(embeddedTexture);
+                        textureLoaded = true;
+                    }
+                    stbi_image_free(decodedData);
+                }
             }
-        } else {
-            texturePath = "assets/textures/default_normal.png";
         }
         
-        auto textureManager = &TextureManager::getInstance();
-        auto normalTexture = textureManager->getTexture(texturePath);
-        if (normalTexture) {
-            material->setNormalTexture(normalTexture);
-            std::cout << "ModelRenderer: Successfully loaded normal texture: " << texturePath << std::endl;
-        } else {
-            std::cout << "ModelRenderer: Failed to load normal texture: " << texturePath << std::endl;
+        if (!textureLoaded) {
+            std::string texturePath;
+            
+            if (!image.uri.empty()) {
+                if (image.uri.substr(0, 4) == "data") {
+                    texturePath = "assets/textures/default_normal.png";
+                } else {
+                    std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
+                    texturePath = modelDir + image.uri;
+                }
+            } else {
+                texturePath = "assets/textures/default_normal.png";
+            }
+            
+            auto textureManager = &TextureManager::getInstance();
+            auto normalTexture = textureManager->getTexture(texturePath);
+            if (normalTexture) {
+                material->setNormalTexture(normalTexture);
+            }
         }
     }
     
@@ -379,31 +534,55 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
         const auto& texture = gltfModel.textures[textureInfo.index];
         const auto& image = gltfModel.images[texture.source];
         
-        std::string texturePath;
+        bool textureLoaded = false;
         
+        // Handle embedded images (data URI)
         if (image.uri.empty() && !image.image.empty()) {
-            std::cout << "ModelRenderer: Embedded ARM texture detected, using placeholder" << std::endl;
-            texturePath = "assets/textures/default_arm.png";
-        } else if (!image.uri.empty()) {
-            if (image.uri.substr(0, 4) == "data") {
-                std::cout << "ModelRenderer: Data URI ARM texture detected, using placeholder" << std::endl;
-                texturePath = "assets/textures/default_arm.png";
-            } else {
-                std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
-                texturePath = modelDir + image.uri;
-                std::cout << "ModelRenderer: Loading ARM texture from: " << texturePath << std::endl;
+            auto embeddedTexture = std::make_shared<Texture>();
+            
+            if (!image.as_is && image.width > 0 && image.height > 0 && image.component > 0) {
+                TextureFormat texFormat = (image.component == 3) ? TextureFormat::RGB : TextureFormat::RGBA;
+                if (embeddedTexture->createFromData(image.image.data(), image.width, image.height, texFormat)) {
+                    material->setARMTexture(embeddedTexture);
+                    textureLoaded = true;
+                }
+            } else if (image.as_is) {
+                int width, height, channels;
+                unsigned char* decodedData = stbi_load_from_memory(
+                    image.image.data(), 
+                    static_cast<int>(image.image.size()),
+                    &width, &height, &channels, 0
+                );
+                if (decodedData) {
+                    TextureFormat texFormat = (channels == 3) ? TextureFormat::RGB : TextureFormat::RGBA;
+                    if (embeddedTexture->createFromData(decodedData, width, height, texFormat)) {
+                        material->setARMTexture(embeddedTexture);
+                        textureLoaded = true;
+                    }
+                    stbi_image_free(decodedData);
+                }
             }
-        } else {
-            texturePath = "assets/textures/default_arm.png";
         }
         
-        auto textureManager = &TextureManager::getInstance();
-        auto armTexture = textureManager->getTexture(texturePath);
-        if (armTexture) {
-            material->setARMTexture(armTexture);
-            std::cout << "ModelRenderer: Successfully loaded ARM texture: " << texturePath << std::endl;
-        } else {
-            std::cout << "ModelRenderer: Failed to load ARM texture: " << texturePath << std::endl;
+        if (!textureLoaded) {
+            std::string texturePath;
+            
+            if (!image.uri.empty()) {
+                if (image.uri.substr(0, 4) == "data") {
+                    texturePath = "assets/textures/default_arm.png";
+                } else {
+                    std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
+                    texturePath = modelDir + image.uri;
+                }
+            } else {
+                texturePath = "assets/textures/default_arm.png";
+            }
+            
+            auto textureManager = &TextureManager::getInstance();
+            auto armTexture = textureManager->getTexture(texturePath);
+            if (armTexture) {
+                material->setARMTexture(armTexture);
+            }
         }
     }
     
@@ -444,7 +623,6 @@ bool ModelRenderer::saveBinaryModel(const std::string& modelPath) {
         return false;
     }
     
-    std::cout << "ModelRenderer: Successfully converted and saved binary model: " << modelPath << std::endl;
     return true;
 #else
     std::cerr << "ModelRenderer: Binary model saving only supported on Vita" << std::endl;

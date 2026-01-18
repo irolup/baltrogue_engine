@@ -12,6 +12,7 @@
 #include "Components/Area3DComponent.h"
 #include "Components/TextComponent.h"
 #include "Components/ScriptComponent.h"
+#include "Components/AnimationComponent.h"
 #include "Core/Engine.h"
 #include "Editor/BuildSystem.h"
 #include "Editor/SceneSerializer.h"
@@ -1151,6 +1152,12 @@ void EditorUI::renderProperties() {
                         selected->addComponent<ModelRenderer>();
                     }
                 }
+                if (ImGui::MenuItem("Animation Component")) {
+                    if (!selected->getComponent<AnimationComponent>()) {
+                        auto animComponent = selected->addComponent<AnimationComponent>();
+                        animComponent->start(); // Initialize the animation component
+                    }
+                }
                 if (ImGui::MenuItem("Light Component")) {
                     if (!selected->getComponent<LightComponent>()) {
                         selected->addComponent<LightComponent>();
@@ -1237,6 +1244,8 @@ void EditorUI::renderProperties() {
                     selected->removeComponent<MeshRenderer>();
                 } else if (componentToRemove == "ModelRenderer") {
                     selected->removeComponent<ModelRenderer>();
+                } else if (componentToRemove == "AnimationComponent") {
+                    selected->removeComponent<AnimationComponent>();
                 } else if (componentToRemove == "LightComponent") {
                     selected->removeComponent<LightComponent>();
                 } else if (componentToRemove == "PhysicsComponent") {

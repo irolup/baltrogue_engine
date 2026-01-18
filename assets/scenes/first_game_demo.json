@@ -654,7 +654,7 @@
             ],
             "components": [
               {
-                "active": false,
+                "active": true,
                 "farPlane": 100.0999984741211,
                 "fov": 45.0,
                 "nearPlane": 0.10000000149011612,
@@ -669,7 +669,7 @@
                 3.746999979019165
               ],
               "rotation": [
-                -25.0,
+                -24.999998092651367,
                 -0.0,
                 0.0
               ],
@@ -877,6 +877,97 @@
             -0.30000001192092896,
             0.0,
             -6.800000190734863
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "castShadows": true,
+                "isLoaded": true,
+                "modelName": "test.glb",
+                "modelPath": "assets/models/test.glb",
+                "receiveShadows": true,
+                "type": "ModelRenderer"
+              },
+              {
+                "autoPlay": false,
+                "loop": true,
+                "speed": 1.0,
+                "type": "AnimationComponent"
+              }
+            ],
+            "name": "Model",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "Character",
+        "transform": {
+          "position": [
+            0.0,
+            -2.0,
+            -1.7000000476837158
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "pauseExempt": false,
+            "scriptPath": "scripts/animated_character.lua",
+            "type": "ScriptComponent"
+          }
+        ],
+        "name": "Node",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
           ],
           "rotation": [
             0.0,
