@@ -2818,6 +2818,37 @@ void ScriptComponent::bindAnimationToLua() {
     });
     lua_settable(luaState, -3);
     
+    lua_pushstring(luaState, "isPlaying");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto animComp = node->getComponent<AnimationComponent>();
+                    if (animComp) {
+                        lua_pushboolean(L, animComp->isPlaying());
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
     // Stop animation
     lua_pushstring(luaState, "stop");
     lua_pushcfunction(luaState, [](lua_State* L) -> int {

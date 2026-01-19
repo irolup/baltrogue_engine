@@ -15,18 +15,27 @@ enum class InterpolationType {
     CUBICSPLINE
 };
 
-struct Keyframe {
+struct Vec3Key {
     float time;
-    glm::vec3 translation;
-    glm::quat rotation;
-    glm::vec3 scale;
+    glm::vec3 value;
     
-    Keyframe() : time(0.0f), translation(0.0f), rotation(1.0f, 0.0f, 0.0f, 0.0f), scale(1.0f) {}
+    Vec3Key() : time(0.0f), value(0.0f) {}
+    Vec3Key(float t, const glm::vec3& v) : time(t), value(v) {}
+};
+
+struct QuatKey {
+    float time;
+    glm::quat value;
+    
+    QuatKey() : time(0.0f), value(1.0f, 0.0f, 0.0f, 0.0f) {}
+    QuatKey(float t, const glm::quat& v) : time(t), value(v) {}
 };
 
 struct BoneAnimation {
     std::string boneName;
-    std::vector<Keyframe> keyframes;
+    std::vector<Vec3Key> translations;
+    std::vector<QuatKey> rotations;
+    std::vector<Vec3Key> scales;
     InterpolationType interpolation;
     
     BoneAnimation() : interpolation(InterpolationType::LINEAR) {}
@@ -77,8 +86,48 @@ private:
     glm::quat interpolateRotation(const BoneAnimation& anim, float time) const;
     glm::vec3 interpolateScale(const BoneAnimation& anim, float time) const;
     
-    // Find keyframe indices for a given time
-    void findKeyframeIndices(const std::vector<Keyframe>& keyframes, float time, int& outIndex1, int& outIndex2, float& outT) const;
+    // Find keyframe indices for a given time (template for Vec3Key and QuatKey)
+    template<typename KeyType>
+    void findKeyframeIndices(const std::vector<KeyType>& keyframes, float time, int& outIndex1, int& outIndex2, float& outT) const {
+        if (keyframes.empty()) {
+            outIndex1 = outIndex2 = 0;
+            outT = 0.0f;
+            return;
+        }
+        
+        if (time <= keyframes[0].time) {
+            outIndex1 = outIndex2 = 0;
+            outT = 0.0f;
+            return;
+        }
+        
+        if (time >= keyframes[keyframes.size() - 1].time) {
+            outIndex1 = outIndex2 = static_cast<int>(keyframes.size() - 1);
+            outT = 0.0f;
+            return;
+        }
+        
+        for (size_t i = 0; i < keyframes.size() - 1; ++i) {
+            if (time >= keyframes[i].time && time <= keyframes[i + 1].time) {
+                outIndex1 = static_cast<int>(i);
+                outIndex2 = static_cast<int>(i + 1);
+                float deltaTime = keyframes[i + 1].time - keyframes[i].time;
+                if (deltaTime > 0.0001f) {
+                    outT = (time - keyframes[i].time) / deltaTime;
+                } else {
+                    outT = 0.0f;
+                }
+                return;
+            }
+        }
+        
+        outIndex1 = outIndex2 = 0;
+        outT = 0.0f;
+    }
+    
+    // Sample helpers for separate keyframe types
+    glm::vec3 sampleVec3(const std::vector<Vec3Key>& keys, float time, const glm::vec3& defaultValue, InterpolationType interpolation) const;
+    glm::quat sampleQuat(const std::vector<QuatKey>& keys, float time, const glm::quat& defaultValue, InterpolationType interpolation) const;
 };
 
 } // namespace GameEngine

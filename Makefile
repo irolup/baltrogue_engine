@@ -18,7 +18,7 @@ BULLET_VITA_LIBS := -Lvendor/bullet/lib_vita/lib -lBulletDynamics -lBulletCollis
 VITA_LIBS = -lvitaGL -lSceLibKernel_stub -lSceAppMgr_stub -lSceAppUtil_stub -lSceIofilemgr_stub -lmathneon \
     -lc -lSceCommonDialog_stub -lm -lSceGxm_stub -lSceDisplay_stub -lSceSysmodule_stub \
     -lvitashark -lSceShaccCg_stub -lSceKernelDmacMgr_stub -lstdc++ -lSceCtrl_stub \
-    -ltoloader -lSceShaccCgExt -ltaihen_stub -lm -L$(VENDOR_SOURCES)/lua/lib -llua
+    -ltoloader -lSceShaccCgExt -ltaihen_stub -lm -L$(VENDOR_SOURCES)/lua/lib -llua -lz
 
 # Linux-specific libraries
 LINUX_LIBS = -lGL -lGLU -lglfw -lGLEW -lm -lpng -lz -lstdc++ -llua5.3
@@ -174,6 +174,7 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/models/dirty_football_1k.gltf/textures/dirty_football_arm_1k.jpg=assets/models/dirty_football_1k.gltf/textures/dirty_football_arm_1k.jpg \
 		-a assets/models/dirty_football_1k.gltf/textures/dirty_football_diff_1k.jpg=assets/models/dirty_football_1k.gltf/textures/dirty_football_diff_1k.jpg \
 		-a assets/models/dirty_football_1k.gltf/textures/dirty_football_nor_gl_1k.jpg=assets/models/dirty_football_1k.gltf/textures/dirty_football_nor_gl_1k.jpg \
+		-a assets/models/player_running.glb=assets/models/player_running.glb \
 		-a scripts/obstacle_behavior.lua=scripts/obstacle_behavior.lua \
 		-a scripts/camera_controller.lua=scripts/camera_controller.lua \
 		-a scripts/patrol_behavior.lua=scripts/patrol_behavior.lua \
@@ -188,6 +189,7 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a scripts/camera_controller_vita.lua=scripts/camera_controller_vita.lua \
 		-a scripts/pickup_zone_test.lua=scripts/pickup_zone_test.lua \
 		-a scripts/main_menu.lua=scripts/main_menu.lua \
+		-a scripts/animated_character.lua=scripts/animated_character.lua \
 		-a assets/scenes/main_menu.json=assets/scenes/main_menu.json \
 		-a assets/scenes/first_game_demo.json=assets/scenes/first_game_demo.json \
  $@

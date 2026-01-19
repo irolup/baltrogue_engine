@@ -2031,6 +2031,7 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                         componentJson["loop"] = animComp->getLoop();
                         componentJson["speed"] = animComp->getSpeed();
                         componentJson["autoPlay"] = animComp->isPlaying();
+                        componentJson["enableRootMotion"] = animComp->isRootMotionEnabled();
                     }
                 }
                 
@@ -2467,6 +2468,10 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     
                     if (componentJson.contains("speed")) {
                         animComp->setSpeed(componentJson["speed"]);
+                    }
+                    
+                    if (componentJson.contains("enableRootMotion")) {
+                        animComp->setRootMotionEnabled(componentJson["enableRootMotion"]);
                     }
                     
                     if (componentJson.contains("autoPlay") && componentJson["autoPlay"]) {

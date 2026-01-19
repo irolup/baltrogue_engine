@@ -47,6 +47,9 @@ public:
     
     bool isPlaying() const { return isPlaying_; }
     
+    void setRootMotionEnabled(bool enabled) { enableRootMotion = enabled; }
+    bool isRootMotionEnabled() const { return enableRootMotion; }
+    
     // Get current bone transforms (for skinning)
     const std::vector<glm::mat4>& getBoneTransforms() const { return boneTransforms; }
     
@@ -61,6 +64,7 @@ private:
     float playbackSpeed;
     bool isLooping;
     bool isPlaying_;
+    bool enableRootMotion;  // If true, root bone translation is preserved for root motion
     
     void updateBoneTransforms();
     void updateBoneHierarchy(int boneIndex, const glm::mat4& parentTransform);

@@ -139,12 +139,6 @@ void Shader::setMat4Array(const std::string& name, const glm::mat4* values, size
     #else
         glUniformMatrix4fv(location, static_cast<GLsizei>(count), needsTranspose ? GL_TRUE : GL_FALSE, &values[0][0][0]);
     #endif
-    
-    static int setCount = 0;
-    setCount++;
-    if (setCount % 60 == 0) {  // Log every 60 frames
-        std::cout << "Shader: Set uniform '" << name << "' with " << count << " matrices (location=" << location << ")" << std::endl;
-    }
 }
 
 std::shared_ptr<Shader> Shader::getDefaultShader() {
@@ -329,10 +323,7 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
 #ifdef LINUX_BUILD
         // Try to load the external lighting shaders first
         // Try multiple possible paths for the editor
-        std::cout << "Trying to load external lighting shaders..." << std::endl;
-        
         if (lightingShader->loadFromFiles("assets/linux_shaders/lighting.vert", "assets/linux_shaders/lighting.frag")) {
-            std::cout << "Successfully loaded EXTERNAL lighting shaders from assets/linux_shaders/" << std::endl;
             // Verify bone matrix uniform exists in external shader
             lightingShader->use();
             GLint boneMatLoc = glGetUniformLocation(lightingShader->getProgram(), "u_BoneMatrices");
@@ -340,13 +331,9 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
             if (boneMatLoc == -1) {
                 std::cerr << "ERROR: u_BoneMatrices uniform NOT FOUND in EXTERNAL shader (assets/linux_shaders/lighting.vert)" << std::endl;
                 std::cerr << "The shader file needs bone animation support added!" << std::endl;
-            } else {
-                std::cout << "EXTERNAL shader: u_BoneMatrices found at location " << boneMatLoc << std::endl;
             }
             if (numBonesLoc == -1) {
                 std::cerr << "ERROR: u_NumBones uniform NOT FOUND in EXTERNAL shader" << std::endl;
-            } else {
-                std::cout << "EXTERNAL shader: u_NumBones found at location " << numBonesLoc << std::endl;
             }
             lightingShader->unuse();
             return lightingShader;
@@ -354,15 +341,15 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
         
         // Try relative to current directory
         if (lightingShader->loadFromFiles("./assets/linux_shaders/lighting.vert", "./assets/linux_shaders/lighting.frag")) {
-            std::cout << "Successfully loaded EXTERNAL lighting shaders from ./assets/linux_shaders/" << std::endl;
             // Verify bone matrix uniform exists
             lightingShader->use();
             GLint boneMatLoc = glGetUniformLocation(lightingShader->getProgram(), "u_BoneMatrices");
             GLint numBonesLoc = glGetUniformLocation(lightingShader->getProgram(), "u_NumBones");
             if (boneMatLoc == -1) {
                 std::cerr << "WARNING: u_BoneMatrices uniform NOT FOUND in EXTERNAL shader (./assets/linux_shaders/lighting.vert)" << std::endl;
-            } else {
-                std::cout << "EXTERNAL shader: u_BoneMatrices found at location " << boneMatLoc << std::endl;
+            }
+            if (numBonesLoc == -1) {
+                std::cerr << "WARNING: u_NumBones uniform NOT FOUND in EXTERNAL shader" << std::endl;
             }
             lightingShader->unuse();
             return lightingShader;
@@ -370,14 +357,11 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
         
         // Try from project root
         if (lightingShader->loadFromFiles("../assets/linux_shaders/lighting.vert", "../assets/linux_shaders/lighting.frag")) {
-            std::cout << "Successfully loaded EXTERNAL lighting shaders from ../assets/linux_shaders/" << std::endl;
             // Verify bone matrix uniform exists
             lightingShader->use();
             GLint boneMatLoc = glGetUniformLocation(lightingShader->getProgram(), "u_BoneMatrices");
             if (boneMatLoc == -1) {
                 std::cerr << "WARNING: u_BoneMatrices uniform NOT FOUND in EXTERNAL shader" << std::endl;
-            } else {
-                std::cout << "EXTERNAL shader: u_BoneMatrices found at location " << boneMatLoc << std::endl;
             }
             lightingShader->unuse();
             return lightingShader;

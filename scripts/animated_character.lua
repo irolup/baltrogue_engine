@@ -2,8 +2,8 @@
 -- Uses the skeleton and animation loaded from the model
 
 local characterNodeName = "Model"  -- Name of the node with the animated model (has ModelRenderer and AnimationComponent)
-local skeletonName = "Jogging.glb_Skeleton_0"  -- Exact skeleton name from console
-local currentAnimation = "mixamo.com"  -- Exact animation name from console
+local skeletonName = "Armature" 
+local currentAnimation = "Armature|mixamo.com|Layer0"  -- Exact animation name from console
 
 function start()
     print("Animated Character script started!")
@@ -43,14 +43,17 @@ function start()
             local animName = animations[1]
             if animation.setAnimationClip(characterNodeName, animName) then
                 print("Set animation clip: " .. animName)
-                animation.setLoop(characterNodeName, true)  -- Loop the animation
-                animation.setSpeed(characterNodeName, 1.0)  -- Normal speed
+                animation.setLoop(characterNodeName, true)
+                animation.setSpeed(characterNodeName, 1.0)
                 
-                -- Play the animation
-                if animation.play(characterNodeName) then
-                    print("Successfully called play() for animation: " .. animName)
+                if not animation.isPlaying(characterNodeName) then
+                    if animation.play(characterNodeName) then
+                        print("Successfully called play() for animation: " .. animName)
+                    else
+                        print("WARNING: play() returned false for animation: " .. animName)
+                    end
                 else
-                    print("WARNING: play() returned false for animation: " .. animName)
+                    print("Animation already playing (autoPlay may have started it)")
                 end
             else
                 print("Failed to set animation clip: " .. animName)

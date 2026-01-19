@@ -29,125 +29,72 @@ const BoneAnimation* AnimationClip::getBoneAnimation(const std::string& boneName
     return nullptr;
 }
 
-void AnimationClip::findKeyframeIndices(const std::vector<Keyframe>& keyframes, float time, int& outIndex1, int& outIndex2, float& outT) const {
-    if (keyframes.empty()) {
-        outIndex1 = outIndex2 = 0;
-        outT = 0.0f;
-        return;
+glm::vec3 AnimationClip::sampleVec3(const std::vector<Vec3Key>& keys, float time, const glm::vec3& defaultValue, InterpolationType interpolation) const {
+    if (keys.empty()) {
+        return defaultValue;
     }
     
-    if (time <= keyframes[0].time) {
-        outIndex1 = outIndex2 = 0;
-        outT = 0.0f;
-        return;
+    int idx1, idx2;
+    float t;
+    findKeyframeIndices(keys, time, idx1, idx2, t);
+    
+    if (idx1 == idx2) {
+        return keys[idx1].value;
     }
     
-    if (time >= keyframes[keyframes.size() - 1].time) {
-        outIndex1 = outIndex2 = static_cast<int>(keyframes.size() - 1);
-        outT = 0.0f;
-        return;
+    const auto& kf1 = keys[idx1];
+    const auto& kf2 = keys[idx2];
+    
+    if (interpolation == InterpolationType::STEP) {
+        return kf1.value;
+    } else if (interpolation == InterpolationType::LINEAR) {
+        return glm::mix(kf1.value, kf2.value, t);
+    } else {
+        return glm::mix(kf1.value, kf2.value, t);
+    }
+}
+
+glm::quat AnimationClip::sampleQuat(const std::vector<QuatKey>& keys, float time, const glm::quat& defaultValue, InterpolationType interpolation) const {
+    if (keys.empty()) {
+        return defaultValue;
     }
     
-    // Binary search for the two keyframes
-    for (size_t i = 0; i < keyframes.size() - 1; ++i) {
-        if (time >= keyframes[i].time && time <= keyframes[i + 1].time) {
-            outIndex1 = static_cast<int>(i);
-            outIndex2 = static_cast<int>(i + 1);
-            float deltaTime = keyframes[i + 1].time - keyframes[i].time;
-            if (deltaTime > 0.0001f) {
-                outT = (time - keyframes[i].time) / deltaTime;
-            } else {
-                outT = 0.0f;
-            }
-            return;
-        }
+    int idx1, idx2;
+    float t;
+    findKeyframeIndices(keys, time, idx1, idx2, t);
+    
+    if (idx1 == idx2) {
+        return keys[idx1].value;
     }
     
-    outIndex1 = outIndex2 = 0;
-    outT = 0.0f;
+    const auto& kf1 = keys[idx1];
+    const auto& kf2 = keys[idx2];
+    
+    if (interpolation == InterpolationType::STEP) {
+        return kf1.value;
+    } else if (interpolation == InterpolationType::LINEAR) {
+        return glm::slerp(kf1.value, kf2.value, t);
+    } else {
+        return glm::slerp(kf1.value, kf2.value, t);
+    }
 }
 
 glm::vec3 AnimationClip::interpolateTranslation(const BoneAnimation& anim, float time) const {
-    if (anim.keyframes.empty()) {
-        return glm::vec3(0.0f);
-    }
-    
-    int idx1, idx2;
-    float t;
-    findKeyframeIndices(anim.keyframes, time, idx1, idx2, t);
-    
-    if (idx1 == idx2) {
-        return anim.keyframes[idx1].translation;
-    }
-    
-    const auto& kf1 = anim.keyframes[idx1];
-    const auto& kf2 = anim.keyframes[idx2];
-    
-    if (anim.interpolation == InterpolationType::STEP) {
-        return kf1.translation;
-    } else if (anim.interpolation == InterpolationType::LINEAR) {
-        return glm::mix(kf1.translation, kf2.translation, t);
-    } else {
-        return glm::mix(kf1.translation, kf2.translation, t);
-    }
+    return sampleVec3(anim.translations, time, glm::vec3(0.0f), anim.interpolation);
 }
 
 glm::quat AnimationClip::interpolateRotation(const BoneAnimation& anim, float time) const {
-    if (anim.keyframes.empty()) {
-        return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    }
-    
-    int idx1, idx2;
-    float t;
-    findKeyframeIndices(anim.keyframes, time, idx1, idx2, t);
-    
-    if (idx1 == idx2) {
-        return anim.keyframes[idx1].rotation;
-    }
-    
-    const auto& kf1 = anim.keyframes[idx1];
-    const auto& kf2 = anim.keyframes[idx2];
-    
-    if (anim.interpolation == InterpolationType::STEP) {
-        return kf1.rotation;
-    } else if (anim.interpolation == InterpolationType::LINEAR) {
-        return glm::slerp(kf1.rotation, kf2.rotation, t);
-    } else {
-        // CUBICSPLINE - simplified slerp for now
-        return glm::slerp(kf1.rotation, kf2.rotation, t);
-    }
+    return sampleQuat(anim.rotations, time, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), anim.interpolation);
 }
 
 glm::vec3 AnimationClip::interpolateScale(const BoneAnimation& anim, float time) const {
-    if (anim.keyframes.empty()) {
-        return glm::vec3(1.0f);
-    }
-    
-    int idx1, idx2;
-    float t;
-    findKeyframeIndices(anim.keyframes, time, idx1, idx2, t);
-    
-    if (idx1 == idx2) {
-        return anim.keyframes[idx1].scale;
-    }
-    
-    const auto& kf1 = anim.keyframes[idx1];
-    const auto& kf2 = anim.keyframes[idx2];
-    
-    if (anim.interpolation == InterpolationType::STEP) {
-        return kf1.scale;
-    } else if (anim.interpolation == InterpolationType::LINEAR) {
-        return glm::mix(kf1.scale, kf2.scale, t);
-    } else {
-        // CUBICSPLINE - simplified linear for now
-        return glm::mix(kf1.scale, kf2.scale, t);
-    }
+    return sampleVec3(anim.scales, time, glm::vec3(1.0f), anim.interpolation);
 }
 
 bool AnimationClip::sampleBoneAtTime(const std::string& boneName, float time, glm::mat4& outTransform) const {
     const BoneAnimation* anim = getBoneAnimation(boneName);
     
-    if (!anim || anim->keyframes.empty()) {
+    if (!anim || (anim->translations.empty() && anim->rotations.empty() && anim->scales.empty())) {
         return false;
     }
     
@@ -288,7 +235,6 @@ bool AnimationClip::loadFromGLTF(const std::string& filepath, int animationIndex
             }
         }
         
-        // Create keyframes
         int componentCount = 0;
         if (outputAccessor.type == TINYGLTF_TYPE_VEC3) {
             componentCount = 3;
@@ -298,38 +244,39 @@ bool AnimationClip::loadFromGLTF(const std::string& filepath, int animationIndex
             componentCount = 1;
         }
         
-        // Ensure we have enough keyframes
-        if (boneAnim->keyframes.size() < static_cast<size_t>(keyframeCount)) {
-            boneAnim->keyframes.resize(keyframeCount);
-        }
-        
-        bool hasTranslation = false, hasRotation = false, hasScale = false;
-        for (int i = 0; i < keyframeCount; ++i) {
-            boneAnim->keyframes[i].time = times[i];
-            
-            if (channel.target_path == "translation") {
-                hasTranslation = true;
-                boneAnim->keyframes[i].translation = glm::vec3(
-                    values[i * componentCount + 0],
-                    values[i * componentCount + 1],
-                    values[i * componentCount + 2]
-                );
-            } else if (channel.target_path == "rotation") {
-                hasRotation = true;
-                // glTF stores quaternions as (x, y, z, w)
-                boneAnim->keyframes[i].rotation = glm::quat(
-                    values[i * componentCount + 3],  // w
-                    values[i * componentCount + 0],  // x
-                    values[i * componentCount + 1],  // y
-                    values[i * componentCount + 2]   // z
-                );
-            } else if (channel.target_path == "scale") {
-                hasScale = true;
-                boneAnim->keyframes[i].scale = glm::vec3(
-                    values[i * componentCount + 0],
-                    values[i * componentCount + 1],
-                    values[i * componentCount + 2]
-                );
+        if (channel.target_path == "translation") {
+            for (int i = 0; i < keyframeCount; ++i) {
+                boneAnim->translations.push_back(Vec3Key(
+                    times[i],
+                    glm::vec3(
+                        values[i * componentCount + 0],
+                        values[i * componentCount + 1],
+                        values[i * componentCount + 2]
+                    )
+                ));
+            }
+        } else if (channel.target_path == "rotation") {
+            for (int i = 0; i < keyframeCount; ++i) {
+                boneAnim->rotations.push_back(QuatKey(
+                    times[i],
+                    glm::quat(
+                        values[i * componentCount + 3],
+                        values[i * componentCount + 0],
+                        values[i * componentCount + 1],
+                        values[i * componentCount + 2]
+                    )
+                ));
+            }
+        } else if (channel.target_path == "scale") {
+            for (int i = 0; i < keyframeCount; ++i) {
+                boneAnim->scales.push_back(Vec3Key(
+                    times[i],
+                    glm::vec3(
+                        values[i * componentCount + 0],
+                        values[i * componentCount + 1],
+                        values[i * componentCount + 2]
+                    )
+                ));
             }
         }
     }

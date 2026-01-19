@@ -19,7 +19,8 @@ AnimationComponent::AnimationComponent()
     : currentTime(0.0f)
     , playbackSpeed(1.0f)
     , isLooping(true)
-    , isPlaying_(false) {
+    , isPlaying_(false)
+    , enableRootMotion(false) {
 }
 
 AnimationComponent::~AnimationComponent() {
@@ -165,7 +166,6 @@ void AnimationComponent::update(float deltaTime) {
     }
     
     // Update animation time
-    float oldTime = currentTime;
     currentTime += deltaTime * playbackSpeed;
     
     if (currentTime > currentClip->getDuration()) {
@@ -177,100 +177,185 @@ void AnimationComponent::update(float deltaTime) {
         }
     }
     
-    // Update bone transforms
     updateBoneTransforms();
 }
 
 void AnimationComponent::updateBoneTransforms() {
-    if (!currentClip || !currentSkeleton) {
-        return;
-    }
-    
+    if (!currentClip || !currentSkeleton) return;
+
     const auto& bones = currentSkeleton->getBones();
-    
+
     std::vector<glm::mat4> sampledTransforms;
     currentClip->sampleAllBonesAtTime(currentTime, sampledTransforms);
-    
+
+    int rootIndex = currentSkeleton->getRootBoneIndex();
+
     for (size_t i = 0; i < bones.size(); ++i) {
         glm::mat4 localTransform = bones[i].bindPose;
-        bool usingAnimation = false;
-        glm::mat4 sampledTransform;
-        
-        if (currentClip->sampleBoneAtTime(bones[i].name, currentTime, sampledTransform)) {
-            usingAnimation = true;
-        } else if (i < sampledTransforms.size() && sampledTransforms[i] != glm::mat4(0.0f)) {
-            sampledTransform = sampledTransforms[i];
-            usingAnimation = true;
+
+        if (i < sampledTransforms.size() && sampledTransforms[i] != glm::mat4(0.0f)) {
+            const BoneAnimation* anim = currentClip->getBoneAnimation(bones[i].name);
+            
+            if (anim && (!anim->translations.empty() || !anim->rotations.empty() || !anim->scales.empty())) {
+                bool hasAllChannels = !anim->translations.empty() && !anim->rotations.empty() && !anim->scales.empty();
+                
+                if (hasAllChannels) {
+                    localTransform = sampledTransforms[i];
+                } else {
+                    // Extract bind pose TRS manually (more reliable than decomposing)
+                    glm::vec3 bindTranslation = glm::vec3(bones[i].bindPose[3]);
+                    glm::mat3 bindRotScale = glm::mat3(bones[i].bindPose);
+                    glm::vec3 bindScale(
+                        glm::length(bindRotScale[0]),
+                        glm::length(bindRotScale[1]),
+                        glm::length(bindRotScale[2])
+                    );
+                    glm::mat3 bindRotMat = glm::mat3(
+                        bindRotScale[0] / (bindScale.x > 0.0001f ? bindScale.x : 1.0f),
+                        bindRotScale[1] / (bindScale.y > 0.0001f ? bindScale.y : 1.0f),
+                        bindRotScale[2] / (bindScale.z > 0.0001f ? bindScale.z : 1.0f)
+                    );
+                    glm::quat bindRotation = glm::quat_cast(bindRotMat);
+                    
+                    // Sample each channel individually, using bind pose as default for missing channels
+                    glm::vec3 finalTranslation = bindTranslation;
+                    glm::quat finalRotation = bindRotation;
+                    glm::vec3 finalScale = bindScale;
+                    
+                    // Helper function to find keyframe indices for Vec3Key (C++11 compatible)
+                    auto findVec3Indices = [](const std::vector<Vec3Key>& keys, float time, int& idx1, int& idx2, float& t) {
+                        if (keys.empty()) {
+                            idx1 = idx2 = 0;
+                            t = 0.0f;
+                            return;
+                        }
+                        if (time <= keys[0].time) {
+                            idx1 = idx2 = 0;
+                            t = 0.0f;
+                            return;
+                        }
+                        if (time >= keys.back().time) {
+                            idx1 = idx2 = static_cast<int>(keys.size() - 1);
+                            t = 0.0f;
+                            return;
+                        }
+                        idx1 = 0;
+                        for (size_t i = 0; i < keys.size() - 1; ++i) {
+                            if (time >= keys[i].time && time <= keys[i + 1].time) {
+                                idx1 = static_cast<int>(i);
+                                idx2 = static_cast<int>(i + 1);
+                                float dt = keys[idx2].time - keys[idx1].time;
+                                t = (dt > 0.0001f) ? (time - keys[idx1].time) / dt : 0.0f;
+                                return;
+                            }
+                        }
+                        idx1 = idx2 = static_cast<int>(keys.size() - 1);
+                        t = 0.0f;
+                    };
+                    
+                    // Helper function to find keyframe indices for QuatKey (C++11 compatible)
+                    auto findQuatIndices = [](const std::vector<QuatKey>& keys, float time, int& idx1, int& idx2, float& t) {
+                        if (keys.empty()) {
+                            idx1 = idx2 = 0;
+                            t = 0.0f;
+                            return;
+                        }
+                        if (time <= keys[0].time) {
+                            idx1 = idx2 = 0;
+                            t = 0.0f;
+                            return;
+                        }
+                        if (time >= keys.back().time) {
+                            idx1 = idx2 = static_cast<int>(keys.size() - 1);
+                            t = 0.0f;
+                            return;
+                        }
+                        idx1 = 0;
+                        for (size_t i = 0; i < keys.size() - 1; ++i) {
+                            if (time >= keys[i].time && time <= keys[i + 1].time) {
+                                idx1 = static_cast<int>(i);
+                                idx2 = static_cast<int>(i + 1);
+                                float dt = keys[idx2].time - keys[idx1].time;
+                                t = (dt > 0.0001f) ? (time - keys[idx1].time) / dt : 0.0f;
+                                return;
+                            }
+                        }
+                        idx1 = idx2 = static_cast<int>(keys.size() - 1);
+                        t = 0.0f;
+                    };
+                    
+                    if (!anim->translations.empty()) {
+                        int idx1, idx2;
+                        float t;
+                        findVec3Indices(anim->translations, currentTime, idx1, idx2, t);
+                        if (idx1 == idx2) {
+                            finalTranslation = anim->translations[idx1].value;
+                        } else {
+                            const auto& kf1 = anim->translations[idx1];
+                            const auto& kf2 = anim->translations[idx2];
+                            if (anim->interpolation == InterpolationType::STEP) {
+                                finalTranslation = kf1.value;
+                            } else {
+                                finalTranslation = glm::mix(kf1.value, kf2.value, t);
+                            }
+                        }
+                    }
+                    
+                    if (!anim->rotations.empty()) {
+                        int idx1, idx2;
+                        float t;
+                        findQuatIndices(anim->rotations, currentTime, idx1, idx2, t);
+                        if (idx1 == idx2) {
+                            finalRotation = anim->rotations[idx1].value;
+                        } else {
+                            const auto& kf1 = anim->rotations[idx1];
+                            const auto& kf2 = anim->rotations[idx2];
+                            if (anim->interpolation == InterpolationType::STEP) {
+                                finalRotation = kf1.value;
+                            } else {
+                                finalRotation = glm::slerp(kf1.value, kf2.value, t);
+                            }
+                        }
+                    }
+                    
+                    if (!anim->scales.empty()) {
+                        int idx1, idx2;
+                        float t;
+                        findVec3Indices(anim->scales, currentTime, idx1, idx2, t);
+                        if (idx1 == idx2) {
+                            finalScale = anim->scales[idx1].value;
+                        } else {
+                            const auto& kf1 = anim->scales[idx1];
+                            const auto& kf2 = anim->scales[idx2];
+                            if (anim->interpolation == InterpolationType::STEP) {
+                                finalScale = kf1.value;
+                            } else {
+                                finalScale = glm::mix(kf1.value, kf2.value, t);
+                            }
+                        }
+                    }
+                    
+                    localTransform = glm::translate(glm::mat4(1.0f), finalTranslation) * 
+                                    glm::mat4_cast(finalRotation) * 
+                                    glm::scale(glm::mat4(1.0f), finalScale);
+                }
+            } else {
+                localTransform = sampledTransforms[i];
+            }
         }
-        
-        if (usingAnimation) {
-            glm::vec3 bindTranslation(bones[i].bindPose[3][0], bones[i].bindPose[3][1], bones[i].bindPose[3][2]);
-            glm::vec3 bindScale(
-                glm::length(glm::vec3(bones[i].bindPose[0])),
-                glm::length(glm::vec3(bones[i].bindPose[1])),
-                glm::length(glm::vec3(bones[i].bindPose[2]))
-            );
-            glm::mat3 bindRotMat = glm::mat3(
-                glm::vec3(bones[i].bindPose[0]) / bindScale.x,
-                glm::vec3(bones[i].bindPose[1]) / bindScale.y,
-                glm::vec3(bones[i].bindPose[2]) / bindScale.z
-            );
-            glm::quat bindRotation = glm::quat_cast(bindRotMat);
-            
-            glm::vec3 animTranslation(sampledTransform[3][0], sampledTransform[3][1], sampledTransform[3][2]);
-            glm::vec3 animScale(
-                glm::length(glm::vec3(sampledTransform[0])),
-                glm::length(glm::vec3(sampledTransform[1])),
-                glm::length(glm::vec3(sampledTransform[2]))
-            );
-            glm::mat3 animRotMat = glm::mat3(
-                glm::vec3(sampledTransform[0]) / (animScale.x > 0.0001f ? animScale.x : 1.0f),
-                glm::vec3(sampledTransform[1]) / (animScale.y > 0.0001f ? animScale.y : 1.0f),
-                glm::vec3(sampledTransform[2]) / (animScale.z > 0.0001f ? animScale.z : 1.0f)
-            );
-            glm::quat animRotation = glm::quat_cast(animRotMat);
-            
-            glm::vec3 finalTranslation = animTranslation;
-            
-            bool animRotIsIdentity = (glm::abs(animRotation.w - 1.0f) < 0.0001f && 
-                                      glm::abs(animRotation.x) < 0.0001f && 
-                                      glm::abs(animRotation.y) < 0.0001f && 
-                                      glm::abs(animRotation.z) < 0.0001f);
-            bool bindRotIsIdentity = (glm::abs(bindRotation.w - 1.0f) < 0.0001f && 
-                                      glm::abs(bindRotation.x) < 0.0001f && 
-                                      glm::abs(bindRotation.y) < 0.0001f && 
-                                      glm::abs(bindRotation.z) < 0.0001f);
-            glm::quat finalRotation = (animRotIsIdentity && !bindRotIsIdentity) ? bindRotation : animRotation;
-            
-            glm::vec3 finalScale = (glm::length(animScale - glm::vec3(1.0f)) < 0.0001f && 
-                                    glm::length(bindScale - glm::vec3(1.0f)) > 0.0001f)
-                ? bindScale : animScale;
-            
-            localTransform = glm::translate(glm::mat4(1.0f), finalTranslation) * 
-                            glm::mat4_cast(finalRotation) * 
-                            glm::scale(glm::mat4(1.0f), finalScale);
+        if ((int)i == rootIndex && !enableRootMotion) {
+            localTransform[3][0] = 0.0f;
+            localTransform[3][1] = 0.0f;
+            localTransform[3][2] = 0.0f;
         }
-        
+
         localBoneTransforms[i] = localTransform;
     }
-    
-    for (size_t i = 0; i < bones.size(); ++i) {
-        boneTransforms[i] = glm::mat4(1.0f);
-    }
-    
-    int rootIndex = currentSkeleton->getRootBoneIndex();
+
     if (rootIndex >= 0) {
         updateBoneHierarchy(rootIndex, glm::mat4(1.0f));
     }
-    
-    for (size_t i = 0; i < bones.size(); ++i) {
-        if (boneTransforms[i] == glm::mat4(1.0f) && bones[i].parentIndex != -1) {
-            boneTransforms[i] = localBoneTransforms[i];
-        } else if (bones[i].parentIndex == -1 && i != rootIndex) {
-            updateBoneHierarchy(static_cast<int>(i), glm::mat4(1.0f));
-        }
-    }
-    
+
     for (size_t i = 0; i < bones.size(); ++i) {
         boneTransforms[i] = boneTransforms[i] * bones[i].inverseBindPose;
     }
@@ -287,10 +372,6 @@ void AnimationComponent::updateBoneHierarchy(int boneIndex, const glm::mat4& par
     }
     
     boneTransforms[boneIndex] = parentTransform * localBoneTransforms[boneIndex];
-    
-    // Debug: Print transform for first few bones (always print, not just every 60 frames)
-    if (boneIndex < 3) {
-    }
     
     auto children = currentSkeleton->getChildBones(boneIndex);
     for (int childIndex : children) {
@@ -343,7 +424,6 @@ void AnimationComponent::setAnimationClip(std::shared_ptr<AnimationClip> clip) {
         std::fill(boneTransforms.begin(), boneTransforms.end(), glm::mat4(1.0f));
         std::fill(localBoneTransforms.begin(), localBoneTransforms.end(), glm::mat4(1.0f));
         
-        // Update bone transforms immediately to show first frame
         updateBoneTransforms();
     }
 }
@@ -353,7 +433,7 @@ void AnimationComponent::play() {
         isPlaying_ = true;
         currentTime = 0.0f;
         
-        if (boneTransforms.size() != currentSkeleton->getBoneCount()) {
+        if (boneTransforms.size() != static_cast<size_t>(currentSkeleton->getBoneCount())) {
             boneTransforms.resize(currentSkeleton->getBoneCount());
             localBoneTransforms.resize(currentSkeleton->getBoneCount());
             std::fill(boneTransforms.begin(), boneTransforms.end(), glm::mat4(1.0f));
@@ -428,6 +508,11 @@ void AnimationComponent::drawInspector() {
     bool looping = isLooping;
     if (ImGui::Checkbox("Loop", &looping)) {
         setLoop(looping);
+    }
+    
+    bool rootMotion = enableRootMotion;
+    if (ImGui::Checkbox("Enable Root Motion", &rootMotion)) {
+        setRootMotionEnabled(rootMotion);
     }
     
     float speed = playbackSpeed;

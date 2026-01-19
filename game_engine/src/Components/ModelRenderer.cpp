@@ -264,26 +264,20 @@ std::shared_ptr<Mesh> ModelRenderer::createMeshFromGLTF(const tinygltf::Model& g
         
         // Get bone weights if available (for skinning)
         const float* boneWeights = nullptr;
-        bool hasBoneWeights = false;
         if (primitive.attributes.find("WEIGHTS_0") != primitive.attributes.end()) {
             const auto& weightsAccessor = gltfModel.accessors[primitive.attributes.at("WEIGHTS_0")];
             const auto& weightsBufferView = gltfModel.bufferViews[weightsAccessor.bufferView];
             const auto& weightsBuffer = gltfModel.buffers[weightsBufferView.buffer];
             boneWeights = reinterpret_cast<const float*>(&weightsBuffer.data[weightsBufferView.byteOffset + weightsAccessor.byteOffset]);
-            hasBoneWeights = true;
         }
         
         // Get bone indices if available (for skinning)
         const unsigned short* boneIndices = nullptr;
         const unsigned char* boneIndicesU8 = nullptr;
-        int boneIndicesComponentType = -1;
-        bool hasBoneIndices = false;
         if (primitive.attributes.find("JOINTS_0") != primitive.attributes.end()) {
             const auto& jointsAccessor = gltfModel.accessors[primitive.attributes.at("JOINTS_0")];
             const auto& jointsBufferView = gltfModel.bufferViews[jointsAccessor.bufferView];
             const auto& jointsBuffer = gltfModel.buffers[jointsBufferView.buffer];
-            boneIndicesComponentType = jointsAccessor.componentType;
-            hasBoneIndices = true;
             
             if (jointsAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
                 boneIndices = reinterpret_cast<const unsigned short*>(&jointsBuffer.data[jointsBufferView.byteOffset + jointsAccessor.byteOffset]);

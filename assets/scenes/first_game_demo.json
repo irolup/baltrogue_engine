@@ -900,14 +900,17 @@
               {
                 "castShadows": true,
                 "isLoaded": true,
-                "modelName": "test.glb",
-                "modelPath": "assets/models/test.glb",
+                "modelName": "player_running.glb",
+                "modelPath": "assets/models/player_running.glb",
                 "receiveShadows": true,
                 "type": "ModelRenderer"
               },
               {
+                "animationClipName": "Armature|mixamo.com|Layer0",
                 "autoPlay": false,
+                "enableRootMotion": false,
                 "loop": true,
+                "skeletonName": "RootNode",
                 "speed": 1.0,
                 "type": "AnimationComponent"
               }
@@ -962,7 +965,7 @@
             "type": "ScriptComponent"
           }
         ],
-        "name": "Node",
+        "name": "animation_script",
         "transform": {
           "position": [
             0.0,
