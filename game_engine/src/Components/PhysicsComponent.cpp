@@ -64,24 +64,34 @@ void PhysicsComponent::start() {
 }
 
 void PhysicsComponent::update(float deltaTime) {
-#ifdef EDITOR_BUILD
-    return;
-#else
-    if (rigidBody && owner) {
-        glm::mat4 currentWorldTransform = owner->getWorldMatrix();
-        
-        float transformDifference = glm::length(glm::vec3(currentWorldTransform[3]) - 
-                                              glm::vec3(lastWorldTransform[3]));
-        
-        const float MIN_TRANSFORM_THRESHOLD = 0.001f;
-        
-        if (transformDifference > MIN_TRANSFORM_THRESHOLD) {
-            syncTransformToPhysics();
-            lastWorldTransform = currentWorldTransform;
+    #ifdef EDITOR_BUILD
+        return;
+    #else
+        if (destroyed || !rigidBody || !owner) {
+            return;
         }
+        
+        if (rigidBody && owner) {
+            if (bodyType == PhysicsBodyType::KINEMATIC) {
+                glm::mat4 currentWorldTransform = owner->getWorldMatrix();
+                
+                float transformDifference = glm::length(glm::vec3(currentWorldTransform[3]) - 
+                                                      glm::vec3(lastWorldTransform[3]));
+                
+                const float MIN_TRANSFORM_THRESHOLD = 0.001f;
+                
+                if (transformDifference > MIN_TRANSFORM_THRESHOLD) {
+                    syncTransformToPhysics();
+                    lastWorldTransform = currentWorldTransform;
+                }
+            } else {
+                if (rigidBody && owner) {
+                    lastWorldTransform = owner->getWorldMatrix();
+                }
+            }
+        }
+    #endif
     }
-#endif
-}
 
 void PhysicsComponent::destroy() {
     if (destroyed) {
