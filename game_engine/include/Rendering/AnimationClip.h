@@ -57,15 +57,15 @@ public:
     float getDuration() const { return duration; }
     void setDuration(float d) { duration = d; }
     
+    float getStartTime() const;
+    float getEndTime() const { return duration; }
+    
     const std::vector<BoneAnimation>& getBoneAnimations() const { return boneAnimations; }
     const BoneAnimation* getBoneAnimation(const std::string& boneName) const;
     
-    // Sample animation at a given time (0.0 to duration)
-    // Returns transform for a specific bone at the given time
     bool sampleBoneAtTime(const std::string& boneName, float time, glm::mat4& outTransform) const;
     bool sampleBoneAtTime(int boneIndex, float time, glm::mat4& outTransform) const;
     
-    // Get all bone transforms at a given time
     void sampleAllBonesAtTime(float time, std::vector<glm::mat4>& outTransforms) const;
     
     const std::string& getFilePath() const { return filePath; }
@@ -73,7 +73,7 @@ public:
     
 private:
     std::string name;
-    std::string skeletonName;  // Name of the skeleton this animation targets
+    std::string skeletonName;
     std::string filePath;
     float duration;
     std::vector<BoneAnimation> boneAnimations;
@@ -81,12 +81,10 @@ private:
     
     void buildNameIndex();
     
-    // Interpolation helpers
     glm::vec3 interpolateTranslation(const BoneAnimation& anim, float time) const;
     glm::quat interpolateRotation(const BoneAnimation& anim, float time) const;
     glm::vec3 interpolateScale(const BoneAnimation& anim, float time) const;
     
-    // Find keyframe indices for a given time (template for Vec3Key and QuatKey)
     template<typename KeyType>
     void findKeyframeIndices(const std::vector<KeyType>& keyframes, float time, int& outIndex1, int& outIndex2, float& outT) const {
         if (keyframes.empty()) {
@@ -125,7 +123,6 @@ private:
         outT = 0.0f;
     }
     
-    // Sample helpers for separate keyframe types
     glm::vec3 sampleVec3(const std::vector<Vec3Key>& keys, float time, const glm::vec3& defaultValue, InterpolationType interpolation) const;
     glm::quat sampleQuat(const std::vector<QuatKey>& keys, float time, const glm::quat& defaultValue, InterpolationType interpolation) const;
 };

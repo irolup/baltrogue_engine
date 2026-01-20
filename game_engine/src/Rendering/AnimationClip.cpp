@@ -3,6 +3,7 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace GameEngine {
 
@@ -19,6 +20,54 @@ void AnimationClip::buildNameIndex() {
     for (size_t i = 0; i < boneAnimations.size(); ++i) {
         boneNameToIndex[boneAnimations[i].boneName] = static_cast<int>(i);
     }
+}
+
+float AnimationClip::getStartTime() const {
+    float startTime = std::numeric_limits<float>::max();
+    bool foundAny = false;
+    
+    for (const auto& boneAnim : boneAnimations) {
+        if (!boneAnim.translations.empty()) {
+            float minTime = boneAnim.translations[0].time;
+            for (const auto& key : boneAnim.translations) {
+                if (key.time < minTime) {
+                    minTime = key.time;
+                }
+            }
+            if (minTime < startTime) {
+                startTime = minTime;
+                foundAny = true;
+            }
+        }
+        
+        if (!boneAnim.rotations.empty()) {
+            float minTime = boneAnim.rotations[0].time;
+            for (const auto& key : boneAnim.rotations) {
+                if (key.time < minTime) {
+                    minTime = key.time;
+                }
+            }
+            if (minTime < startTime) {
+                startTime = minTime;
+                foundAny = true;
+            }
+        }
+        
+        if (!boneAnim.scales.empty()) {
+            float minTime = boneAnim.scales[0].time;
+            for (const auto& key : boneAnim.scales) {
+                if (key.time < minTime) {
+                    minTime = key.time;
+                }
+            }
+            if (minTime < startTime) {
+                startTime = minTime;
+                foundAny = true;
+            }
+        }
+    }
+    
+    return foundAny ? startTime : 0.0f;
 }
 
 const BoneAnimation* AnimationClip::getBoneAnimation(const std::string& boneName) const {

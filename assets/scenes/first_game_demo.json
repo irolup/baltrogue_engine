@@ -325,42 +325,6 @@
             "active": true,
             "components": [
               {
-                "material": {
-                  "color": [
-                    1.0,
-                    0.5,
-                    0.20000000298023224
-                  ],
-                  "diffuseTexture": "assets/textures/memes/saul_diff_.png"
-                },
-                "meshType": "CAPSULE",
-                "type": "MeshRenderer"
-              }
-            ],
-            "name": "PlayerMesh",
-            "transform": {
-              "position": [
-                0.0,
-                0.0,
-                0.0
-              ],
-              "rotation": [
-                0.0,
-                -0.0,
-                0.0
-              ],
-              "scale": [
-                1.0,
-                1.0,
-                1.0
-              ]
-            },
-            "visible": true
-          },
-          {
-            "active": true,
-            "components": [
-              {
                 "angularDamping": 0.0,
                 "bodyType": "DYNAMIC",
                 "collisionShapeType": "CAPSULE",
@@ -680,13 +644,78 @@
               ]
             },
             "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "castShadows": true,
+                    "isLoaded": true,
+                    "modelName": "Player.glb",
+                    "modelPath": "assets/models/Player.glb",
+                    "receiveShadows": true,
+                    "type": "ModelRenderer"
+                  },
+                  {
+                    "animationClipName": "Idle",
+                    "autoPlay": false,
+                    "enableRootMotion": false,
+                    "loop": true,
+                    "skeletonName": "Player",
+                    "speed": 1.0,
+                    "type": "AnimationComponent"
+                  }
+                ],
+                "name": "PlayerModel",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -5.008956577512436e-06,
+                    -5.008956577512436e-06
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "name": "PlayerMesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                -90.0,
+                2.3478776256524725e-06,
+                180.0
+              ],
+              "scale": [
+                0.009999999776482582,
+                0.009999999776482582,
+                0.009999999776482582
+              ]
+            },
+            "visible": true
           }
         ],
         "name": "Player",
         "transform": {
           "position": [
             0.0,
-            -1.5,
+            -1.399999976158142,
             0.8999999761581421
           ],
           "rotation": [
@@ -877,71 +906,6 @@
             -0.30000001192092896,
             0.0,
             -6.800000190734863
-          ],
-          "rotation": [
-            0.0,
-            -0.0,
-            0.0
-          ],
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        },
-        "visible": true
-      },
-      {
-        "active": true,
-        "children": [
-          {
-            "active": true,
-            "components": [
-              {
-                "castShadows": true,
-                "isLoaded": true,
-                "modelName": "player_running.glb",
-                "modelPath": "assets/models/player_running.glb",
-                "receiveShadows": true,
-                "type": "ModelRenderer"
-              },
-              {
-                "animationClipName": "Armature|mixamo.com|Layer0",
-                "autoPlay": false,
-                "enableRootMotion": false,
-                "loop": true,
-                "skeletonName": "RootNode",
-                "speed": 1.0,
-                "type": "AnimationComponent"
-              }
-            ],
-            "name": "Model",
-            "transform": {
-              "position": [
-                0.0,
-                0.0,
-                0.0
-              ],
-              "rotation": [
-                0.0,
-                -0.0,
-                0.0
-              ],
-              "scale": [
-                1.0,
-                1.0,
-                1.0
-              ]
-            },
-            "visible": true
-          }
-        ],
-        "name": "Character",
-        "transform": {
-          "position": [
-            0.0,
-            -2.0,
-            -1.7000000476837158
           ],
           "rotation": [
             0.0,

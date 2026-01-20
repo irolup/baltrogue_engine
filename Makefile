@@ -174,7 +174,7 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/models/dirty_football_1k.gltf/textures/dirty_football_arm_1k.jpg=assets/models/dirty_football_1k.gltf/textures/dirty_football_arm_1k.jpg \
 		-a assets/models/dirty_football_1k.gltf/textures/dirty_football_diff_1k.jpg=assets/models/dirty_football_1k.gltf/textures/dirty_football_diff_1k.jpg \
 		-a assets/models/dirty_football_1k.gltf/textures/dirty_football_nor_gl_1k.jpg=assets/models/dirty_football_1k.gltf/textures/dirty_football_nor_gl_1k.jpg \
-		-a assets/models/player_running.glb=assets/models/player_running.glb \
+		-a assets/models/Player.glb=assets/models/Player.glb \
 		-a scripts/obstacle_behavior.lua=scripts/obstacle_behavior.lua \
 		-a scripts/camera_controller.lua=scripts/camera_controller.lua \
 		-a scripts/patrol_behavior.lua=scripts/patrol_behavior.lua \

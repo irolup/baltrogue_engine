@@ -472,16 +472,114 @@ void AnimationComponent::drawInspector() {
         ImGui::TextColored(ImVec4(0.8f, 0.2f, 0.2f, 1.0f), "No skeleton set");
     }
     
-    // Animation clip info
+    auto& animManager = AnimationManager::getInstance();
+    std::vector<std::string> availableAnimations;
+    
+    if (owner) {
+        auto modelRenderer = owner->getComponent<ModelRenderer>();
+        if (modelRenderer && modelRenderer->isModelLoaded()) {
+            if (currentSkeleton) {
+                availableAnimations = animManager.getAnimationClipsForSkeleton(currentSkeleton->getName());
+            }
+            
+            if (availableAnimations.empty()) {
+                std::string modelPath = modelRenderer->getModelPath();
+                auto allClips = animManager.getAvailableAnimationClips();
+                for (const auto& clipName : allClips) {
+                    auto clip = animManager.getAnimationClip(clipName);
+                    if (clip) {
+                        std::string clipPath = clip->getFilePath();
+                        if (clipPath == modelPath || 
+                            clipPath.find(modelPath) != std::string::npos ||
+                            modelPath.find(clipPath) != std::string::npos) {
+                            availableAnimations.push_back(clipName);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if (availableAnimations.empty() && currentSkeleton) {
+        availableAnimations = animManager.getAnimationClipsForSkeleton(currentSkeleton->getName());
+    }
+    
+    if (availableAnimations.empty()) {
+        availableAnimations = animManager.getAvailableAnimationClips();
+    }
+    
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "Available Animations:");
+    
+    if (availableAnimations.empty()) {
+        ImGui::TextColored(ImVec4(0.8f, 0.2f, 0.2f, 1.0f), "No animations found");
+    } else {
+        if (ImGui::BeginTable("AnimationsTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Start", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableSetupColumn("End", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableSetupColumn("Duration", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableSetupColumn("Select", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableHeadersRow();
+            
+            int selectedIndex = -1;
+            
+            for (size_t i = 0; i < availableAnimations.size(); ++i) {
+                const auto& clipName = availableAnimations[i];
+                auto clip = animManager.getAnimationClip(clipName);
+                
+                if (!clip) continue;
+                
+                ImGui::TableNextRow();
+                
+                ImGui::TableSetColumnIndex(0);
+                bool isCurrent = (currentClip && (clip == currentClip || clipName == currentClip->getName()));
+                if (isCurrent) {
+                    ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "%s (Current)", clip->getName().c_str());
+                } else {
+                    ImGui::Text("%s", clip->getName().c_str());
+                }
+                
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%.3f", clip->getStartTime());
+                
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%.3f", clip->getEndTime());
+                
+                ImGui::TableSetColumnIndex(3);
+                ImGui::Text("%.3f", clip->getDuration());
+                
+                ImGui::TableSetColumnIndex(4);
+                if (!isCurrent) {
+                    std::string buttonLabel = "Select##" + std::to_string(i);
+                    if (ImGui::SmallButton(buttonLabel.c_str())) {
+                        selectedIndex = static_cast<int>(i);
+                    }
+                } else {
+                    ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Active");
+                }
+            }
+            
+            ImGui::EndTable();
+            
+            if (selectedIndex >= 0 && selectedIndex < static_cast<int>(availableAnimations.size())) {
+                setAnimationClip(availableAnimations[selectedIndex]);
+            }
+        }
+    }
+    
+    ImGui::Separator();
+    
     if (currentClip) {
-        ImGui::Text("Animation: %s", currentClip->getName().c_str());
-        ImGui::Text("Duration: %.2fs", currentClip->getDuration());
+        ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Current Animation: %s", currentClip->getName().c_str());
+        ImGui::Text("Start Time: %.3fs", currentClip->getStartTime());
+        ImGui::Text("End Time: %.3fs", currentClip->getEndTime());
+        ImGui::Text("Duration: %.3fs", currentClip->getDuration());
         ImGui::Text("Bone Animations: %zu", currentClip->getBoneAnimations().size());
     } else {
         ImGui::TextColored(ImVec4(0.8f, 0.2f, 0.2f, 1.0f), "No animation clip set");
     }
     
-    // Playback state
     ImGui::Separator();
     ImGui::Text("Playing: %s", isPlaying_ ? "Yes" : "No");
     ImGui::Text("Current Time: %.2fs", currentTime);
@@ -489,7 +587,6 @@ void AnimationComponent::drawInspector() {
         ImGui::Text("Progress: %.1f%%", (currentTime / currentClip->getDuration()) * 100.0f);
     }
     
-    // Playback controls
     ImGui::Separator();
     if (ImGui::Button(isPlaying_ ? "Pause" : "Play")) {
         if (isPlaying_) {
@@ -503,7 +600,6 @@ void AnimationComponent::drawInspector() {
         stop();
     }
     
-    // Playback settings
     ImGui::Separator();
     bool looping = isLooping;
     if (ImGui::Checkbox("Loop", &looping)) {
@@ -520,7 +616,6 @@ void AnimationComponent::drawInspector() {
         setSpeed(speed);
     }
     
-    // Bone transforms info
     ImGui::Separator();
     ImGui::Text("Bone Transforms: %zu", boneTransforms.size());
 #endif

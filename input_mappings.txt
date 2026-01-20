@@ -29,13 +29,15 @@
 #   1 = Invert axis value (negative becomes positive, used for MoveForward/MoveLeft)
 
 action:MoveForward,PC,0,87,1,0.1,1,-1,0
-action:MoveForward,ALL,2,0,1,0.1,1,1,0
+action:MoveForward,ALL,2,0,1,0.1,1,1,1
 action:MoveBackward,PC,0,83,1,0.1,1,-1,0
 action:MoveBackward,ALL,2,0,1,0.1,1,1,0
 action:MoveHorizontal,ALL,2,0,1,0.1,1,0,0
 action:MoveVertical,ALL,2,0,1,0.1,1,1,0
 action:MoveLeft,PC,0,65,1,0.1,1,-1,0
+action:MoveLeft,ALL,2,0,1,0.1,1,0,1
 action:MoveRight,PC,0,68,1,0.1,1,-1,0
+action:MoveRight,ALL,2,0,1,0.1,1,0,0
 action:LookHorizontal,ALL,2,1,1,0.1,1,0,0
 action:LookVertical,ALL,2,1,1,0.1,1,1,0
 action:LookHorizontal,PC,4,0,1,0.1,1,-1,0
@@ -46,6 +48,8 @@ action:LookUp,PC,0,265,1,0.1,1,-1,0
 action:LookDown,PC,0,264,1,0.1,1,-1,0
 action:Jump,PC,0,32,0,0.1,1,-1,0
 action:Jump,VITA,1,16384,0,0.1,1,-1,0
+action:Sprint,PC,0,340,1,0.1,1,-1,0
+action:Sprint,VITA,1,8192,1,0.1,1,-1,0
 action:menu_up,PC,0,265,0,0.1,1,-1,0
 action:menu_up,VITA,1,16,0,0.1,1,-1,0
 action:menu_down,PC,0,264,0,0.1,1,-1,0
