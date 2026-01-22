@@ -1,25 +1,18 @@
 #include "Physics/PhysicsManager.h"
 #include "Platform/VitaMath.h"
 #include "Components/PhysicsComponent.h"
+#include "Scene/SceneNode.h"
+#include "Core/ThreadManager.h"
 
 // Bullet includes
 #include <btBulletDynamicsCommon.h>
 #include <btBulletCollisionCommon.h>
 #include <BulletCollision/CollisionDispatch/btGhostObject.h>
 #include <algorithm>
+#include <iostream>
 
 namespace GameEngine {
 
-PhysicsManager::PhysicsManager()
-    : dynamicsWorld(nullptr)
-    , collisionConfiguration(nullptr)
-    , dispatcher(nullptr)
-    , broadphase(nullptr)
-    , solver(nullptr)
-    , ghostPairCallback(nullptr)
-    , debugDrawEnabled(false)
-{
-}
 
 PhysicsManager::~PhysicsManager() {
     shutdown();
@@ -59,7 +52,19 @@ bool PhysicsManager::initialize() {
 }
 
 void PhysicsManager::shutdown() {
+    if (threadingEnabled && physicsThreadRunning) {
+        PhysicsCommand shutdownCmd;
+        shutdownCmd.type = PhysicsCommandType::SHUTDOWN;
+        commandQueue.push(shutdownCmd);
+        
+        ThreadManager::getInstance().joinThread(physicsThread);
+        physicsThreadRunning = false;
+        commandQueue.reset();
+        resultQueue.reset();
+    }
     if (dynamicsWorld) {
+        LockGuard lock(physicsMutex);
+        
         for (int i = dynamicsWorld->getNumCollisionObjects() - 1; i >= 0; i--) {
             btCollisionObject* obj = dynamicsWorld->getCollisionObjectArray()[i];
             btRigidBody* body = btRigidBody::upcast(obj);
@@ -103,34 +108,250 @@ void PhysicsManager::shutdown() {
 }
 
 void PhysicsManager::update(float deltaTime) {
-    if (dynamicsWorld) {
-        int maxSubSteps = 20;
-        float fixedTimeStep = 1.0f / 60.0f;
-        
-        dynamicsWorld->stepSimulation(deltaTime, maxSubSteps, fixedTimeStep);
-        
+    if (!threadingEnabled) {
+        // Single thread mode
+        processPhysicsUpdate(deltaTime);
+    } else {
+        // Multi thread mode
+        PhysicsCommand cmd;
+        cmd.type = PhysicsCommandType::UPDATE;
+        cmd.deltaTime = deltaTime;
+        cmd.data = nullptr;
+        commandQueue.push(cmd);
+        syncPhysicsResults();
+    }
+}
+
+void PhysicsManager::processPhysicsUpdate(float deltaTime) {
+    if (!dynamicsWorld) {
+        return;
+    }
+    
+    LockGuard lock(physicsMutex);
+    
+    int maxSubSteps = 20;
+    float fixedTimeStep = 1.0f / 60.0f;
+    
+    dynamicsWorld->stepSimulation(deltaTime, maxSubSteps, fixedTimeStep);
+    
+    if (threadingEnabled) {
         for (auto* component : physicsComponents) {
-            if (component && component->isEnabled()) {
-                component->syncTransformFromPhysics();
+            if (component && component->isEnabled() && component->getRigidBody()) {
+                btRigidBody* body = component->getRigidBody();
+                if (body && body->getMotionState()) {
+                    btTransform transform;
+                    body->getMotionState()->getWorldTransform(transform);
+                    
+                    PhysicsTransformResult result;
+                    result.component = component;
+                    result.position = glm::vec3(
+                        transform.getOrigin().x(),
+                        transform.getOrigin().y(),
+                        transform.getOrigin().z()
+                    );
+                    btQuaternion rot = transform.getRotation();
+                    result.rotation = glm::quat(rot.w(), rot.x(), rot.y(), rot.z());
+                    result.valid = true;
+                    resultQueue.push(result);
+                }
             }
         }
     }
 }
 
+void PhysicsManager::syncPhysicsResults() {
+    if (!threadingEnabled) {
+        for (auto* component : physicsComponents) {
+            if (component && component->isEnabled()) {
+                component->syncTransformFromPhysics();
+            }
+        }
+        return;
+    }
+    
+    PhysicsTransformResult result;
+    while (resultQueue.tryPop(result)) {
+        if (result.valid && result.component) {
+            applyTransformToComponent(result.component, result.position, result.rotation);
+        }
+    }
+}
+
+void PhysicsManager::syncComponentTransformFromPhysics(PhysicsComponent* component) {
+    if (!component) {
+        return;
+    }
+    
+    if (threadingEnabled) {
+        LockGuard lock(physicsMutex);
+        component->syncTransformFromPhysics();
+    } else {
+        component->syncTransformFromPhysics();
+    }
+}
+
+void PhysicsManager::applyTransformToComponent(PhysicsComponent* component, const glm::vec3& position, const glm::quat& rotation) {
+    if (!component) {
+        return;
+    }
+    
+    auto* owner = component->getOwner();
+    if (!owner) {
+        return;
+    }
+    
+    auto bodyType = component->getBodyType();
+    
+    if (bodyType == PhysicsBodyType::DYNAMIC || bodyType == PhysicsBodyType::KINEMATIC) {
+        bool rotationLocked = false;
+        if (component->getRigidBody()) {
+            btVector3 angularFactor = component->getRigidBody()->getAngularFactor();
+            rotationLocked = (angularFactor.x() == 0.0f && angularFactor.y() == 0.0f && angularFactor.z() == 0.0f);
+        }
+        
+        if (owner->getParent()) {
+            if (bodyType == PhysicsBodyType::DYNAMIC) {
+                auto& parentTransform = owner->getParent()->getTransform();
+                parentTransform.setPosition(position);
+                if (!rotationLocked) {
+                    parentTransform.setRotation(rotation);
+                }
+            }
+        } else {
+            owner->getTransform().setPosition(position);
+            if (!rotationLocked) {
+                owner->getTransform().setRotation(rotation);
+            }
+        }
+    }
+}
+
+void PhysicsManager::physicsThreadFunction() {
+    physicsThreadRunning = true;
+    
+    while (physicsThreadRunning) {
+        PhysicsCommand cmd;
+        if (commandQueue.pop(cmd)) {
+            switch (cmd.type) {
+                case PhysicsCommandType::UPDATE:
+                    processPhysicsUpdate(cmd.deltaTime);
+                    break;
+                    
+                case PhysicsCommandType::ADD_RIGID_BODY:
+                    if (cmd.data) {
+                        LockGuard lock(physicsMutex);
+                        addRigidBodyInternal(static_cast<btRigidBody*>(cmd.data));
+                    }
+                    break;
+                    
+                case PhysicsCommandType::REMOVE_RIGID_BODY:
+                    if (cmd.data) {
+                        LockGuard lock(physicsMutex);
+                        removeRigidBodyInternal(static_cast<btRigidBody*>(cmd.data));
+                    }
+                    break;
+                    
+                case PhysicsCommandType::SET_GRAVITY:
+                    if (cmd.data) {
+                        LockGuard lock(physicsMutex);
+                        glm::vec3* gravity = static_cast<glm::vec3*>(cmd.data);
+                        setGravityInternal(*gravity);
+                        delete gravity;
+                    }
+                    break;
+                    
+                case PhysicsCommandType::SHUTDOWN:
+                    physicsThreadRunning = false;
+                    break;
+            }
+        } else {
+            physicsThreadRunning = false;
+        }
+    }
+}
+
+void PhysicsManager::enableThreading(bool enable) {
+    if (threadingEnabled == enable) {
+        return;
+    }
+    
+    threadingEnabled = enable;
+    
+    if (enable && !physicsThreadRunning) {
+        physicsThread = ThreadManager::getInstance().createThread(
+            "PhysicsThread",
+            [this]() { this->physicsThreadFunction(); }
+        );
+        
+        if (!ThreadManager::getInstance().isValid(physicsThread)) {
+            std::cerr << "PhysicsManager: Failed to create physics thread!" << std::endl;
+            threadingEnabled = false;
+        } else {
+            std::cout << "PhysicsManager: Physics threading enabled successfully" << std::endl;
+        }
+    } else if (!enable) {
+        if (physicsThreadRunning) {
+            PhysicsCommand shutdownCmd;
+            shutdownCmd.type = PhysicsCommandType::SHUTDOWN;
+            commandQueue.push(shutdownCmd);
+            
+            ThreadManager::getInstance().joinThread(physicsThread);
+            physicsThreadRunning = false;
+            commandQueue.reset();
+            resultQueue.reset();
+            
+            std::cout << "PhysicsManager: Physics threading disabled (Total threads: " 
+                      << ThreadManager::getInstance().getThreadCount() << ")" << std::endl;
+        } else {
+            std::cout << "PhysicsManager: Physics threading disabled (was already disabled)" << std::endl;
+        }
+    }
+}
+
 void PhysicsManager::addRigidBody(btRigidBody* body) {
-    if (dynamicsWorld && body) {
+    if (!dynamicsWorld || !body) {
+        return;
+    }
+    
+    if (threadingEnabled) {
+        PhysicsCommand cmd;
+        cmd.type = PhysicsCommandType::ADD_RIGID_BODY;
+        cmd.data = body;
+        commandQueue.push(cmd);
+    } else {
+        LockGuard lock(physicsMutex);
         dynamicsWorld->addRigidBody(body);
     }
 }
 
 void PhysicsManager::removeRigidBody(btRigidBody* body) {
-    if (dynamicsWorld && body) {
+    if (!dynamicsWorld || !body) {
+        return;
+    }
+    
+    if (threadingEnabled) {
+        PhysicsCommand cmd;
+        cmd.type = PhysicsCommandType::REMOVE_RIGID_BODY;
+        cmd.data = body;
+        commandQueue.push(cmd);
+    } else {
+        LockGuard lock(physicsMutex);
         dynamicsWorld->removeRigidBody(body);
     }
 }
 
 void PhysicsManager::setGravity(const glm::vec3& gravity) {
-    if (dynamicsWorld) {
+    if (!dynamicsWorld) {
+        return;
+    }
+    
+    if (threadingEnabled) {
+        PhysicsCommand cmd;
+        cmd.type = PhysicsCommandType::SET_GRAVITY;
+        cmd.data = new glm::vec3(gravity);
+        commandQueue.push(cmd);
+    } else {
+        LockGuard lock(physicsMutex);
         dynamicsWorld->setGravity(btVector3(gravity.x, gravity.y, gravity.z));
     }
 }
@@ -202,7 +423,30 @@ void PhysicsManager::unregisterPhysicsComponent(PhysicsComponent* component) {
     }
 }
 
+void PhysicsManager::addRigidBodyInternal(btRigidBody* body) {
+    if (!dynamicsWorld || !body) {
+        return;
+    }
+    dynamicsWorld->addRigidBody(body);
+}
+
+void PhysicsManager::removeRigidBodyInternal(btRigidBody* body) {
+    if (!dynamicsWorld || !body) {
+        return;
+    }
+    dynamicsWorld->removeRigidBody(body);
+}
+
+void PhysicsManager::setGravityInternal(const glm::vec3& gravity) {
+    if (!dynamicsWorld) {
+        return;
+    }
+    dynamicsWorld->setGravity(btVector3(gravity.x, gravity.y, gravity.z));
+}
+
 void PhysicsManager::cleanupPhysicsObjects() {
 }
 
 } // namespace GameEngine
+
+

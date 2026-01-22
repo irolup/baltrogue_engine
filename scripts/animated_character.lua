@@ -167,7 +167,7 @@ function update(deltaTime)
                 animation.setSpeed(characterNodeName, 1.0)
                 animation.play(characterNodeName)
                 currentAnimation = desiredAnimation
-                print("Switched to animation: " .. currentAnimation)
+                -- print("Switched to animation: " .. currentAnimation)
             end
         end
     end
