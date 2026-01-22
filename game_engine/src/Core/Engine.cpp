@@ -5,15 +5,7 @@
 #include "Core/Time.h"
 #include "Core/MenuManager.h"
 #include "Core/ScriptManager.h"
-#include "Core/ThreadManager.h"
 #include <iostream>
-
-// Physics threading disabled by default
-// Bullet Physics is not thread-safe by default, but CAN work with proper synchronization
-// The implementation uses command queues + mutexes which should be safe, but keeping
-// physics on main thread is safer.
-//Also does not work on Vita, so it is disabled by default.
-static const bool ENABLE_PHYSICS_THREADING = false;
 
 #ifdef EDITOR_BUILD
     #include "Editor/EditorSystem.h"
@@ -135,8 +127,6 @@ bool Engine::initializeSystems() {
         std::cerr << "Failed to initialize physics system!" << std::endl;
         return false;
     }
-
-    PhysicsManager::getInstance().enableThreading(ENABLE_PHYSICS_THREADING);
     
     renderer = std::unique_ptr<Renderer>(new Renderer());
     
@@ -203,9 +193,6 @@ void Engine::update() {
     
     if (!MenuManager::getInstance().isGamePaused()) {
         PhysicsManager::getInstance().update(timeSystem->getDeltaTime());
-        if (!PhysicsManager::getInstance().isThreadingEnabled()) {
-            PhysicsManager::getInstance().syncPhysicsResults();
-        }
     }
     
     if (renderer) {
