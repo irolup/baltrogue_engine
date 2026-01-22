@@ -49,11 +49,13 @@ TINYGLTF_CPPFILES := $(wildcard $(TINYGLTF_SOURCES)/*.cc)
 
 # All source files for game (Vita main + engine + platform, excluding old game files)
 # Include SceneSerializer.cpp for JSON scene loading in Vita builds
-ALL_CFILES := $(ENGINE_CFILES)
+# Include pthread stub for Vita (provides pthread compatibility for libstdc++)
+ALL_CFILES := $(ENGINE_CFILES) src/pthread_stub.c
 ALL_CPPFILES := src/vita_main.cpp src/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp
 
 # Linux game source files (new game main + engine + platform, excluding editor and old game files)
 # Include SceneSerializer.cpp for JSON scene loading in game builds
+LINUX_GAME_CFILES := $(ENGINE_CFILES)
 LINUX_GAME_CPPFILES := src/game_main.cpp src/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp
 
 # Editor source files
@@ -69,7 +71,7 @@ OBJS := $(addprefix $(BUILD_DIR)/,$(ALL_CFILES:.c=.o) $(ALL_CPPFILES:.cpp=.o))
 TINYGLTF_OBJS := $(addprefix $(BUILD_DIR)/,$(TINYGLTF_CPPFILES:.cc=.o))
 
 # Object files for Linux game build
-LINUX_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(ALL_CFILES:.c=.o) $(LINUX_GAME_CPPFILES:.cpp=.o))
+LINUX_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(LINUX_GAME_CFILES:.c=.o) $(LINUX_GAME_CPPFILES:.cpp=.o))
 LINUX_TINYGLTF_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(TINYGLTF_CPPFILES:.cc=.o))
 
 # Object files for Linux editor build (includes editor sources + ImGui, no game files)
@@ -82,14 +84,14 @@ PREFIX = arm-vita-eabi
 CC = $(PREFIX)-gcc
 CXX = $(PREFIX)-g++
 CFLAGS = -g -Wl,-q -O2 -ftree-vectorize
-CXXFLAGS = $(CFLAGS) -fno-exceptions -std=gnu++11 -fpermissive
+CXXFLAGS = $(CFLAGS) -fno-exceptions -std=gnu++11 -fpermissive -DBT_THREADSAFE=1
 ASFLAGS = $(CFLAGS)
 
 # Linux compiler flags
 LINUX_CC = gcc
 LINUX_CXX = g++
 LINUX_CFLAGS = -g -O2 -Wall
-LINUX_CXXFLAGS = $(LINUX_CFLAGS) -std=c++17
+LINUX_CXXFLAGS = $(LINUX_CFLAGS) -std=c++17 -DBT_THREADSAFE=1
 
 # Include paths
 LINUX_INCLUDES = -I$(INCLUDES) -I$(ENGINE_INCLUDES) -I$(BULLET_INCLUDE) -I$(VENDOR_SOURCES)/stb -I/usr/include/lua5.3
@@ -206,12 +208,12 @@ $(BUILD_DIR)/$(TARGET).elf: $(OBJS) $(TINYGLTF_OBJS) | $(BUILD_DIR)
 # Text test executable
 TEXT_TEST_TARGET := text_test
 TEXT_TEST_CPPFILES := src/text_test.cpp src/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES))
-TEXT_TEST_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(ALL_CFILES:.c=.o) $(TEXT_TEST_CPPFILES:.cpp=.o))
+TEXT_TEST_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(LINUX_GAME_CFILES:.c=.o) $(TEXT_TEST_CPPFILES:.cpp=.o))
 
 # Lua test executable
 LUA_TEST_TARGET := lua_test
 LUA_TEST_CPPFILES := src/lua_test.cpp src/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES))
-LUA_TEST_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(ALL_CFILES:.c=.o) $(LUA_TEST_CPPFILES:.cpp=.o))
+LUA_TEST_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(LINUX_GAME_CFILES:.c=.o) $(LUA_TEST_CPPFILES:.cpp=.o))
 
 # Linux game executable
 $(LINUX_BUILD_DIR)/$(TARGET): $(LINUX_OBJS) $(LINUX_TINYGLTF_OBJS) | $(LINUX_BUILD_DIR)

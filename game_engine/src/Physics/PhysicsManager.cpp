@@ -8,9 +8,25 @@
 #include <btBulletDynamicsCommon.h>
 #include <btBulletCollisionCommon.h>
 #include <BulletCollision/CollisionDispatch/btGhostObject.h>
+#include "BulletDynamics/ConstraintSolver/btSequentialImpulseConstraintSolverMt.h"
+#include "BulletCollision/CollisionDispatch/btCollisionDispatcherMt.h"
+#include "LinearMath/btThreads.h"
 #include <algorithm>
+#include <thread>
+
+#ifdef VITA_BUILD
+extern "C" void btSetDesiredVitaThreadCount(int count);
+#endif
 
 namespace GameEngine {
+
+#ifdef VITA_BUILD
+static const bool ENABLE_PHYSICS_MULTITHREADING = true;
+static const int MAX_PHYSICS_THREADS_VITA = 1; // Max number on vita is 2 worker threads, 0 = physics on main thread only
+#else
+static const bool ENABLE_PHYSICS_MULTITHREADING = true;
+static const int MAX_PHYSICS_THREADS = 8;
+#endif
 
 PhysicsManager::PhysicsManager()
     : dynamicsWorld(nullptr)
@@ -36,13 +52,66 @@ PhysicsManager& PhysicsManager::getInstance() {
 bool PhysicsManager::initialize() {
     collisionConfiguration = new btDefaultCollisionConfiguration();
     
+    btITaskScheduler* scheduler = nullptr;
+    bool useMultithreading = false;
+    
+    #if BT_THREADSAFE
+    if (ENABLE_PHYSICS_MULTITHREADING) {
+        #ifdef VITA_BUILD
+        btSetDesiredVitaThreadCount(MAX_PHYSICS_THREADS_VITA);
+        #endif
+        
+        scheduler = btGetTaskScheduler();
+        if (!scheduler) {
+            scheduler = btCreateDefaultTaskScheduler();
+            if (scheduler) {
+                btSetTaskScheduler(scheduler);
+            } else {
+                printf("[PhysicsManager] WARNING: Failed to create task scheduler\n");
+            }
+        }
+        
+        if (scheduler) {
+            int requestedThreads;
+            #ifdef VITA_BUILD
+            requestedThreads = MAX_PHYSICS_THREADS_VITA + 1;
+            #else
+            int availableCores = std::thread::hardware_concurrency();
+            requestedThreads = std::max(1, std::min(availableCores - 1, MAX_PHYSICS_THREADS));
+            #endif
+            
+            scheduler->setNumThreads(requestedThreads);
+            int actualThreads = scheduler->getNumThreads();
+            useMultithreading = (actualThreads > 1);
+            
+            printf("[PhysicsManager] Physics initialized: %d thread(s), multithreading %s\n", 
+                   actualThreads, useMultithreading ? "ENABLED" : "DISABLED");
+        }
+    }
+    #endif
+    
+    #if BT_THREADSAFE
+    if (ENABLE_PHYSICS_MULTITHREADING && useMultithreading && scheduler) {
+        btITaskScheduler* activeScheduler = btGetTaskScheduler();
+        if (activeScheduler && activeScheduler->getNumThreads() > 1) {
+            dispatcher = new btCollisionDispatcherMt(collisionConfiguration);
+            solver = new btSequentialImpulseConstraintSolverMt();
+        } else {
+            dispatcher = new btCollisionDispatcher(collisionConfiguration);
+            solver = new btSequentialImpulseConstraintSolver();
+        }
+    } else {
+        dispatcher = new btCollisionDispatcher(collisionConfiguration);
+        solver = new btSequentialImpulseConstraintSolver();
+    }
+    #else
     dispatcher = new btCollisionDispatcher(collisionConfiguration);
+    solver = new btSequentialImpulseConstraintSolver();
+    #endif
     
     btVector3 worldMin(-1000, -1000, -1000);
     btVector3 worldMax(1000, 1000, 1000);
     broadphase = new btAxisSweep3(worldMin, worldMax);
-    
-    solver = new btSequentialImpulseConstraintSolver();
     
     dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
     
@@ -168,7 +237,6 @@ btCollisionShape* PhysicsManager::createPlaneShape(const glm::vec3& normal, floa
 
 void PhysicsManager::setDebugDrawEnabled(bool enabled) {
     debugDrawEnabled = enabled;
-    // TODO: Implement debug drawer
 }
 
 bool PhysicsManager::isDebugDrawEnabled() const {
@@ -197,7 +265,6 @@ void PhysicsManager::registerPhysicsComponent(PhysicsComponent* component) {
 
 void PhysicsManager::unregisterPhysicsComponent(PhysicsComponent* component) {
     if (component) {
-        
         auto it = std::find(physicsComponents.begin(), physicsComponents.end(), component);
         if (it != physicsComponents.end()) {
             physicsComponents.erase(it);

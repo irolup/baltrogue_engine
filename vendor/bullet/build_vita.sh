@@ -31,7 +31,8 @@ cmake .. \
     -DUSE_SOFT_BODY_MULTI_BODY_DYNAMICS_WORLD=OFF \
     -DUSE_OPENVR=OFF \
     -DENABLE_VHACD=OFF \
-    -DBULLET2_MULTITHREADING=OFF \
+    -DBULLET2_MULTITHREADING=ON \
+    -DVITA_BUILD=ON \
     -DBUILD_EXTRAS=OFF \
     -DBUILD_UNIT_TESTS=OFF \
     -DBUILD_OPENGL3_DEMOS=OFF \
@@ -60,8 +61,8 @@ cmake .. \
     -DBUILD_DYNAMICS=OFF \
     -DBUILD_CONSTRAINTS=OFF \
     -DCMAKE_INSTALL_PREFIX=../lib_vita \
-    -DCMAKE_CXX_FLAGS="-fno-exceptions -std=gnu++11 -fpermissive -ffast-math" \
-    -DCMAKE_C_FLAGS="-ffast-math"
+    -DCMAKE_CXX_FLAGS="-fno-exceptions -std=gnu++11 -fpermissive -ffast-math -DVITA_BUILD -DBT_THREADSAFE=1" \
+    -DCMAKE_C_FLAGS="-ffast-math -DVITA_BUILD"
 
 # Build
 echo "Building Bullet for Vita..."

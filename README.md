@@ -2,6 +2,36 @@
 
 This project is a cross-platform Game Engine that supports both PS Vita and Linux builds, with a complete editor interface for Linux.
 
+## Features
+
+### Rendering
+- [x] Basic 2D Rendering
+- [x] Basic 3D Rendering
+- [ ] Skyboxes
+- [x] Skeletal Animations (GLTF bone animations)
+- [x] GLTF/GLB Model Loading
+- [x] PBR (with normal map)
+- [x] Multi-light Lighting System (Directional, Point, Spot)
+
+### Audio
+- [ ] 2D Audio
+- [ ] 3D Audio
+
+### Physics
+- [x] 3D Physics (Bullet Physics with multithreading support on Vita and Linux)
+- [ ] 2D Physics
+
+### Scene and Editor
+- [x] Scene System (Load/Save JSON scenes)
+- [x] Visual Editor (Scene Graph, Viewport, Properties Panel)
+- [x] Input Mapping from Editor
+- [x] Lua Hot Reloading
+- [x] Component System
+
+### Platform Support
+- [x] PS Vita Build
+- [x] Linux Build
+
 ## Architecture
 
 The game engine follows a modern architecture with:
@@ -34,8 +64,8 @@ first_game/
 │   ├── include/          # Engine headers
 │   │   ├── Core/         # Core systems (Engine, Transform, Time)
 │   │   ├── Scene/        # Scene management (SceneNode, SceneManager)
-│   │   ├── Components/   # Entity components (Camera, MeshRenderer, Lights)
-│   │   ├── Rendering/    # Rendering system (Renderer, Mesh, Material)
+│   │   ├── Components/   # Entity components (Camera, MeshRenderer, Lights...)
+│   │   ├── Rendering/    # Rendering system (Renderer, Mesh, Material...)
 │   │   ├── Input/        # Input management
 │   │   └── Editor/       # Editor system (Linux only)
 │   └── src/              # Engine implementation

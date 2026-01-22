@@ -16,9 +16,16 @@ SET(LinearMath_SRCS
 	btThreads.cpp
 	btVector3.cpp
 	TaskScheduler/btTaskScheduler.cpp
-	TaskScheduler/btThreadSupportPosix.cpp
-	TaskScheduler/btThreadSupportWin32.cpp
 )
+
+# Conditionally include thread support files based on platform
+IF(VITA_BUILD)
+	LIST(APPEND LinearMath_SRCS TaskScheduler/btThreadSupportVita.cpp)
+ELSEIF(WIN32)
+	LIST(APPEND LinearMath_SRCS TaskScheduler/btThreadSupportWin32.cpp)
+ELSE()
+	LIST(APPEND LinearMath_SRCS TaskScheduler/btThreadSupportPosix.cpp)
+ENDIF()
 
 SET(LinearMath_HDRS
 	btAabbUtil2.h
@@ -52,6 +59,7 @@ SET(LinearMath_HDRS
 	btTransformUtil.h
 	btVector3.h
 	TaskScheduler/btThreadSupportInterface.h
+	TaskScheduler/btThreadSupportVita.h
 )
 
 ADD_LIBRARY(LinearMath ${LinearMath_SRCS} ${LinearMath_HDRS})
