@@ -52,7 +52,7 @@ PhysicsManager& PhysicsManager::getInstance() {
 bool PhysicsManager::initialize() {
     collisionConfiguration = new btDefaultCollisionConfiguration();
     
-    btITaskScheduler* scheduler = nullptr;
+    scheduler = nullptr;
     bool useMultithreading = false;
     
     #if BT_THREADSAFE
@@ -169,6 +169,11 @@ void PhysicsManager::shutdown() {
     if (ghostPairCallback) {
         delete ghostPairCallback;
         ghostPairCallback = nullptr;
+    }
+
+    if (scheduler) {
+        delete scheduler;
+        scheduler = nullptr;
     }
     
     physicsComponents.clear();
