@@ -2302,7 +2302,6 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         physicsComp->setShowCollisionShape(componentJson["showCollisionShape"]);
                     }
                     
-                    physicsComp->start(); // Initialize the physics component
                 } else if (type == "TextComponent") {
                     auto textComp = node->addComponent<TextComponent>();
                     

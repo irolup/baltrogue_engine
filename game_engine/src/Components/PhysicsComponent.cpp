@@ -54,6 +54,11 @@ PhysicsComponent::~PhysicsComponent() {
 }
 
 void PhysicsComponent::start() {
+
+    if (rigidBody != nullptr) {
+        return;
+    }
+    
     PhysicsManager::getInstance().registerPhysicsComponent(this);
     
     if (owner) {
@@ -476,6 +481,10 @@ void PhysicsComponent::setShowCollisionShape(bool show) {
 
 void PhysicsComponent::createRigidBody() {
     if (!owner) return;
+    
+    if (rigidBody != nullptr) {
+        destroyRigidBody();
+    }
     
     collisionShape = createBulletCollisionShape();
     if (!collisionShape) return;
