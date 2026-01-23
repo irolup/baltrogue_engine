@@ -52,7 +52,7 @@ The `docs/references/` folder contains visual references to help understand the 
 
 ### First Demo Scene Animation
 
-**`first_demo.gif`**: An animated demonstration of the `first_game_demo` scene running in the game engine. This GIF showcases the gameplay, physics interactions, and visual features of the demo scene, including player movement, physics-based ball interactions, and the overall scene dynamics.
+**`demo.gif`**: An animated demonstration of the `first_game_demo` scene running in the game engine. This GIF showcases the gameplay, physics interactions, and visual features of the demo scene, including player movement, physics-based ball interactions, and the overall scene dynamics.
 
 ![First Demo Scene](docs/references/demo.gif)
 
