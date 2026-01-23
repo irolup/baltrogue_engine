@@ -1,10 +1,3 @@
-models/lemon_1k.gltf/lemon.bin
-models/lemon_1k.gltf/lemon_1k.gltf
-models/lemon_1k.gltf/textures/lemon_diff_1k.jpg
-models/lemon_1k.gltf/textures/lemon_arm_1k.jpg
-models/lemon_1k.gltf/textures/lemon_nor_gl_1k.jpg
-models/dirty_football_1k.gltf/dirty_football.bin
-models/dirty_football_1k.gltf/dirty_football_1k.gltf
-models/dirty_football_1k.gltf/textures/dirty_football_arm_1k.jpg
-models/dirty_football_1k.gltf/textures/dirty_football_diff_1k.jpg
-models/dirty_football_1k.gltf/textures/dirty_football_nor_gl_1k.jpg
+models/lightning.glb
+models/Player.glb
+

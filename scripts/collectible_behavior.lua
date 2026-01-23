@@ -1,49 +1,36 @@
 local startTime = 0
 local collected = false
 local respawnTimer = 0
-local respawnDelay = 3.0
+local respawnDelay = 6.0
+local speedBoostDuration = 3.0
 local timeWhenCollected = 0
 local accumulatedPauseTime = 0
 local pauseStartTime = 0
-local score = 0
 
 local playerArea3D = nil
-local lemonArea3D = nil
+local speedArea3D = nil
 
-local originalLemonX = 0
-local originalLemonY = 0
-local originalLemonZ = 0
+local originalSpeedPowerX = 0
+local originalSpeedPowerY = 0
+local originalSpeedPowerZ = 0
+local respawnRadius = 3.0
 
-local originalScoreX = -8.2
-local originalScoreY = 7.4
-local originalScoreZ = 0.0
 local lastPausedState = false
-local scoreNodeName = "Score"
+local playerControllerNodeName = "Player_Controller"
 
 local playerName = "Player"
-local lemonRootName = "LemonRoot"
-local lemonNodeName = "Lemon"
+local speedPowerUpRootName = "SpeedPowerUpRoot"
+local SpeedModelName = "SpeedModel"
 local playerAreaNodeName = "PlayerArea3D"
-local lemonAreaNodeName = "LemonArea3D"
+local speedAreaNodeName = "SpeedArea3D"
 
 function start()
     startTime = getTime()
-    
-    originalLemonX, originalLemonY, originalLemonZ = 0.0, -1.5, -5.2
-    
+
+    originalSpeedPowerX, originalSpeedPowerY, originalSpeedPowerZ = 0.0, -1.5, -5.2
+
     playerArea3D = area3D.getComponent(playerAreaNodeName)
-    lemonArea3D = area3D.getComponent(lemonAreaNodeName)
-    
-    local scoreX, scoreY, scoreZ = getNodePosition(scoreNodeName)
-    if scoreX ~= nil and not (scoreX == 0 and scoreY == 0 and scoreZ == 0) then
-        originalScoreX = scoreX
-        originalScoreY = scoreY
-        originalScoreZ = scoreZ
-    else
-        originalScoreX = -8.2
-        originalScoreY = 7.4
-        originalScoreZ = 0.0
-    end
+    speedArea3D = area3D.getComponent(speedAreaNodeName)
     
     if isGamePaused and isGamePaused() then
         lastPausedState = true
@@ -60,14 +47,12 @@ function update(deltaTime)
     
     if isCurrentlyPaused ~= lastPausedState then
         if isCurrentlyPaused then
-            setNodeVisible(scoreNodeName, false)
             pauseStartTime = getTime()
         else
             if pauseStartTime > 0 then
                 accumulatedPauseTime = accumulatedPauseTime + (getTime() - pauseStartTime)
                 pauseStartTime = 0
             end
-            setNodeVisible(scoreNodeName, true)
         end
         lastPausedState = isCurrentlyPaused
     end
@@ -78,71 +63,71 @@ function update(deltaTime)
     
     local currentTime = getTime()
     
-    if not playerArea3D or not lemonArea3D then
+    if not playerArea3D or not speedArea3D then
         if not playerArea3D then
             playerArea3D = area3D.getComponent(playerAreaNodeName)
         end
-        if not lemonArea3D then
-            lemonArea3D = area3D.getComponent(lemonAreaNodeName)
+        if not speedArea3D then
+            speedArea3D = area3D.getComponent(speedAreaNodeName)
         end
         return
     end
     
     local playerBodies = playerArea3D.getBodiesInArea()
-    local lemonBodies = lemonArea3D.getBodiesInArea()
+    local speedBodies = speedArea3D.getBodiesInArea()
     
     if type(playerBodies) ~= "table" then
         print("ERROR: playerBodies is not a table! Value: " .. tostring(playerBodies))
         return
     end
-    if type(lemonBodies) ~= "table" then
-        print("ERROR: lemonBodies is not a table! Value: " .. tostring(lemonBodies))
+    if type(speedBodies) ~= "table" then
+        print("ERROR: speedBodies is not a table! Value: " .. tostring(speedBodies))
         return
     end
-    
-    local playerHasLemon = false
-    local lemonHasPlayer = false
-    
-    if playerArea3D.isBodyInArea(lemonAreaNodeName) then
-        playerHasLemon = true
+
+    local playerHasSpeed = false
+    local speedHasPlayer = false
+
+    if playerArea3D.isBodyInArea(speedAreaNodeName) then
+        playerHasSpeed = true
     end
     
     for i = 1, #playerBodies do
-        if playerBodies[i] == lemonAreaNodeName then
-            playerHasLemon = true
+        if playerBodies[i] == speedAreaNodeName then
+            playerHasSpeed = true
             break
         end
     end
-    
-    if lemonArea3D.isBodyInArea(playerAreaNodeName) then
-        lemonHasPlayer = true
+
+    if speedArea3D.isBodyInArea(playerAreaNodeName) then
+        speedHasPlayer = true
     end
-    
-    for i = 1, #lemonBodies do
-        if lemonBodies[i] == playerAreaNodeName then
-            lemonHasPlayer = true
+
+    for i = 1, #speedBodies do
+        if speedBodies[i] == playerAreaNodeName then
+            speedHasPlayer = true
             break
         end
     end
-    
-    local collisionDetected = playerHasLemon or lemonHasPlayer
+
+    local collisionDetected = playerHasSpeed or speedHasPlayer
     
     if collisionDetected and not collected then
         collected = true
-        score = score + 10
-
-        local textNodeName = "Score"
-        if _VITA_BUILD then
-            textNodeName = "Score"
-        end
-        renderer.setText(textNodeName, "COLLECTED LEMONS: " .. score)
-
-        if lemonArea3D then
-            lemonArea3D.setMonitorMode(false)
-        end
         
-        setNodePosition(lemonRootName, 0, 1000, 0)
-        
+        if callNodeScriptFunctionWithParam then
+            callNodeScriptFunctionWithParam(playerControllerNodeName, "activateSpeedBoost", speedBoostDuration)
+            print("Speed boost activated for " .. speedBoostDuration .. " seconds!")
+        else
+            print("ERROR: Cannot call script function - callNodeScriptFunctionWithParam not available!")
+        end
+
+        if speedArea3D then
+            speedArea3D.setMonitorMode(false)
+        end
+
+        setNodePosition(speedPowerUpRootName, 0, 1000, 0)
+
         timeWhenCollected = currentTime
         accumulatedPauseTime = 0
         pauseStartTime = 0
@@ -155,11 +140,18 @@ function update(deltaTime)
             collected = false
             accumulatedPauseTime = 0
             pauseStartTime = 0
+
+            local angle = math.random() * 2 * math.pi
+            local distance = math.random() * respawnRadius
+            local newX = originalSpeedPowerX + math.cos(angle) * distance
+            local newZ = originalSpeedPowerZ + math.sin(angle) * distance
+            local newY = originalSpeedPowerY
             
-            setNodePosition(lemonRootName, originalLemonX, originalLemonY, originalLemonZ)
-            
-            if lemonArea3D then
-                lemonArea3D.setMonitorMode(true)
+            setNodePosition(speedPowerUpRootName, newX, newY, newZ)
+            print("Power-up respawned at (" .. newX .. ", " .. newY .. ", " .. newZ .. ")")
+
+            if speedArea3D then
+                speedArea3D.setMonitorMode(true)
             end
         end
     end

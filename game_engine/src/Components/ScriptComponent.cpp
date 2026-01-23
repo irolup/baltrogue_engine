@@ -1027,6 +1027,66 @@ void ScriptComponent::bindCameraToLua() {
     });
     lua_settable(luaState, -3);
     
+    // Camera setNodeLookAt function - makes camera look at a node by name
+    lua_pushstring(luaState, "setNodeLookAt");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        lua_getglobal(L, "_currentScriptComponent");
+        ScriptComponent* self = static_cast<ScriptComponent*>(lua_touserdata(L, -1));
+        lua_pop(L, 1); // Remove the userdata from stack
+        
+        if (!self || !self->owner) {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+        
+        const char* targetNodeName = luaL_checkstring(L, 1);
+        if (!targetNodeName) {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+        
+        // Usage: camera.setNodeLookAt("NodeName") or camera.setNodeLookAt("NodeName", upX, upY, upZ)
+        glm::vec3 up(0.0f, 1.0f, 0.0f);
+        if (lua_gettop(L) >= 4) {
+            if (lua_isnumber(L, 2) && lua_isnumber(L, 3) && lua_isnumber(L, 4)) {
+                up.x = lua_tonumber(L, 2);
+                up.y = lua_tonumber(L, 3);
+                up.z = lua_tonumber(L, 4);
+            }
+        }
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene) {
+                auto targetNode = activeScene->findNode(targetNodeName);
+                if (targetNode) {
+                    // Get the target node's world position
+                    glm::mat4 worldMatrix = targetNode->getWorldMatrix();
+                    glm::vec3 targetPosition = glm::vec3(worldMatrix[3]);
+                    
+                    // Make the camera look at the target position
+                    self->owner->getTransform().lookAt(targetPosition, up);
+                    
+                    lua_pushboolean(L, true);
+                    return 1;
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Fallback if there's any error
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
     lua_setglobal(luaState, "camera");
 }
 
@@ -1351,6 +1411,102 @@ void ScriptComponent::bindCommonFunctions() {
     });
     lua_setglobal(luaState, "setNodeLocalPosition");
     
+    // Generic node lookAt function - makes any node look at a position or another node
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+        if (!nodeName) {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+        
+        glm::vec3 targetPosition;
+        bool hasPosition = false;
+        
+        // Check if second argument is a number (position) or string (node name)
+        if (lua_gettop(L) >= 4 && lua_isnumber(L, 2) && lua_isnumber(L, 3) && lua_isnumber(L, 4)) {
+            targetPosition.x = lua_tonumber(L, 2);
+            targetPosition.y = lua_tonumber(L, 3);
+            targetPosition.z = lua_tonumber(L, 4);
+            hasPosition = true;
+        } else if (lua_gettop(L) >= 2 && lua_isstring(L, 2)) {
+            const char* targetNodeName = lua_tostring(L, 2);
+            
+#ifndef VITA_BUILD
+            try {
+#endif
+                auto& engine = GetEngine();
+                auto& sceneManager = engine.getSceneManager();
+                auto activeScene = sceneManager.getCurrentScene();
+                
+                if (activeScene && targetNodeName) {
+                    auto targetNode = activeScene->findNode(targetNodeName);
+                    if (targetNode) {
+                        glm::mat4 worldMatrix = targetNode->getWorldMatrix();
+                        targetPosition = glm::vec3(worldMatrix[3]);
+                        hasPosition = true;
+                    }
+                }
+#ifndef VITA_BUILD
+            } catch (...) {
+                // Fallback if there's any error
+            }
+#endif
+        }
+        
+        if (!hasPosition) {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+        
+        glm::vec3 up(0.0f, 1.0f, 0.0f);
+        int upVectorIndex = lua_isstring(L, 2) ? 3 : 5;
+        if (lua_gettop(L) >= upVectorIndex + 2) {
+            if (lua_isnumber(L, upVectorIndex) && lua_isnumber(L, upVectorIndex + 1) && lua_isnumber(L, upVectorIndex + 2)) {
+                up.x = lua_tonumber(L, upVectorIndex);
+                up.y = lua_tonumber(L, upVectorIndex + 1);
+                up.z = lua_tonumber(L, upVectorIndex + 2);
+            }
+        }
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    // Convert target position to local space if node has a parent
+                    glm::vec3 localTargetPosition = targetPosition;
+                    auto parent = node->getParent();
+                    if (parent) {
+                        glm::mat4 parentWorldMatrix = parent->getWorldMatrix();
+                        glm::mat4 parentWorldInv = glm::inverse(parentWorldMatrix);
+                        glm::vec4 targetWorld4(targetPosition, 1.0f);
+                        glm::vec4 targetLocal4 = parentWorldInv * targetWorld4;
+                        localTargetPosition = glm::vec3(targetLocal4);
+                    }
+                    
+                    node->getTransform().lookAt(localTargetPosition, up);
+                    
+                    lua_pushboolean(L, true);
+                    return 1;
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Fallback if there's any error
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_setglobal(luaState, "setNodeLookAt");
+    
     // Generic node world position function - gets any node's world position by name
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         const char* nodeName = luaL_checkstring(L, 1);
@@ -1525,6 +1681,39 @@ void ScriptComponent::bindCommonFunctions() {
         return 3;
     });
     lua_setglobal(luaState, "getNodeVelocity");
+    
+    // Set angular velocity on a node's PhysicsComponent (for dynamic bodies)
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float x = luaL_checknumber(L, 2);
+        float y = luaL_checknumber(L, 3);
+        float z = luaL_checknumber(L, 4);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->setAngularVelocity(glm::vec3(x, y, z));
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        return 0;
+    });
+    lua_setglobal(luaState, "setNodeAngularVelocity");
     
     // Set gravity enabled/disabled on a node's PhysicsComponent
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
@@ -1736,6 +1925,69 @@ void ScriptComponent::bindCommonFunctions() {
         return 0;
     });
     lua_setglobal(luaState, "setNodeScale");
+    
+    // Call a script function on a node's ScriptComponent
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        const char* functionName = luaL_checkstring(L, 2);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName && functionName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto scriptComp = node->getComponent<ScriptComponent>();
+                    if (scriptComp) {
+                        scriptComp->callScriptFunction(functionName);
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        return 0;
+    });
+    lua_setglobal(luaState, "callNodeScriptFunction");
+    
+    // Call a script function on a node's ScriptComponent with a float parameter
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        const char* functionName = luaL_checkstring(L, 2);
+        float param = luaL_checknumber(L, 3);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName && functionName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto scriptComp = node->getComponent<ScriptComponent>();
+                    if (scriptComp) {
+                        scriptComp->callScriptFunction(functionName, param);
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        return 0;
+    });
+    lua_setglobal(luaState, "callNodeScriptFunctionWithParam");
     
     // Set node visibility function - shows/hides nodes (stops rendering)
     lua_pushcfunction(luaState, [](lua_State* L) -> int {

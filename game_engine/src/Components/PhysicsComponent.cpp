@@ -449,7 +449,7 @@ void PhysicsComponent::syncTransformToPhysics() {
         
         rigidBody->getMotionState()->setWorldTransform(transform);
         
-        if (bodyType == PhysicsBodyType::KINEMATIC) {
+        if (bodyType == PhysicsBodyType::KINEMATIC || bodyType == PhysicsBodyType::DYNAMIC) {
             rigidBody->setWorldTransform(transform);
             rigidBody->setActivationState(ACTIVE_TAG);
 
