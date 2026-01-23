@@ -9,7 +9,9 @@
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
+#include <set>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #ifdef LINUX_BUILD
     #include <filesystem>
@@ -50,8 +52,8 @@ void ModelRenderer::render(Renderer& renderer) {
         return;
     }
     
-    // Get the world transform matrix
-    glm::mat4 modelMatrix = owner->getWorldMatrix();
+    // Get the world transform matrix from the scene node
+    glm::mat4 sceneNodeMatrix = owner->getWorldMatrix();
     
     auto animComp = owner->getComponent<AnimationComponent>();
     if (!animComp && owner->getParent()) {
@@ -66,9 +68,21 @@ void ModelRenderer::render(Renderer& renderer) {
     // Render each mesh in the model
     for (size_t i = 0; i < modelData.meshes.size(); ++i) {
         auto mesh = modelData.meshes[i];
-        auto material = (i < modelData.materials.size()) ? modelData.materials[i] : nullptr;
         
         if (!mesh) continue;
+        
+        std::shared_ptr<Material> material = nullptr;
+        if (i < modelData.meshMaterialIndices.size()) {
+            int materialIndex = modelData.meshMaterialIndices[i];
+            if (materialIndex >= 0 && materialIndex < static_cast<int>(modelData.materials.size())) {
+                material = modelData.materials[materialIndex];
+            }
+        }
+        
+        glm::mat4 gltfNodeTransform = (i < modelData.meshNodeTransforms.size()) 
+            ? modelData.meshNodeTransforms[i] 
+            : glm::mat4(1.0f);
+        glm::mat4 modelMatrix = sceneNodeMatrix * gltfNodeTransform;
         
         // Create render command
         RenderCommand command;
@@ -138,9 +152,89 @@ bool ModelRenderer::loadModel(const std::string& modelPath) {
 void ModelRenderer::unloadModel() {
     modelData.meshes.clear();
     modelData.materials.clear();
+    modelData.meshNodeTransforms.clear();
+    modelData.meshMaterialIndices.clear();
     modelData.modelPath.clear();
     modelData.modelName.clear();
     modelData.isLoaded = false;
+}
+
+glm::mat4 ModelRenderer::computeNodeTransform(const tinygltf::Node& node) {
+    if (!node.matrix.empty() && node.matrix.size() == 16) {
+        return glm::mat4(
+            static_cast<float>(node.matrix[0]), static_cast<float>(node.matrix[1]), static_cast<float>(node.matrix[2]), static_cast<float>(node.matrix[3]),
+            static_cast<float>(node.matrix[4]), static_cast<float>(node.matrix[5]), static_cast<float>(node.matrix[6]), static_cast<float>(node.matrix[7]),
+            static_cast<float>(node.matrix[8]), static_cast<float>(node.matrix[9]), static_cast<float>(node.matrix[10]), static_cast<float>(node.matrix[11]),
+            static_cast<float>(node.matrix[12]), static_cast<float>(node.matrix[13]), static_cast<float>(node.matrix[14]), static_cast<float>(node.matrix[15])
+        );
+    } else {
+        glm::vec3 translation(0.0f, 0.0f, 0.0f);
+        if (node.translation.size() >= 3) {
+            translation = glm::vec3(
+                static_cast<float>(node.translation[0]),
+                static_cast<float>(node.translation[1]),
+                static_cast<float>(node.translation[2])
+            );
+        }
+        
+        glm::quat rotation(1.0f, 0.0f, 0.0f, 0.0f);
+        if (node.rotation.size() >= 4) {
+            rotation = glm::quat(
+                static_cast<float>(node.rotation[3]),  // w
+                static_cast<float>(node.rotation[0]),  // x
+                static_cast<float>(node.rotation[1]),  // y
+                static_cast<float>(node.rotation[2])   // z
+            );
+        }
+        
+        glm::vec3 scale(1.0f, 1.0f, 1.0f);
+        if (node.scale.size() >= 3) {
+            scale = glm::vec3(
+                static_cast<float>(node.scale[0]),
+                static_cast<float>(node.scale[1]),
+                static_cast<float>(node.scale[2])
+            );
+        }
+        
+        glm::mat4 T = glm::translate(glm::mat4(1.0f), translation);
+        glm::mat4 R = glm::mat4_cast(rotation);
+        glm::mat4 S = glm::scale(glm::mat4(1.0f), scale);
+        
+        return T * R * S;
+    }
+}
+
+void ModelRenderer::traverseGLTFNodes(const tinygltf::Model& gltfModel, const tinygltf::Node& node, 
+                                      const glm::mat4& parentTransform) {
+    glm::mat4 nodeTransform = computeNodeTransform(node);
+    glm::mat4 worldTransform = parentTransform * nodeTransform;
+    
+    if (node.mesh >= 0 && node.mesh < static_cast<int>(gltfModel.meshes.size())) {
+        const auto& gltfMesh = gltfModel.meshes[node.mesh];
+        
+        for (size_t j = 0; j < gltfMesh.primitives.size(); ++j) {
+            const auto& primitive = gltfMesh.primitives[j];
+            auto mesh = createMeshFromGLTF(gltfModel, gltfMesh, primitive);
+            if (mesh && mesh->getVertexCount() > 0) {
+                modelData.meshes.push_back(mesh);
+                modelData.meshNodeTransforms.push_back(worldTransform);
+                
+                int materialIndex = (primitive.material >= 0 && primitive.material < static_cast<int>(gltfModel.materials.size())) 
+                    ? primitive.material 
+                    : -1;
+                modelData.meshMaterialIndices.push_back(materialIndex);
+            } else {
+                std::cerr << "ModelRenderer: Failed to load primitive " << j 
+                          << " from mesh '" << gltfMesh.name << "'" << std::endl;
+            }
+        }
+    }
+    
+    for (int childIndex : node.children) {
+        if (childIndex >= 0 && childIndex < static_cast<int>(gltfModel.nodes.size())) {
+            traverseGLTFNodes(gltfModel, gltfModel.nodes[childIndex], worldTransform);
+        }
+    }
 }
 
 bool ModelRenderer::loadGLTFModel(const std::string& modelPath) {
@@ -178,17 +272,36 @@ bool ModelRenderer::loadGLTFModel(const std::string& modelPath) {
         }
     }
     
-    for (size_t i = 0; i < gltfModel.meshes.size(); ++i) {
-        const auto& gltfMesh = gltfModel.meshes[i];
+    // Traverse scene graph starting from scene root nodes
+    // Use the default scene (index 0) or the first available scene
+    int sceneIndex = gltfModel.defaultScene >= 0 ? gltfModel.defaultScene : 0;
+    if (sceneIndex < 0 || sceneIndex >= static_cast<int>(gltfModel.scenes.size())) {
+        sceneIndex = 0;
+    }
+    
+    if (sceneIndex >= 0 && sceneIndex < static_cast<int>(gltfModel.scenes.size())) {
+        const auto& scene = gltfModel.scenes[sceneIndex];
+        glm::mat4 rootTransform = glm::mat4(1.0f);
         
-        for (size_t j = 0; j < gltfMesh.primitives.size(); ++j) {
-            const auto& primitive = gltfMesh.primitives[j];
-            auto mesh = createMeshFromGLTF(gltfModel, gltfMesh, primitive);
-            if (mesh && mesh->getVertexCount() > 0) {
-                modelData.meshes.push_back(mesh);
-            } else {
-                std::cerr << "ModelRenderer: Failed to load primitive " << j 
-                          << " from mesh '" << gltfMesh.name << "'" << std::endl;
+        for (int rootNodeIndex : scene.nodes) {
+            if (rootNodeIndex >= 0 && rootNodeIndex < static_cast<int>(gltfModel.nodes.size())) {
+                traverseGLTFNodes(gltfModel, gltfModel.nodes[rootNodeIndex], rootTransform);
+            }
+        }
+    } else {
+        // Fallback: if no scenes, traverse all nodes that aren't children
+        // This is a workaround for glTF files without scenes
+        std::set<int> childNodes;
+        for (const auto& node : gltfModel.nodes) {
+            for (int childIndex : node.children) {
+                childNodes.insert(childIndex);
+            }
+        }
+        
+        for (size_t i = 0; i < gltfModel.nodes.size(); ++i) {
+            if (childNodes.find(static_cast<int>(i)) == childNodes.end()) {
+                // This is a root node
+                traverseGLTFNodes(gltfModel, gltfModel.nodes[i], glm::mat4(1.0f));
             }
         }
     }
@@ -595,6 +708,13 @@ bool ModelRenderer::loadBinaryModel(const std::string& modelPath) {
     // Create meshes and materials from binary data
     modelData.meshes = binaryModel.createMeshes();
     modelData.materials = binaryModel.createMaterials();
+    
+    modelData.meshNodeTransforms.resize(modelData.meshes.size(), glm::mat4(1.0f));
+    
+    modelData.meshMaterialIndices.resize(modelData.meshes.size());
+    for (size_t i = 0; i < modelData.meshes.size(); ++i) {
+        modelData.meshMaterialIndices[i] = (i < modelData.materials.size()) ? static_cast<int>(i) : -1;
+    }
     
     return !modelData.meshes.empty();
 #else

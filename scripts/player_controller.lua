@@ -1,4 +1,5 @@
 local moveSpeed = 5.0
+local sprintSpeed = 10.0  -- Speed when sprinting
 local mouseSensitivity = 5.0
 local stickSensitivity = 50.0
 local cameraYaw = 0.0
@@ -92,14 +93,25 @@ function update(deltaTime)
 	
 	local moveY = moveUp - moveDown
 	
+	-- Check for sprint/run input (use "Sprint" to match animation script)
+	local sprintAxis = input.getActionAxis("Sprint")
+	if sprintAxis == 0 then
+		-- Fallback to "Run" if "Sprint" doesn't exist
+		sprintAxis = input.getActionAxis("Run")
+	end
+	local isSprinting = sprintAxis > 0.1
+	
+	-- Use sprint speed if sprinting, otherwise use normal speed
+	local currentMoveSpeed = isSprinting and sprintSpeed or moveSpeed
+	
 	-- Calculate movement direction based on camera orientation
 	local forwardX = math.sin(math.rad(cameraYaw))
 	local forwardZ = math.cos(math.rad(cameraYaw))
 	local rightX = math.cos(math.rad(cameraYaw))
 	local rightZ = -math.sin(math.rad(cameraYaw))
 	
-	local desiredVelX = rightX * moveH * moveSpeed + forwardX * moveV * moveSpeed
-	local desiredVelZ = rightZ * moveH * moveSpeed + forwardZ * moveV * moveSpeed
+	local desiredVelX = rightX * moveH * currentMoveSpeed + forwardX * moveV * currentMoveSpeed
+	local desiredVelZ = rightZ * moveH * currentMoveSpeed + forwardZ * moveV * currentMoveSpeed
 	
 	if setNodeVelocity then
 		local currentVelX, currentVelY, currentVelZ = 0, 0, 0
@@ -121,7 +133,7 @@ function update(deltaTime)
 		end
 		
 		if moveY ~= 0 then
-			currentVelY = moveY * moveSpeed
+			currentVelY = moveY * currentMoveSpeed
 		end
 		
 		-- Handle jump input
@@ -138,10 +150,25 @@ function update(deltaTime)
 		end
 		
 		setNodeVelocity("PlayerCollision", currentVelX, currentVelY, currentVelZ)
+		
+		-- Debug: Print what the player is colliding with
+		if getCollidingObjects then
+			local collidingObjects = getCollidingObjects("PlayerCollision")
+			if collidingObjects and #collidingObjects > 0 then
+				local collisionList = ""
+				for i, objName in ipairs(collidingObjects) do
+					if i > 1 then
+						collisionList = collisionList .. ", "
+					end
+					collisionList = collisionList .. objName
+				end
+				print("Player colliding with: " .. collisionList)
+			end
+		end
 	else
 		local worldMoveX = desiredVelX * deltaTime
 		local worldMoveZ = desiredVelZ * deltaTime
-		local worldMoveY = moveY * moveSpeed * deltaTime
+		local worldMoveY = moveY * currentMoveSpeed * deltaTime
 		
 		local px, py, pz = getNodePosition("Player")
 		if px ~= nil and py ~= nil and pz ~= nil then

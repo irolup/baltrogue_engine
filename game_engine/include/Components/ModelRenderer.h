@@ -20,6 +20,8 @@ namespace GameEngine {
 struct ModelData {
     std::vector<std::shared_ptr<Mesh>> meshes;
     std::vector<std::shared_ptr<Material>> materials;
+    std::vector<glm::mat4> meshNodeTransforms;
+    std::vector<int> meshMaterialIndices;
     std::string modelPath;
     std::string modelName;
     bool isLoaded;
@@ -64,6 +66,10 @@ private:
     bool loadGLTFModel(const std::string& modelPath);
     std::shared_ptr<Mesh> createMeshFromGLTF(const tinygltf::Model& gltfModel, const tinygltf::Mesh& gltfMesh, const tinygltf::Primitive& primitive);
     std::shared_ptr<Material> createMaterialFromGLTF(const tinygltf::Model& gltfModel, int materialIndex, const std::string& modelPath);
+    
+    static glm::mat4 computeNodeTransform(const tinygltf::Node& node);
+    void traverseGLTFNodes(const tinygltf::Model& gltfModel, const tinygltf::Node& node, 
+                          const glm::mat4& parentTransform);
     
     bool loadBinaryModel(const std::string& modelPath);
     bool saveBinaryModel(const std::string& modelPath);

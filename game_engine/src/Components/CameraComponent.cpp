@@ -279,33 +279,44 @@ void CameraComponent::drawInspector() {
             }
             
             if (ImGui::Button(isCurrentlyActive ? "Active Camera" : "Set as Active Camera")) {
-                auto scene = GetEngine().getSceneManager().getCurrentScene();
+                std::shared_ptr<Scene> scene = nullptr;
+#ifdef EDITOR_BUILD
+                scene = GetEngine().getEditor().getActiveScene();
+#else
+                scene = GetEngine().getSceneManager().getCurrentScene();
+#endif
+                
                 if (scene && owner) {
-                    std::function<std::shared_ptr<SceneNode>(std::shared_ptr<SceneNode>)> findNodeWithComponent;
-                    CameraComponent* thisPtr = this;
-                    findNodeWithComponent = [thisPtr, &findNodeWithComponent](std::shared_ptr<SceneNode> node) -> std::shared_ptr<SceneNode> {
-                        if (!node) return nullptr;
-                        
-                        if (node->getComponent<CameraComponent>() == thisPtr) {
-                            return node;
-                        }
-                        
-                        for (size_t i = 0; i < node->getChildCount(); ++i) {
-                            auto result = findNodeWithComponent(node->getChild(i));
-                            if (result) return result;
-                        }
-                        
-                        return nullptr;
-                    };
+                    std::string nodeName = owner->getName();
                     
-                    auto rootNode = scene->getRootNode();
-                    if (rootNode) {
-                        auto cameraNode = findNodeWithComponent(rootNode);
-                        if (cameraNode) {
-                            scene->setActiveCamera(cameraNode);
-                        } else {
-                            std::cout << "CameraComponent::drawInspector: Could not find camera node in scene!" << std::endl;
+                    auto cameraNode = scene->findNode(nodeName);
+                    
+                    if (!cameraNode) {
+                        std::function<std::shared_ptr<SceneNode>(std::shared_ptr<SceneNode>)> findNodeByPointer;
+                        SceneNode* targetOwner = owner;
+                        findNodeByPointer = [targetOwner, &findNodeByPointer](std::shared_ptr<SceneNode> node) -> std::shared_ptr<SceneNode> {
+                            if (!node) return nullptr;
+                            
+                            if (node.get() == targetOwner) {
+                                return node;
+                            }
+                            
+                            for (size_t i = 0; i < node->getChildCount(); ++i) {
+                                auto result = findNodeByPointer(node->getChild(i));
+                                if (result) return result;
+                            }
+                            
+                            return nullptr;
+                        };
+                        
+                        auto rootNode = scene->getRootNode();
+                        if (rootNode) {
+                            cameraNode = findNodeByPointer(rootNode);
                         }
+                    }
+                    
+                    if (cameraNode) {
+                        scene->setActiveCamera(cameraNode);
                     }
                 }
             }
