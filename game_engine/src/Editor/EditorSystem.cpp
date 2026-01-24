@@ -4,6 +4,8 @@
 #include "Editor/EditorUI.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneNode.h"
+#include <imgui.h>
+#include "../../vendor/imguizmo/ImGuizmo.h"
 #include "Components/CameraComponent.h"
 #include "Components/MeshRenderer.h"
 #include "Components/ModelRenderer.h"
@@ -95,6 +97,8 @@ void EditorSystem::render() {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+    
+    ImGuizmo::BeginFrame();
     
     ui->setupDockspace();
     ui->renderMenuBar();

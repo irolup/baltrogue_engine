@@ -43,6 +43,10 @@ ENGINE_CPPFILES := $(foreach dir,$(ENGINE_SOURCES), $(wildcard $(dir)/*/*.cpp))
 IMGUI_SOURCES := vendor/imgui
 IMGUI_CPPFILES := $(wildcard $(IMGUI_SOURCES)/*.cpp) $(wildcard $(IMGUI_SOURCES)/backends/*.cpp)
 
+# ImGuizmo source files (for editor builds)
+IMGUIZMO_SOURCES := vendor/imguizmo
+IMGUIZMO_CPPFILES := $(IMGUIZMO_SOURCES)/ImGuizmo.cpp $(IMGUIZMO_SOURCES)/ImSequencer.cpp $(IMGUIZMO_SOURCES)/ImGradient.cpp $(IMGUIZMO_SOURCES)/ImCurveEdit.cpp $(IMGUIZMO_SOURCES)/GraphEditor.cpp
+
 # TinyGLTF source files
 TINYGLTF_SOURCES := vendor/tinygltf
 TINYGLTF_CPPFILES := $(wildcard $(TINYGLTF_SOURCES)/*.cc)
@@ -60,7 +64,7 @@ LINUX_GAME_CPPFILES := src/game_main.cpp src/Platform.cpp $(filter-out game_engi
 
 # Editor source files
 EDITOR_SOURCES := game_engine/src/Editor
-EDITOR_CPPFILES := $(wildcard $(EDITOR_SOURCES)/*.cpp)
+EDITOR_SOURCE_CPPFILES := $(wildcard $(EDITOR_SOURCES)/*.cpp)
 
 # Editor source files (engine + platform + editor main, excluding game logic files)
 EDITOR_PLATFORM_CPPFILES := src/Platform.cpp
@@ -74,9 +78,9 @@ TINYGLTF_OBJS := $(addprefix $(BUILD_DIR)/,$(TINYGLTF_CPPFILES:.cc=.o))
 LINUX_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(LINUX_GAME_CFILES:.c=.o) $(LINUX_GAME_CPPFILES:.cpp=.o))
 LINUX_TINYGLTF_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(TINYGLTF_CPPFILES:.cc=.o))
 
-# Object files for Linux editor build (includes editor sources + ImGui, no game files)
-EDITOR_CPPFILES := $(EDITOR_ALL_CPPFILES) $(IMGUI_CPPFILES)
-EDITOR_OBJS := $(addprefix $(EDITOR_BUILD_DIR)/,$(EDITOR_CPPFILES:.cpp=.o))
+# Object files for Linux editor build (includes editor sources + ImGui + ImGuizmo, no game files)
+EDITOR_ALL_CPPFILES_WITH_VENDOR := $(EDITOR_ALL_CPPFILES) $(IMGUI_CPPFILES) $(IMGUIZMO_CPPFILES)
+EDITOR_OBJS := $(addprefix $(EDITOR_BUILD_DIR)/,$(EDITOR_ALL_CPPFILES_WITH_VENDOR:.cpp=.o))
 EDITOR_TINYGLTF_OBJS := $(addprefix $(EDITOR_BUILD_DIR)/,$(TINYGLTF_CPPFILES:.cc=.o))
 
 # Compiler settings
@@ -97,7 +101,7 @@ LINUX_CXXFLAGS = $(LINUX_CFLAGS) -std=c++17 -DBT_THREADSAFE=1
 LINUX_INCLUDES = -I$(INCLUDES) -I$(ENGINE_INCLUDES) -I$(BULLET_INCLUDE) -I$(VENDOR_SOURCES)/stb -I/usr/include/lua5.3
 VITA_INCLUDES = -I$(INCLUDES) -I$(ENGINE_INCLUDES) -I$(BULLET_INCLUDE) -I$(VENDOR_SOURCES)/stb -I$(VENDOR_SOURCES)/lua/include/lua
 ALL_INCLUDES = $(LINUX_INCLUDES)
-EDITOR_INCLUDES = $(ALL_INCLUDES) -I$(VENDOR_SOURCES)/imgui -I$(VENDOR_SOURCES)/imgui/backends
+EDITOR_INCLUDES = $(ALL_INCLUDES) -I$(VENDOR_SOURCES)/imgui -I$(VENDOR_SOURCES)/imgui/backends -I$(VENDOR_SOURCES)/imguizmo
 
 # Default target
 all: vita

@@ -23,6 +23,7 @@
 #include "Rendering/Texture.h"
 #include "Physics/PhysicsManager.h"
 #include "Input/InputMapping.h"
+#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <memory>
 
@@ -31,6 +32,9 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
+
+// ImGuizmo includes
+#include "../../vendor/imguizmo/ImGuizmo.h"
 
 namespace GameEngine {
 
@@ -1357,6 +1361,35 @@ void EditorUI::renderViewport() {
     bool isViewportFocused = ImGui::IsWindowFocused();
     editor.setViewportFocused(isViewportFocused);
     
+    static ImGuizmo::OPERATION currentOperation = ImGuizmo::TRANSLATE;
+    static ImGuizmo::MODE currentMode = ImGuizmo::LOCAL;
+    
+    auto cameraNode = editor.getActiveCamera();
+    auto selectedNode = editor.getSelectedNode();
+    
+    if (cameraNode && selectedNode && isViewportFocused) {
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 2));
+        ImGui::PushStyleColor(ImGuiCol_Button, currentOperation == ImGuizmo::TRANSLATE ? ImVec4(0.3f, 0.5f, 0.8f, 1.0f) : ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
+        if (ImGui::Button("Translate")) {
+            currentOperation = ImGuizmo::TRANSLATE;
+        }
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, currentOperation == ImGuizmo::ROTATE ? ImVec4(0.3f, 0.5f, 0.8f, 1.0f) : ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
+        if (ImGui::Button("Rotate")) {
+            currentOperation = ImGuizmo::ROTATE;
+        }
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button, currentOperation == ImGuizmo::SCALE ? ImVec4(0.3f, 0.5f, 0.8f, 1.0f) : ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
+        if (ImGui::Button("Scale")) {
+            currentOperation = ImGuizmo::SCALE;
+        }
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+        ImGui::Separator();
+    }
+    
     renderCameraControls();
     
     ImVec2 availableSize = ImGui::GetContentRegionAvail();
@@ -1399,7 +1432,8 @@ void EditorUI::renderViewport() {
     if (scene && viewportSize.x > 0 && viewportSize.y > 0) {
         editor.renderSceneToViewport();
         
-        auto& framebuffer = editor.getViewportFramebuffer();
+        ImGui::SetCursorPos(viewportPos);
+        
         if (framebuffer) {
             ImGui::Image(
                 (void*)(intptr_t)framebuffer->getColorTexture(),
@@ -1409,12 +1443,68 @@ void EditorUI::renderViewport() {
             );
         }
         
-        auto cameraNode = scene->getActiveCamera();
+        ImVec2 imageScreenPos = ImGui::GetItemRectMin();
+        ImVec2 imageScreenSize = ImVec2(ImGui::GetItemRectMax().x - imageScreenPos.x, ImGui::GetItemRectMax().y - imageScreenPos.y);
+        
         if (!cameraNode) {
             ImGui::SetCursorPos(ImVec2(viewportPos.x + 10, viewportPos.y + 30));
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "No active camera");
             ImGui::SetCursorPos(ImVec2(viewportPos.x + 10, viewportPos.y + 50));
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Create a camera to view the scene");
+        } else {
+            if (selectedNode && isViewportFocused) {
+                auto cameraComponent = cameraNode->getComponent<CameraComponent>();
+                if (cameraComponent) {
+                    ImGuizmo::SetOrthographic(false);
+                    ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+                    ImGuizmo::SetRect(imageScreenPos.x, imageScreenPos.y, imageScreenSize.x, imageScreenSize.y);
+                    
+                    glm::mat4 viewMatrix = cameraComponent->getViewMatrix();
+                    glm::mat4 projectionMatrix = cameraComponent->getProjectionMatrix();
+                    
+                    glm::mat4 worldMatrix = selectedNode->getWorldMatrix();
+                    
+                    float view[16];
+                    float projection[16];
+                    float matrix[16];
+                    
+                    memcpy(view, glm::value_ptr(viewMatrix), 16 * sizeof(float));
+                    memcpy(projection, glm::value_ptr(projectionMatrix), 16 * sizeof(float));
+                    memcpy(matrix, glm::value_ptr(worldMatrix), 16 * sizeof(float));
+                    
+                    bool manipulated = ImGuizmo::Manipulate(
+                        view, projection,
+                        currentOperation, currentMode,
+                        matrix
+                    );
+                    
+                    if (manipulated && isViewportFocused) {
+                        glm::mat4 newWorldMatrix;
+                        memcpy(glm::value_ptr(newWorldMatrix), matrix, 16 * sizeof(float));
+                        
+                        auto parent = selectedNode->getParent();
+                        if (parent) {
+                            glm::mat4 parentWorldMatrix = parent->getWorldMatrix();
+                            glm::mat4 parentWorldInverse = glm::inverse(parentWorldMatrix);
+                            glm::mat4 newLocalMatrix = parentWorldInverse * newWorldMatrix;
+                            
+                            float translation[3], rotation[3], scale[3];
+                            ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(newLocalMatrix), translation, rotation, scale);
+                            
+                            selectedNode->getTransform().setPosition(glm::vec3(translation[0], translation[1], translation[2]));
+                            selectedNode->getTransform().setEulerAngles(glm::vec3(rotation[0], rotation[1], rotation[2]));
+                            selectedNode->getTransform().setScale(glm::vec3(scale[0], scale[1], scale[2]));
+                        } else {
+                            float translation[3], rotation[3], scale[3];
+                            ImGuizmo::DecomposeMatrixToComponents(matrix, translation, rotation, scale);
+                            
+                            selectedNode->getTransform().setPosition(glm::vec3(translation[0], translation[1], translation[2]));
+                            selectedNode->getTransform().setEulerAngles(glm::vec3(rotation[0], rotation[1], rotation[2]));
+                            selectedNode->getTransform().setScale(glm::vec3(scale[0], scale[1], scale[2]));
+                        }
+                    }
+                }
+            }
         }
         
         ImGui::SetCursorPos(ImVec2(viewportPos.x + 10, viewportPos.y + viewportSize.y - 40));
