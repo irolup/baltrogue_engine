@@ -14,7 +14,7 @@ This project is a cross-platform Game Engine that supports both PS Vita and Linu
 - [x] Multi-light Lighting System (Directional, Point, Spot)
 
 ### Audio
-- [ ] 2D Audio
+- [x] 2D Audio
 - [ ] 3D Audio
 
 ### Physics
