@@ -13,6 +13,7 @@
 #include "Components/TextComponent.h"
 #include "Components/ScriptComponent.h"
 #include "Components/AnimationComponent.h"
+#include "Components/SoundComponent.h"
 #include "Core/Engine.h"
 #include "Editor/BuildSystem.h"
 #include "Editor/SceneSerializer.h"
@@ -191,6 +192,22 @@ void EditorUI::renderMenuBar() {
                     auto node = scene->createNode(editor.generateUniqueNodeName("Area3D"));
                     auto area3DComponent = node->addComponent<Area3DComponent>();
                     area3DComponent->start();
+                    
+                    auto selected = editor.getSelectedNode();
+                    if (selected) {
+                        selected->addChild(node);
+                    } else {
+                        scene->getRootNode()->addChild(node);
+                    }
+                }
+            }
+            
+            if (ImGui::MenuItem("Sound")) {
+                auto scene = editor.getActiveScene();
+                if (scene) {
+                    auto node = scene->createNode(editor.generateUniqueNodeName("Sound"));
+                    auto soundComponent = node->addComponent<SoundComponent>();
+                    soundComponent->start();
                     
                     auto selected = editor.getSelectedNode();
                     if (selected) {
@@ -709,6 +726,16 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                     }
                 }
                 
+                if (ImGui::MenuItem("Sound")) {
+                    auto scene = editor.getActiveScene();
+                    if (scene) {
+                        auto child = scene->createNode(editor.generateUniqueNodeName("Sound"));
+                        auto soundComponent = child->addComponent<SoundComponent>();
+                        soundComponent->start();
+                        node->addChild(child);
+                    }
+                }
+                
                 if (ImGui::BeginMenu("Mesh Shapes")) {
                     if (ImGui::MenuItem("Plane")) {
                         auto scene = editor.getActiveScene();
@@ -1197,6 +1224,12 @@ void EditorUI::renderProperties() {
                         scriptComponent->start();
                     }
                 }
+                if (ImGui::MenuItem("Sound Component")) {
+                    if (!selected->getComponent<SoundComponent>()) {
+                        auto soundComponent = selected->addComponent<SoundComponent>();
+                        soundComponent->start();
+                    }
+                }
                 ImGui::EndPopup();
             }
             
@@ -1260,6 +1293,8 @@ void EditorUI::renderProperties() {
                     selected->removeComponent<TextComponent>();
                 } else if (componentToRemove == "ScriptComponent") {
                     selected->removeComponent<ScriptComponent>();
+                } else if (componentToRemove == "SoundComponent") {
+                    selected->removeComponent<SoundComponent>();
                 }
             }
             
@@ -1553,7 +1588,8 @@ void EditorUI::renderInputMapping() {
     ImGui::SameLine();
     if (ImGui::Button("Open File in Editor")) {
 #ifdef LINUX_BUILD
-        system("xdg-open input_mappings.txt &");
+        int result = system("xdg-open input_mappings.txt &");
+        (void)result; // Ignore return value - we don't need to check if xdg-open succeeded
 #endif
     }
     

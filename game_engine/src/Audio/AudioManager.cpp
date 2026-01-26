@@ -1,6 +1,7 @@
 #include "Audio/AudioManager.h"
 #include "Core/ThreadManager.h"
 #include <iostream>
+#include <cstring>
 
 namespace GameEngine {
 
@@ -10,10 +11,16 @@ AudioManager& AudioManager::getInstance() {
 }
 
 AudioManager::AudioManager()
-    : threadingEnabled(false)
+    : initialized(false)
+    , initializationAttempted(false)
+    , threadingEnabled(false)
     , audioThreadRunning(false)
     , masterVolume(1.0f)
     , paused(false)
+#ifdef LINUX_BUILD
+    , alDevice(nullptr)
+    , alContext(nullptr)
+#endif
 {
 }
 
@@ -22,7 +29,22 @@ AudioManager::~AudioManager() {
 }
 
 bool AudioManager::initialize() {
-    std::cout << "AudioManager: Initializing (placeholder - not yet implemented)" << std::endl;
+    if (initialized) {
+        return true;
+    }
+    
+    if (initializationAttempted && !initialized) {
+        return false;
+    }
+    
+    initializationAttempted = true;
+    
+    if (!initializeAudioSystem()) {
+        std::cerr << "AudioManager: Failed to initialize audio system" << std::endl;
+        return false;
+    }
+    
+    initialized = true;
     return true;
 }
 
@@ -37,7 +59,8 @@ void AudioManager::shutdown() {
         commandQueue.reset();
     }
     
-    std::cout << "AudioManager: Shutdown complete" << std::endl;
+    shutdownAudioSystem();
+    initialized = false;
 }
 
 void AudioManager::enableThreading(bool enable) {
@@ -56,8 +79,6 @@ void AudioManager::enableThreading(bool enable) {
         if (!ThreadManager::getInstance().isValid(audioThread)) {
             std::cerr << "AudioManager: Failed to create audio thread!" << std::endl;
             threadingEnabled = false;
-        } else {
-            std::cout << "AudioManager: Audio threading enabled" << std::endl;
         }
     } else if (!enable && audioThreadRunning) {
         AudioCommand shutdownCmd;
@@ -67,8 +88,6 @@ void AudioManager::enableThreading(bool enable) {
         ThreadManager::getInstance().joinThread(audioThread);
         audioThreadRunning = false;
         commandQueue.reset();
-        
-        std::cout << "AudioManager: Audio threading disabled" << std::endl;
     }
 }
 
@@ -152,13 +171,9 @@ void AudioManager::audioThreadFunction() {
 void AudioManager::processAudioCommand(const AudioCommand& cmd) {
     switch (cmd.type) {
         case AudioCommandType::PLAY_SOUND:
-            // TODO: Implement audio playback
-            std::cout << "AudioManager: Play sound (not implemented): " << cmd.soundPath << std::endl;
             break;
             
         case AudioCommandType::STOP_SOUND:
-            // TODO: Implement stop sound
-            std::cout << "AudioManager: Stop sound (not implemented): " << cmd.soundPath << std::endl;
             break;
             
         case AudioCommandType::SET_VOLUME:
@@ -177,6 +192,88 @@ void AudioManager::processAudioCommand(const AudioCommand& cmd) {
             audioThreadRunning = false;
             break;
     }
+}
+
+bool AudioManager::initializeAudioSystem() {
+#ifdef LINUX_BUILD
+    const ALCchar* deviceList = nullptr;
+    if (alcIsExtensionPresent(nullptr, "ALC_ENUMERATE_ALL_EXT")) {
+        deviceList = alcGetString(nullptr, ALC_ALL_DEVICES_SPECIFIER);
+    } else {
+        deviceList = alcGetString(nullptr, ALC_DEVICE_SPECIFIER);
+    }
+    
+    alDevice = alcOpenDevice(nullptr);
+    
+    if (!alDevice && deviceList && deviceList[0] != '\0') {
+        const ALCchar* device = deviceList;
+        while (*device != '\0' && !alDevice) {
+            alDevice = alcOpenDevice(device);
+            if (alDevice) {
+                break;
+            }
+            device += strlen(device) + 1;
+        }
+    }
+    
+    if (!alDevice) {
+        const char* alsaDevices[] = {
+            "alsa",
+            "ALSA",
+            "sysdefault",
+            "plughw:0,0",
+            "hw:0,0"
+        };
+        
+        for (const char* deviceName : alsaDevices) {
+            alDevice = alcOpenDevice(deviceName);
+            if (alDevice) {
+                break;
+            }
+        }
+    }
+    
+    if (!alDevice) {
+        std::cerr << "AudioManager: Failed to open OpenAL device (audio will be disabled)" << std::endl;
+        std::cerr << "AudioManager: This may indicate that OpenAL Soft was not built with ALSA/PulseAudio support" << std::endl;
+        std::cerr << "AudioManager: Try installing PulseAudio: sudo apt install pulseaudio" << std::endl;
+        return false;
+    }
+    
+    alContext = alcCreateContext(alDevice, nullptr);
+    if (!alContext || alcMakeContextCurrent(alContext) == ALC_FALSE) {
+        std::cerr << "AudioManager: Failed to create OpenAL context (audio will be disabled)" << std::endl;
+        if (alContext) {
+            alcDestroyContext(alContext);
+            alContext = nullptr;
+        }
+        alcCloseDevice(alDevice);
+        alDevice = nullptr;
+        return false;
+    }
+    
+    return true;
+    
+#elif defined(VITA_BUILD)
+    return true;
+#else
+    return false;
+#endif
+}
+
+void AudioManager::shutdownAudioSystem() {
+#ifdef LINUX_BUILD
+    if (alContext) {
+        alcMakeContextCurrent(nullptr);
+        alcDestroyContext(alContext);
+        alContext = nullptr;
+    }
+    if (alDevice) {
+        alcCloseDevice(alDevice);
+        alDevice = nullptr;
+    }
+#elif defined(VITA_BUILD)
+#endif
 }
 
 } // namespace GameEngine

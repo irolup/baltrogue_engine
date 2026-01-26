@@ -2,8 +2,16 @@
 #define AUDIO_MANAGER_H
 
 #include "Core/ThreadManager.h"
+#include "Platform.h"
 #include <string>
 #include <atomic>
+
+#ifdef LINUX_BUILD
+#include <AL/al.h>
+#include <AL/alc.h>
+#elif defined(VITA_BUILD)
+#include <psp2/audioout.h>
+#endif
 
 namespace GameEngine {
 
@@ -40,12 +48,23 @@ public:
     void pause();
     void resume();
     
+    bool isInitialized() const { return initialized; }
+    float getMasterVolume() const { return masterVolume; }
+    
+#ifdef LINUX_BUILD
+    ALCdevice* getDevice() const { return alDevice; }
+    ALCcontext* getContext() const { return alContext; }
+#elif defined(VITA_BUILD)
+#endif
+    
 private:
     AudioManager();
     ~AudioManager();
     AudioManager(const AudioManager&) = delete;
     AudioManager& operator=(const AudioManager&) = delete;
     
+    bool initialized;
+    bool initializationAttempted;
     bool threadingEnabled;
     ThreadHandle audioThread;
     ThreadSafeQueue<AudioCommand> commandQueue;
@@ -54,8 +73,17 @@ private:
     float masterVolume;
     bool paused;
     
+#ifdef LINUX_BUILD
+    ALCdevice* alDevice;
+    ALCcontext* alContext;
+#elif defined(VITA_BUILD)
+#endif
+    
     void audioThreadFunction();
     void processAudioCommand(const AudioCommand& cmd);
+    
+    bool initializeAudioSystem();
+    void shutdownAudioSystem();
 };
 
 } // namespace GameEngine

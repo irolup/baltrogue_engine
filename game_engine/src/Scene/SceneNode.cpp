@@ -1,6 +1,7 @@
 #include "Scene/SceneNode.h"
 #include "Components/Component.h"
 #include "Components/LightComponent.h"
+#include "Components/SoundComponent.h"
 #include "Rendering/Renderer.h"
 #include "Rendering/LightingManager.h"
 #include <algorithm>
@@ -133,6 +134,8 @@ void SceneNode::update(float deltaTime) {
                 } else {
                     scriptComp->update(deltaTime);
                 }
+            } else if (auto* soundComp = dynamic_cast<SoundComponent*>(component.get())) {
+                soundComp->update(deltaTime);
             } else {
                 if (!paused) {
                     component->update(deltaTime);

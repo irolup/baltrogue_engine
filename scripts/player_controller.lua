@@ -19,7 +19,6 @@ local speedBoostMultiplier = 2.0
 function activateSpeedBoost(duration)
     local currentTime = getTime()
     speedBoostEndTime = currentTime + duration
-    print("Speed boost activated for " .. duration .. " seconds!")
 end
 
 local cameraDistance = 6.0
@@ -30,6 +29,15 @@ local minPitch = -55.0
 local maxPitch = 30.0
 local minCameraHeight = 0.5
 
+local walkSoundNodeName = "Walk_Sound"
+local walkSound = nil
+local isMoving = false
+local isSprinting = false
+local walkPitch = 1.0
+local runPitch = 1.5
+local lastMovementState = false
+local stopSoundFrameCount = 0
+
 function start()
     lastJumpTime = getTime()
     
@@ -37,11 +45,55 @@ function start()
         input.setMouseCapture(true)
         isMouseCaptured = true
     end
+    
+    if sound and sound.getComponent then
+        walkSound = sound.getComponent(walkSoundNodeName)
+        if walkSound and type(walkSound) == "table" and walkSound.setLoop then
+            if walkSound.stop and type(walkSound.stop) == "function" then
+                pcall(function() walkSound:stop() end)
+            end
+            if walkSound.setLoop and type(walkSound.setLoop) == "function" then
+                pcall(function() walkSound:setLoop(true) end)
+            end
+            if walkSound.stop and type(walkSound.stop) == "function" then
+                for i = 1, 5 do
+                    pcall(function() walkSound:stop() end)
+                end
+                stopSoundFrameCount = 10
+            end
+            lastMovementState = false
+        else
+            walkSound = nil
+        end
+    else
+        walkSound = nil
+    end
 end
 
 function update(deltaTime)
     if isGamePaused and isGamePaused() then
         return
+    end
+
+    if walkSound == nil and sound and sound.getComponent then
+        walkSound = sound.getComponent(walkSoundNodeName)
+        if walkSound and walkSound.setLoop then
+            if walkSound.stop then
+                pcall(function() walkSound:stop() end)
+            end
+            pcall(function() walkSound:setLoop(true) end)
+            if walkSound.stop then
+                pcall(function() walkSound:stop() end)
+                pcall(function() walkSound:stop() end)
+                stopSoundFrameCount = 5
+            end
+            lastMovementState = false
+        end
+    end
+    
+    if stopSoundFrameCount > 0 and walkSound and walkSound.stop then
+        pcall(function() walkSound.stop() end)
+        stopSoundFrameCount = stopSoundFrameCount - 1
     end
 
     if setNodeAngularFactor then
@@ -85,6 +137,53 @@ function update(deltaTime)
     local currentMoveSpeed = baseSpeed
     if speedBoostActive then
         currentMoveSpeed = baseSpeed * speedBoostMultiplier
+    end
+    
+    local wasMoving = isMoving
+    local wasSprinting = isSprinting
+    isMoving = (moveH ~= 0 or moveV ~= 0)
+    isSprinting = (sprintAxis > 0.1)
+    
+    if walkSound ~= nil and type(walkSound) == "table" then
+        local soundIsPlaying = false
+        if walkSound.isPlaying and type(walkSound.isPlaying) == "function" then
+            local success, result = pcall(function() return walkSound:isPlaying() end)
+            if success then
+                soundIsPlaying = result
+            end
+        end
+        
+        if isMoving ~= lastMovementState then
+            if isMoving then
+                if walkSound and type(walkSound) == "table" and walkSound.play and type(walkSound.play) == "function" then
+                    pcall(function() walkSound:play() end)
+                end
+            else
+                if walkSound and type(walkSound) == "table" and walkSound.stop and type(walkSound.stop) == "function" then
+                    pcall(function() walkSound:stop() end)
+                    stopSoundFrameCount = 5
+                end
+            end
+            lastMovementState = isMoving
+        end
+        
+        if not isMoving and walkSound and type(walkSound) == "table" and walkSound.stop and type(walkSound.stop) == "function" then
+            if stopSoundFrameCount > 0 then
+                pcall(function() walkSound:stop() end)
+                stopSoundFrameCount = stopSoundFrameCount - 1
+            elseif soundIsPlaying then
+                pcall(function() walkSound:stop() end)
+                stopSoundFrameCount = 3
+            end
+        end
+        
+        if isMoving and walkSound and type(walkSound) == "table" and walkSound.setPitch and type(walkSound.setPitch) == "function" then
+            if isSprinting and not wasSprinting then
+                pcall(function() walkSound:setPitch(runPitch) end)
+            elseif not isSprinting and wasSprinting then
+                pcall(function() walkSound:setPitch(walkPitch) end)
+            end
+        end
     end
 
     -- Calculate movement direction relative to camera
@@ -174,6 +273,5 @@ function update(deltaTime)
 
     if input.isActionPressed("Interact") then
         isFirstPerson = not isFirstPerson
-        print("Camera mode: " .. (isFirstPerson and "First Person" or "Third Person"))
     end
 end

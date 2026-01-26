@@ -38,7 +38,7 @@ int main() {
     
     // Create a camera first!
     auto cameraNode = testScene->createNode("Main Camera");
-    auto cameraComponent = cameraNode->addComponent<CameraComponent>();
+    cameraNode->addComponent<CameraComponent>();
     cameraNode->getTransform().setPosition(glm::vec3(0, 0, 5));
     cameraNode->getTransform().setRotation(glm::quat(1.0f, 0.0f, 0.0f, 0.0f)); // Identity rotation (looking down -Z)
     testScene->getRootNode()->addChild(cameraNode);

@@ -6,6 +6,7 @@
 #include "Components/Area3DComponent.h"
 #include "Components/PhysicsComponent.h"
 #include "Components/AnimationComponent.h"
+#include "Components/SoundComponent.h"
 #include "Rendering/AnimationManager.h"
 #include "Scene/SceneNode.h"
 #include "Input/InputManager.h"
@@ -346,6 +347,7 @@ void ScriptComponent::bindEngineToLua() {
     bindRendererToLua();
     bindSceneToLua();
     bindAnimationToLua();
+    bindSoundToLua();
     
     // Bind MenuManager
     MenuManager::getInstance().bindToLua(luaState);
@@ -3259,6 +3261,294 @@ void ScriptComponent::bindAnimationToLua() {
     lua_settable(luaState, -3);
     
     lua_setglobal(luaState, "animation");
+}
+
+void ScriptComponent::bindSoundToLua() {
+    if (!luaState) {
+        return;
+    }
+    
+    // Create sound table
+    lua_newtable(luaState);
+    
+    // Function to get SoundComponent from a node by name
+    lua_pushstring(luaState, "getComponent");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (!activeScene || !nodeName) {
+                lua_pushnil(L);
+                return 1;
+            }
+            
+            auto node = activeScene->findNode(nodeName);
+            if (!node) {
+                lua_pushnil(L);
+                return 1;
+            }
+            
+            auto soundComponent = node->getComponent<SoundComponent>();
+            if (!soundComponent) {
+                std::cout << "SoundComponent::getComponent() - No SoundComponent found on node: " << nodeName << std::endl;
+                lua_pushnil(L);
+                return 1;
+            }
+            
+            std::cout << "SoundComponent::getComponent() - Found SoundComponent on node: " << nodeName << std::endl;
+            
+            // Create a table with sound component methods
+            lua_newtable(L);
+            
+            // Store the component pointer FIRST (before adding methods)
+            lua_pushstring(L, "_soundComponent");
+            lua_pushlightuserdata(L, soundComponent);
+            lua_settable(L, -3);
+            
+            // play()
+            lua_pushstring(L, "play");
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                // Check if first argument is a table
+                if (!lua_istable(L, 1)) {
+                    std::cerr << "SoundComponent::play() - First argument is not a table!" << std::endl;
+                    return 0;
+                }
+                
+                lua_getfield(L, 1, "_soundComponent");
+                if (lua_isnil(L, -1)) {
+                    std::cerr << "SoundComponent::play() - _soundComponent field is nil!" << std::endl;
+                    lua_pop(L, 1);
+                    return 0;
+                }
+                
+                SoundComponent* comp = static_cast<SoundComponent*>(lua_touserdata(L, -1));
+                lua_pop(L, 1);
+                
+                if (comp) {
+                    comp->play();
+                } else {
+                    std::cerr << "SoundComponent::play() - Component pointer is null!" << std::endl;
+                }
+                return 0;
+            });
+            lua_settable(L, -3);
+            
+            // pause()
+            lua_pushstring(L, "pause");
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_getfield(L, 1, "_soundComponent");
+                SoundComponent* comp = static_cast<SoundComponent*>(lua_touserdata(L, -1));
+                lua_pop(L, 1);
+                
+                if (comp) {
+                    comp->pause();
+                }
+                return 0;
+            });
+            lua_settable(L, -3);
+            
+            // resume()
+            lua_pushstring(L, "resume");
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_getfield(L, 1, "_soundComponent");
+                SoundComponent* comp = static_cast<SoundComponent*>(lua_touserdata(L, -1));
+                lua_pop(L, 1);
+                
+                if (comp) {
+                    comp->resume();
+                }
+                return 0;
+            });
+            lua_settable(L, -3);
+            
+            // stop()
+            lua_pushstring(L, "stop");
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_getfield(L, 1, "_soundComponent");
+                SoundComponent* comp = static_cast<SoundComponent*>(lua_touserdata(L, -1));
+                lua_pop(L, 1);
+                
+                if (comp) {
+                    comp->stop();
+                }
+                return 0;
+            });
+            lua_settable(L, -3);
+            
+            // setVolume(volume)
+            lua_pushstring(L, "setVolume");
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_getfield(L, 1, "_soundComponent");
+                SoundComponent* comp = static_cast<SoundComponent*>(lua_touserdata(L, -1));
+                lua_pop(L, 1);
+                
+                if (comp && lua_isnumber(L, 2)) {
+                    float volume = lua_tonumber(L, 2);
+                    comp->setVolume(volume);
+                }
+                return 0;
+            });
+            lua_settable(L, -3);
+            
+            // getVolume()
+            lua_pushstring(L, "getVolume");
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_getfield(L, 1, "_soundComponent");
+                SoundComponent* comp = static_cast<SoundComponent*>(lua_touserdata(L, -1));
+                lua_pop(L, 1);
+                
+                if (comp) {
+                    lua_pushnumber(L, comp->getVolume());
+                    return 1;
+                }
+                lua_pushnumber(L, 0.0);
+                return 1;
+            });
+            lua_settable(L, -3);
+            
+            // setLoop(loop)
+            lua_pushstring(L, "setLoop");
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_getfield(L, 1, "_soundComponent");
+                SoundComponent* comp = static_cast<SoundComponent*>(lua_touserdata(L, -1));
+                lua_pop(L, 1);
+                
+                if (comp && lua_isboolean(L, 2)) {
+                    bool loop = lua_toboolean(L, 2) != 0;
+                    comp->setLoop(loop);
+                }
+                return 0;
+            });
+            lua_settable(L, -3);
+            
+            // isLooping()
+            lua_pushstring(L, "isLooping");
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_getfield(L, 1, "_soundComponent");
+                SoundComponent* comp = static_cast<SoundComponent*>(lua_touserdata(L, -1));
+                lua_pop(L, 1);
+                
+                if (comp) {
+                    lua_pushboolean(L, comp->isLooping());
+                    return 1;
+                }
+                lua_pushboolean(L, false);
+                return 1;
+            });
+            lua_settable(L, -3);
+            
+            // isPlaying()
+            lua_pushstring(L, "isPlaying");
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_getfield(L, 1, "_soundComponent");
+                SoundComponent* comp = static_cast<SoundComponent*>(lua_touserdata(L, -1));
+                lua_pop(L, 1);
+                
+                if (comp) {
+                    lua_pushboolean(L, comp->isPlaying());
+                    return 1;
+                }
+                lua_pushboolean(L, false);
+                return 1;
+            });
+            lua_settable(L, -3);
+            
+            // setPitch(pitch)
+            lua_pushstring(L, "setPitch");
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_getfield(L, 1, "_soundComponent");
+                SoundComponent* comp = static_cast<SoundComponent*>(lua_touserdata(L, -1));
+                lua_pop(L, 1);
+                
+                if (comp && lua_isnumber(L, 2)) {
+                    float pitch = lua_tonumber(L, 2);
+                    comp->setPitch(pitch);
+                }
+                return 0;
+            });
+            lua_settable(L, -3);
+            
+            // getPitch()
+            lua_pushstring(L, "getPitch");
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                lua_getfield(L, 1, "_soundComponent");
+                SoundComponent* comp = static_cast<SoundComponent*>(lua_touserdata(L, -1));
+                lua_pop(L, 1);
+                
+                if (comp) {
+                    lua_pushnumber(L, comp->getPitch());
+                    return 1;
+                }
+                lua_pushnumber(L, 1.0);
+                return 1;
+            });
+            lua_settable(L, -3);
+            
+            return 1;
+#ifndef VITA_BUILD
+        } catch (...) {
+            lua_pushnil(L);
+            return 1;
+        }
+#endif
+    });
+    lua_settable(luaState, -3);
+    
+    lua_pushstring(luaState, "play");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        lua_getglobal(L, "_currentScriptComponent");
+        ScriptComponent* self = static_cast<ScriptComponent*>(lua_touserdata(L, -1));
+        lua_pop(L, 1);
+        
+        if (self && self->owner) {
+            auto soundComponent = self->owner->getComponent<SoundComponent>();
+            if (soundComponent) {
+                soundComponent->play();
+            }
+        }
+        return 0;
+    });
+    lua_settable(luaState, -3);
+    
+    lua_pushstring(luaState, "pause");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        lua_getglobal(L, "_currentScriptComponent");
+        ScriptComponent* self = static_cast<ScriptComponent*>(lua_touserdata(L, -1));
+        lua_pop(L, 1);
+        
+        if (self && self->owner) {
+            auto soundComponent = self->owner->getComponent<SoundComponent>();
+            if (soundComponent) {
+                soundComponent->pause();
+            }
+        }
+        return 0;
+    });
+    lua_settable(luaState, -3);
+    
+    lua_pushstring(luaState, "stop");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        lua_getglobal(L, "_currentScriptComponent");
+        ScriptComponent* self = static_cast<ScriptComponent*>(lua_touserdata(L, -1));
+        lua_pop(L, 1);
+        
+        if (self && self->owner) {
+            auto soundComponent = self->owner->getComponent<SoundComponent>();
+            if (soundComponent) {
+                soundComponent->stop();
+            }
+        }
+        return 0;
+    });
+    lua_settable(luaState, -3);
+    
+    lua_setglobal(luaState, "sound");
 }
 
 } // namespace GameEngine

@@ -711,6 +711,36 @@
               ]
             },
             "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "loop": true,
+                "soundFile": "assets/audios/walk_sound.wav",
+                "type": "SoundComponent",
+                "volume": 1.0
+              }
+            ],
+            "name": "Walk_Sound",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
           }
         ],
         "name": "Player",

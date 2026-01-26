@@ -10,6 +10,7 @@
 #include "Components/ScriptComponent.h"
 #include "Components/Area3DComponent.h"
 #include "Components/AnimationComponent.h"
+#include "Components/SoundComponent.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Rendering/TextureManager.h"
@@ -2033,6 +2034,13 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                         componentJson["autoPlay"] = animComp->isPlaying();
                         componentJson["enableRootMotion"] = animComp->isRootMotionEnabled();
                     }
+                } else if (component->getTypeName() == "SoundComponent") {
+                    auto soundComp = node->getComponent<SoundComponent>();
+                    if (soundComp) {
+                        componentJson["soundFile"] = soundComp->getSoundFile();
+                        componentJson["volume"] = soundComp->getVolume();
+                        componentJson["loop"] = soundComp->isLooping();
+                    }
                 }
                 
                 componentsArray.push_back(componentJson);
@@ -2390,6 +2398,22 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         std::cout << "ScriptComponent on node \"" << name << "\" pauseExempt not found in JSON, defaulting to false" << std::endl;
 #endif
                     }
+                } else if (type == "SoundComponent") {
+                    auto soundComp = node->addComponent<SoundComponent>();
+                    
+                    if (componentJson.contains("volume")) {
+                        soundComp->setVolume(componentJson["volume"]);
+                    }
+                    
+                    if (componentJson.contains("loop")) {
+                        soundComp->setLoop(componentJson["loop"]);
+                    }
+                    
+                    if (componentJson.contains("soundFile") && !componentJson["soundFile"].is_null()) {
+                        soundComp->setSoundFile(componentJson["soundFile"]);
+                    }
+                    
+                    soundComp->start(); // Initialize the sound component
                 } else if (type == "Area3DComponent") {
 #ifdef LINUX_BUILD
                     std::cout << "Deserializing Area3DComponent for node: " << name << std::endl;

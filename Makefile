@@ -14,14 +14,18 @@ BULLET_INCLUDE := vendor/bullet/src
 BULLET_LINUX_LIBS := -Lvendor/bullet/lib -lBulletDynamics -lBulletCollision -lLinearMath
 BULLET_VITA_LIBS := -Lvendor/bullet/lib_vita/lib -lBulletDynamics -lBulletCollision -lLinearMath
 
+# OpenAL Soft paths
+OPENAL_INCLUDE := vendor/openal-soft/install_linux/include
+OPENAL_LINUX_LIBS := -Lvendor/openal-soft/install_linux/lib -Wl,-rpath,$(shell pwd)/vendor/openal-soft/install_linux/lib -lopenal
+
 # Vita-specific libraries
 VITA_LIBS = -lvitaGL -lSceLibKernel_stub -lSceAppMgr_stub -lSceAppUtil_stub -lSceIofilemgr_stub -lmathneon \
     -lc -lSceCommonDialog_stub -lm -lSceGxm_stub -lSceDisplay_stub -lSceSysmodule_stub \
     -lvitashark -lSceShaccCg_stub -lSceKernelDmacMgr_stub -lstdc++ -lSceCtrl_stub \
-    -ltoloader -lSceShaccCgExt -ltaihen_stub -lm -L$(VENDOR_SOURCES)/lua/lib -llua -lz
+    -lSceAudio_stub -ltoloader -lSceShaccCgExt -ltaihen_stub -lm -L$(VENDOR_SOURCES)/lua/lib -llua -lz
 
 # Linux-specific libraries
-LINUX_LIBS = -lGL -lGLU -lglfw -lGLEW -lm -lpng -lz -lstdc++ -llua5.3
+LINUX_LIBS = -lGL -lGLU -lglfw -lGLEW -lm -lpng -lz -lstdc++ -llua5.3 $(OPENAL_LINUX_LIBS)
 
 # Linux Editor libraries (no external ImGui needed, we compile our own)
 LINUX_EDITOR_LIBS = $(LINUX_LIBS)
@@ -98,7 +102,7 @@ LINUX_CFLAGS = -g -O2 -Wall
 LINUX_CXXFLAGS = $(LINUX_CFLAGS) -std=c++17 -DBT_THREADSAFE=1
 
 # Include paths
-LINUX_INCLUDES = -I$(INCLUDES) -I$(ENGINE_INCLUDES) -I$(BULLET_INCLUDE) -I$(VENDOR_SOURCES)/stb -I/usr/include/lua5.3
+LINUX_INCLUDES = -I$(INCLUDES) -I$(ENGINE_INCLUDES) -I$(BULLET_INCLUDE) -I$(VENDOR_SOURCES)/stb -I/usr/include/lua5.3 -I$(OPENAL_INCLUDE)
 VITA_INCLUDES = -I$(INCLUDES) -I$(ENGINE_INCLUDES) -I$(BULLET_INCLUDE) -I$(VENDOR_SOURCES)/stb -I$(VENDOR_SOURCES)/lua/include/lua
 ALL_INCLUDES = $(LINUX_INCLUDES)
 EDITOR_INCLUDES = $(ALL_INCLUDES) -I$(VENDOR_SOURCES)/imgui -I$(VENDOR_SOURCES)/imgui/backends -I$(VENDOR_SOURCES)/imguizmo
@@ -172,6 +176,7 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/fonts/sui.ttf=assets/fonts/sui.ttf \
 		-a assets/models/Player.glb=assets/models/Player.glb \
 		-a assets/models/lightning.glb=assets/models/lightning.glb \
+		-a assets/audios/walk_sound.wav=assets/audios/walk_sound.wav \
 		-a scripts/pause_menu.lua=scripts/pause_menu.lua \
 		-a scripts/collectible_behavior.lua=scripts/collectible_behavior.lua \
 		-a scripts/player_controller.lua=scripts/player_controller.lua \
@@ -261,6 +266,11 @@ $(EDITOR_BUILD_DIR)/%.o: %.cpp | $(EDITOR_BUILD_DIR)
 $(EDITOR_BUILD_DIR)/%.o: %.cc | $(EDITOR_BUILD_DIR)
 	@mkdir -p $(dir $@)
 	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(EDITOR_INCLUDES) -DLINUX_BUILD -DEDITOR_BUILD -c $< -o $@
+
+# Special build rules for vendor/imguizmo (suppress warnings from third-party code)
+$(EDITOR_BUILD_DIR)/vendor/imguizmo/%.o: vendor/imguizmo/%.cpp | $(EDITOR_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	$(LINUX_CXX) $(LINUX_CXXFLAGS) -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable $(EDITOR_INCLUDES) -DLINUX_BUILD -DEDITOR_BUILD -c $< -o $@
 
 # Clean all builds
 clean:

@@ -5,6 +5,7 @@
 #include "Core/Time.h"
 #include "Core/MenuManager.h"
 #include "Core/ScriptManager.h"
+#include "Audio/AudioManager.h"
 #include <iostream>
 
 #ifdef EDITOR_BUILD
@@ -97,6 +98,7 @@ void Engine::shutdown() {
     
     // Shutdown menu system
     MenuManager::getInstance().shutdown();
+    AudioManager::getInstance().shutdown();
     
     platformShutdown();
 }
@@ -140,6 +142,10 @@ bool Engine::initializeSystems() {
     if (!MenuManager::getInstance().initialize()) {
         std::cerr << "Failed to initialize menu system!" << std::endl;
         return false;
+    }
+    
+    if (!AudioManager::getInstance().initialize()) {
+        std::cerr << "Warning: Failed to initialize audio system (audio will be disabled)" << std::endl;
     }
     
 #ifdef EDITOR_BUILD
