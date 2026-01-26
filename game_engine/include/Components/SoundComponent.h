@@ -5,6 +5,7 @@
 #include "../../include/Platform.h"
 #include <string>
 #include <memory>
+#include <atomic>
 
 #ifdef LINUX_BUILD
 #include <AL/al.h>
@@ -54,6 +55,10 @@ public:
     
     virtual void drawInspector() override;
     
+#ifdef VITA_BUILD
+    void streamAudio();
+#endif
+    
 private:
     std::string soundFilePath;
     float volume;
@@ -73,24 +78,22 @@ private:
     bool loadWAVFile(const std::string& filePath, ALuint& buffer);
     
 #elif defined(VITA_BUILD)
-    // PSVita audio resources
     int audioPort;
-    int16_t* audioBuffer;  // Current buffer (may be resampled)
+    int16_t* audioBuffer; 
     size_t audioBufferSize;
     size_t audioDataSize;
-    int16_t* originalAudioBuffer;  // Original buffer (never modified, used for resampling)
-    size_t originalAudioDataSize;  // Original buffer size
+    int16_t* originalAudioBuffer; 
+    size_t originalAudioDataSize;
     int sampleRate;
     int channels;
-    bool isStreaming;
-    bool isPausedState;  // Track pause state for Vita
-    size_t currentStreamPos;  // Current position in audio stream
+    std::atomic<bool> isStreaming;
+    std::atomic<bool> isPausedState;
+    std::atomic<size_t> currentStreamPos;
     
     bool initializeVitaAudio();
     void cleanupVitaAudio();
     bool loadWAVFile(const std::string& filePath);
-    void streamAudio();
-    void resampleAudioBuffer();  // Resample audio buffer based on pitch
+    void resampleAudioBuffer();
     
 #endif
     

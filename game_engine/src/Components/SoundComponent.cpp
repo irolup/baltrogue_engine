@@ -91,6 +91,14 @@ void SoundComponent::update(float deltaTime) {
 
 void SoundComponent::destroy() {
     stop();
+    
+#ifdef VITA_BUILD
+    auto& audioManager = AudioManager::getInstance();
+    if (audioManager.isThreadingEnabled()) {
+        audioManager.unregisterSoundComponent(this);
+    }
+#endif
+    
     unloadSound();
 }
 
@@ -193,10 +201,15 @@ void SoundComponent::play() {
     alSourcePlay(source);
 #elif defined(VITA_BUILD)
     if (audioPort >= 0 && audioBuffer) {
-        currentStreamPos = 0;
-        isPausedState = false;
-        isStreaming = true;
-        streamAudio();
+        currentStreamPos.store(0);
+        isPausedState.store(false);
+        isStreaming.store(true);
+        auto& audioManager = AudioManager::getInstance();
+        if (audioManager.isThreadingEnabled()) {
+            audioManager.registerSoundComponent(this);
+        } else {
+            streamAudio();
+        }
     }
 #endif
 }
@@ -209,9 +222,9 @@ void SoundComponent::pause() {
 #ifdef LINUX_BUILD
     alSourcePause(source);
 #elif defined(VITA_BUILD)
-    if (audioPort >= 0 && isStreaming) {
-        isStreaming = false;
-        isPausedState = true;
+    if (audioPort >= 0 && isStreaming.load()) {
+        isStreaming.store(false);
+        isPausedState.store(true);
     }
 #endif
 }
@@ -224,9 +237,9 @@ void SoundComponent::resume() {
 #ifdef LINUX_BUILD
     alSourcePlay(source);
 #elif defined(VITA_BUILD)
-    if (audioPort >= 0 && audioBuffer && isPausedState) {
-        isPausedState = false;
-        isStreaming = true;
+    if (audioPort >= 0 && audioBuffer && isPausedState.load()) {
+        isPausedState.store(false);
+        isStreaming.store(true);
     }
 #endif
 }
@@ -242,9 +255,13 @@ void SoundComponent::stop() {
     alSourceStop(source);
 #elif defined(VITA_BUILD)
     if (audioPort >= 0) {
-        isStreaming = false;
-        isPausedState = false;
-        currentStreamPos = 0;
+        isStreaming.store(false);
+        isPausedState.store(false);
+        currentStreamPos.store(0);
+        auto& audioManager = AudioManager::getInstance();
+        if (audioManager.isThreadingEnabled()) {
+            audioManager.unregisterSoundComponent(this);
+        }
     }
 #endif
 }
@@ -313,7 +330,7 @@ bool SoundComponent::isPlaying() const {
     alGetSourcei(source, AL_SOURCE_STATE, &currentState);
     return (currentState == AL_PLAYING);
 #elif defined(VITA_BUILD)
-    return isStreaming && !isPausedState;
+    return isStreaming.load() && !isPausedState.load();
 #else
     return false;
 #endif
@@ -329,7 +346,7 @@ bool SoundComponent::isPaused() const {
     alGetSourcei(source, AL_SOURCE_STATE, &currentState);
     return (currentState == AL_PAUSED);
 #elif defined(VITA_BUILD)
-    return isPausedState;
+    return isPausedState.load();
 #else
     return false;
 #endif
@@ -342,8 +359,13 @@ void SoundComponent::updatePlayback() {
     
 #ifdef LINUX_BUILD
 #elif defined(VITA_BUILD)
-    if (isStreaming && !isPausedState && audioPort >= 0 && audioBuffer) {
-        streamAudio();
+    // Audio streaming is now handled by the audio thread
+    // This function is kept for compatibility but does nothing on Vita when threading is enabled
+    auto& audioManager = AudioManager::getInstance();
+    if (!audioManager.isThreadingEnabled()) {
+        if (isStreaming.load() && !isPausedState.load() && audioPort >= 0 && audioBuffer) {
+            streamAudio();
+        }
     }
 #endif
 }
@@ -524,7 +546,7 @@ void SoundComponent::resampleAudioBuffer() {
         audioBuffer = originalAudioBuffer;
         audioDataSize = originalAudioDataSize;
         audioBufferSize = originalAudioDataSize;
-        currentStreamPos = 0;
+        currentStreamPos.store(0);
         return;
     }
     
@@ -671,10 +693,6 @@ bool SoundComponent::loadWAVFile(const std::string& filePath) {
             audioBuffer = originalAudioBuffer;
             audioBufferSize = audioDataSize;
             
-            std::cout << "SoundComponent: Loaded WAV - SampleRate: " << sampleRate 
-                      << ", Channels: " << channels 
-                      << ", BitsPerSample: " << bitsPerSample
-                      << ", DataSize: " << audioDataSize << " bytes" << std::endl;
             
             file.close();
             break;
@@ -716,10 +734,6 @@ bool SoundComponent::loadWAVFile(const std::string& filePath) {
             return false;
         }
         
-        std::cout << "SoundComponent: Opened Vita audio port: " << audioPort 
-                  << " with sampleRate: " << sampleRate 
-                  << ", mode: " << (mode == SCE_AUDIO_OUT_MODE_MONO ? "MONO" : "STEREO") << std::endl;
-        
         int vol = (int)(volume * SCE_AUDIO_VOLUME_0DB * 0.8f);
         int volArray[2] = {vol, vol};
         sceAudioOutSetVolume(audioPort, 
@@ -731,7 +745,7 @@ bool SoundComponent::loadWAVFile(const std::string& filePath) {
         sceAudioOutSetConfig(audioPort, bufferSize, sampleRate, mode);
     }
     
-    currentStreamPos = 0;
+    currentStreamPos.store(0);
     
     if (pitch != 1.0f) {
         resampleAudioBuffer();
@@ -741,78 +755,68 @@ bool SoundComponent::loadWAVFile(const std::string& filePath) {
 }
 
 void SoundComponent::streamAudio() {
-    if (!audioBuffer || audioPort < 0 || !isStreaming) {
+    if (!audioBuffer || audioPort < 0 || !isStreaming.load()) {
         return;
     }
+    
     
     const size_t SAMPLES_PER_CHANNEL = 256;
     const size_t SAMPLES_PER_CHUNK = SAMPLES_PER_CHANNEL * channels;
     
-    // Calculate how many times we need to call sceAudioOutOutput per frame
-    // At 60fps, we need: sampleRate / 60 samples per frame
-    // But we can only provide 256 samples per channel per call
-    float samplesPerFrame = (float)sampleRate / 60.0f;
-    int callsPerFrame = (int)std::ceil(samplesPerFrame / SAMPLES_PER_CHANNEL);
-    if (callsPerFrame < 1) callsPerFrame = 1;
-    
-    // Limit to 2 calls per frame to reduce blocking on main thread
-    if (callsPerFrame > 2) callsPerFrame = 2;
-    
+    // Output one chunk per call - sceAudioOutOutput() is blocking and naturally throttles
     static int16_t outputBuffer[512];
     size_t totalSamples = audioDataSize / sizeof(int16_t);
     
-    for (int call = 0; call < callsPerFrame; call++) {
-        size_t currentSample = currentStreamPos / sizeof(int16_t);
-        
-        if (currentSample >= totalSamples) {
-            if (looping) {
-                currentStreamPos = 0;
-                currentSample = 0;
-            } else {
-                isStreaming = false;
-                return;
-            }
-        }
-        
-        size_t remainingSamples = totalSamples - currentSample;
-        
-        if (SAMPLES_PER_CHUNK > 512) {
-            std::cerr << "SoundComponent: Buffer too small for channel count" << std::endl;
-            isStreaming = false;
-            return;
-        }
-        
-        if (remainingSamples >= SAMPLES_PER_CHUNK) {
-            memcpy(outputBuffer, audioBuffer + currentSample, SAMPLES_PER_CHUNK * sizeof(int16_t));
-            currentStreamPos += SAMPLES_PER_CHUNK * sizeof(int16_t);
+    size_t currentPos = currentStreamPos.load();
+    size_t currentSample = currentPos / sizeof(int16_t);
+    
+    if (currentSample >= totalSamples) {
+        if (looping) {
+            currentStreamPos.store(0);
+            currentSample = 0;
         } else {
-            if (looping) {
-                size_t samplesFromEnd = remainingSamples;
-                size_t samplesFromStart = SAMPLES_PER_CHUNK - samplesFromEnd;
-                
-                memcpy(outputBuffer, audioBuffer + currentSample, samplesFromEnd * sizeof(int16_t));
-                memcpy(outputBuffer + samplesFromEnd, audioBuffer, samplesFromStart * sizeof(int16_t));
-                
-                currentStreamPos = samplesFromStart * sizeof(int16_t);
-            } else {
-                memcpy(outputBuffer, audioBuffer + currentSample, remainingSamples * sizeof(int16_t));
-                memset(outputBuffer + remainingSamples, 0, (SAMPLES_PER_CHUNK - remainingSamples) * sizeof(int16_t));
-                currentStreamPos = totalSamples * sizeof(int16_t);
-                isStreaming = false;
-                break;
-            }
-        }
-        
-        int result = sceAudioOutOutput(audioPort, outputBuffer);
-        if (result < 0) {
-            std::cerr << "SoundComponent: Audio output error: " << result << std::endl;
-            isStreaming = false;
+            isStreaming.store(false);
             return;
         }
     }
     
-    if (currentStreamPos >= audioDataSize && !looping) {
-        isStreaming = false;
+    size_t remainingSamples = totalSamples - currentSample;
+    
+    if (SAMPLES_PER_CHUNK > 512) {
+        std::cerr << "SoundComponent: Buffer too small for channel count" << std::endl;
+        isStreaming.store(false);
+        return;
+    }
+    
+    if (remainingSamples >= SAMPLES_PER_CHUNK) {
+        memcpy(outputBuffer, audioBuffer + currentSample, SAMPLES_PER_CHUNK * sizeof(int16_t));
+        currentStreamPos.store(currentPos + SAMPLES_PER_CHUNK * sizeof(int16_t));
+    } else {
+        if (looping) {
+            size_t samplesFromEnd = remainingSamples;
+            size_t samplesFromStart = SAMPLES_PER_CHUNK - samplesFromEnd;
+            
+            memcpy(outputBuffer, audioBuffer + currentSample, samplesFromEnd * sizeof(int16_t));
+            memcpy(outputBuffer + samplesFromEnd, audioBuffer, samplesFromStart * sizeof(int16_t));
+            
+            currentStreamPos.store(samplesFromStart * sizeof(int16_t));
+        } else {
+            memcpy(outputBuffer, audioBuffer + currentSample, remainingSamples * sizeof(int16_t));
+            memset(outputBuffer + remainingSamples, 0, (SAMPLES_PER_CHUNK - remainingSamples) * sizeof(int16_t));
+            currentStreamPos.store(totalSamples * sizeof(int16_t));
+            isStreaming.store(false);
+        }
+    }
+    
+    int result = sceAudioOutOutput(audioPort, outputBuffer);
+    if (result < 0) {
+        std::cerr << "SoundComponent: Audio output error: " << result << std::endl;
+        isStreaming.store(false);
+        return;
+    }
+    
+    if (currentStreamPos.load() >= audioDataSize && !looping) {
+        isStreaming.store(false);
     }
 }
 

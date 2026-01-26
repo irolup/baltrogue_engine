@@ -1,7 +1,9 @@
 #include "Audio/AudioManager.h"
+#include "Components/SoundComponent.h"
 #include "Core/ThreadManager.h"
 #include <iostream>
 #include <cstring>
+#include <algorithm>
 
 namespace GameEngine {
 
@@ -45,17 +47,18 @@ bool AudioManager::initialize() {
     }
     
     initialized = true;
+    enableThreading(true);
     return true;
 }
 
 void AudioManager::shutdown() {
-    if (threadingEnabled && audioThreadRunning) {
+    if (threadingEnabled && audioThreadRunning.load()) {
         AudioCommand shutdownCmd;
         shutdownCmd.type = AudioCommandType::SHUTDOWN;
         commandQueue.push(shutdownCmd);
         
         ThreadManager::getInstance().joinThread(audioThread);
-        audioThreadRunning = false;
+        audioThreadRunning.store(false);
         commandQueue.reset();
     }
     
@@ -70,7 +73,7 @@ void AudioManager::enableThreading(bool enable) {
     
     threadingEnabled = enable;
     
-    if (enable && !audioThreadRunning) {
+    if (enable && !audioThreadRunning.load()) {
         audioThread = ThreadManager::getInstance().createThread(
             "AudioThread",
             [this]() { this->audioThreadFunction(); }
@@ -80,20 +83,19 @@ void AudioManager::enableThreading(bool enable) {
             std::cerr << "AudioManager: Failed to create audio thread!" << std::endl;
             threadingEnabled = false;
         }
-    } else if (!enable && audioThreadRunning) {
+    } else if (!enable && audioThreadRunning.load()) {
         AudioCommand shutdownCmd;
         shutdownCmd.type = AudioCommandType::SHUTDOWN;
         commandQueue.push(shutdownCmd);
         
         ThreadManager::getInstance().joinThread(audioThread);
-        audioThreadRunning = false;
+        audioThreadRunning.store(false);
         commandQueue.reset();
     }
 }
 
 void AudioManager::playSound(const std::string& path, float volume, bool loop) {
     if (!threadingEnabled) {
-        // Single-threaded mode
         return;
     }
     
@@ -156,15 +158,52 @@ void AudioManager::resume() {
 }
 
 void AudioManager::audioThreadFunction() {
-    audioThreadRunning = true;
+    audioThreadRunning.store(true);
     
-    while (audioThreadRunning) {
-        AudioCommand cmd;
-        if (commandQueue.pop(cmd)) {
-            processAudioCommand(cmd);
-        } else {
-            ThreadManager::getInstance().sleep(1);
+    int loopCounter = 0;
+    
+    while (audioThreadRunning.load()) {
+#ifdef VITA_BUILD
+        // Copy component pointers while holding lock, then release lock before calling methods
+        // This prevents accessing deleted components and reduces lock
+        std::unique_lock<std::mutex> lock(soundComponentsMutex, std::try_to_lock);
+        if (lock.owns_lock()) {
+            std::vector<SoundComponent*> componentsToStream = activeSoundComponents;
+            lock.unlock();
+            
+            for (SoundComponent* component : componentsToStream) {
+                if (!component) continue;
+                
+                if (component->isPlaying()) {
+                    // Call streamAudio() multiple times per iteration to keep hardware buffer filled
+                    // sceAudioOutOutput() is blocking and naturally throttles when hardware isn't ready
+                    for (int i = 0; i < 5; i++) {
+                        if (!component->isPlaying()) {
+                            break;
+                        }
+                        component->streamAudio();
+                    }
+                }
+            }
         }
+        
+        // Process commands less frequently to prioritize audio streaming
+        if (loopCounter % 10 == 0) {
+            AudioCommand cmd;
+            if (commandQueue.tryPop(cmd)) {
+                processAudioCommand(cmd);
+            }
+        }
+        loopCounter++;
+#else
+        AudioCommand cmd;
+        if (commandQueue.tryPop(cmd)) {
+            processAudioCommand(cmd);
+        }
+        loopCounter++;
+#endif
+        
+        ThreadManager::getInstance().sleep(0);
     }
 }
 
@@ -189,7 +228,7 @@ void AudioManager::processAudioCommand(const AudioCommand& cmd) {
             break;
             
         case AudioCommandType::SHUTDOWN:
-            audioThreadRunning = false;
+            audioThreadRunning.store(false);
             break;
     }
 }
@@ -273,8 +312,34 @@ void AudioManager::shutdownAudioSystem() {
         alDevice = nullptr;
     }
 #elif defined(VITA_BUILD)
+    std::lock_guard<std::mutex> lock(soundComponentsMutex);
+    activeSoundComponents.clear();
 #endif
 }
+
+#ifdef VITA_BUILD
+void AudioManager::registerSoundComponent(SoundComponent* component) {
+    if (!component) return;
+    
+    std::lock_guard<std::mutex> lock(soundComponentsMutex);
+    for (SoundComponent* existing : activeSoundComponents) {
+        if (existing == component) {
+            return;
+        }
+    }
+    activeSoundComponents.push_back(component);
+}
+
+void AudioManager::unregisterSoundComponent(SoundComponent* component) {
+    if (!component) return;
+    
+    std::lock_guard<std::mutex> lock(soundComponentsMutex);
+    activeSoundComponents.erase(
+        std::remove(activeSoundComponents.begin(), activeSoundComponents.end(), component),
+        activeSoundComponents.end()
+    );
+}
+#endif
 
 } // namespace GameEngine
 
