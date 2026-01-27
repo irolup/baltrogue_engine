@@ -126,7 +126,6 @@ bool Engine::initializeSystems() {
     }
     
     if (!PhysicsManager::getInstance().initialize()) {
-        std::cerr << "Failed to initialize physics system!" << std::endl;
         return false;
     }
     
@@ -135,17 +134,15 @@ bool Engine::initializeSystems() {
     sceneManager = std::unique_ptr<SceneManager>(new SceneManager());
     
     if (!ScriptManager::getInstance().initialize()) {
-        std::cerr << "Failed to initialize script system!" << std::endl;
         return false;
     }
     
     if (!MenuManager::getInstance().initialize()) {
-        std::cerr << "Failed to initialize menu system!" << std::endl;
         return false;
     }
     
     if (!AudioManager::getInstance().initialize()) {
-        std::cerr << "Warning: Failed to initialize audio system (audio will be disabled)" << std::endl;
+        std::cerr << "Engine: Warning: Failed to initialize audio system (audio will be disabled)" << std::endl;
     }
     
 #ifdef EDITOR_BUILD

@@ -46,6 +46,7 @@ public:
     void setVertices(const std::vector<Vertex>& vertices);
     void setIndices(const std::vector<unsigned int>& indices);
     void upload();
+    void uploadAndClearCPUData();
     
     void bind() const;
     void unbind() const;
@@ -55,9 +56,9 @@ public:
     void drawDirectCube(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, const glm::vec3& color) const;
     void drawDirectCube(const glm::vec3& color) const;
     
-    size_t getVertexCount() const { return vertices.size(); }
-    size_t getIndexCount() const { return indices.size(); }
-    size_t getTriangleCount() const { return indices.size() / 3; }
+    size_t getVertexCount() const { return cpuDataCleared ? cachedVertexCount : vertices.size(); }
+    size_t getIndexCount() const { return cpuDataCleared ? cachedIndexCount : indices.size(); }
+    size_t getTriangleCount() const { return cpuDataCleared ? (cachedIndexCount / 3) : (indices.size() / 3); }
     MeshType getMeshType() const { return meshType; }
     void setMeshType(MeshType type) { meshType = type; }
     
@@ -93,6 +94,9 @@ private:
     
     GLuint VAO, VBO, EBO;
     bool uploaded;
+    bool cpuDataCleared;
+    size_t cachedVertexCount;
+    size_t cachedIndexCount;
     
     glm::vec3 boundsMin, boundsMax;
     MeshType meshType;

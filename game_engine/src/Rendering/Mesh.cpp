@@ -8,6 +8,9 @@ namespace GameEngine {
 
 Mesh::Mesh()
     : VAO(0), VBO(0), EBO(0), uploaded(false)
+    , cpuDataCleared(false)
+    , cachedVertexCount(0)
+    , cachedIndexCount(0)
     , boundsMin(std::numeric_limits<float>::max())
     , boundsMax(std::numeric_limits<float>::lowest())
     , meshType(MeshType::UNKNOWN)
@@ -18,6 +21,9 @@ Mesh::Mesh()
 Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices)
     : vertices(vertices), indices(indices)
     , VAO(0), VBO(0), EBO(0), uploaded(false)
+    , cpuDataCleared(false)
+    , cachedVertexCount(0)
+    , cachedIndexCount(0)
     , boundsMin(std::numeric_limits<float>::max())
     , boundsMax(std::numeric_limits<float>::lowest())
     , meshType(MeshType::UNKNOWN)
@@ -50,6 +56,20 @@ void Mesh::upload() {
     uploaded = true;
 }
 
+void Mesh::uploadAndClearCPUData() {
+    upload();
+    
+    if (uploaded && !cpuDataCleared) {
+        cachedVertexCount = vertices.size();
+        cachedIndexCount = indices.size();
+        vertices.clear();
+        vertices.shrink_to_fit();
+        indices.clear();
+        indices.shrink_to_fit();
+        cpuDataCleared = true;
+    }
+}
+
 void Mesh::bind() const {
     if (!uploaded) {
         const_cast<Mesh*>(this)->upload();
@@ -69,10 +89,13 @@ void Mesh::draw() const {
     
     bind();
     
-    if (!indices.empty()) {
-        glDrawElements(renderMode, indices.size(), GL_UNSIGNED_INT, 0);
+    size_t indexCount = cpuDataCleared ? cachedIndexCount : indices.size();
+    size_t vertexCount = cpuDataCleared ? cachedVertexCount : vertices.size();
+    
+    if (indexCount > 0) {
+        glDrawElements(renderMode, indexCount, GL_UNSIGNED_INT, 0);
     } else {
-        glDrawArrays(renderMode, 0, vertices.size());
+        glDrawArrays(renderMode, 0, vertexCount);
     }
     
     unbind();
@@ -89,10 +112,13 @@ void Mesh::draw(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, const
     
     bind();
     
-    if (!indices.empty()) {
-        glDrawElements(renderMode, indices.size(), GL_UNSIGNED_INT, 0);
+    size_t indexCount = cpuDataCleared ? cachedIndexCount : indices.size();
+    size_t vertexCount = cpuDataCleared ? cachedVertexCount : vertices.size();
+    
+    if (indexCount > 0) {
+        glDrawElements(renderMode, indexCount, GL_UNSIGNED_INT, 0);
     } else {
-        glDrawArrays(renderMode, 0, vertices.size());
+        glDrawArrays(renderMode, 0, vertexCount);
     }
     
     unbind();
@@ -105,10 +131,13 @@ void Mesh::draw(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, const
     
     bind();
     
-    if (!indices.empty()) {
-        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+    size_t indexCount = cpuDataCleared ? cachedIndexCount : indices.size();
+    size_t vertexCount = cpuDataCleared ? cachedVertexCount : vertices.size();
+    
+    if (indexCount > 0) {
+        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
     } else {
-        glDrawArrays(GL_TRIANGLES, 0, vertices.size());
+        glDrawArrays(GL_TRIANGLES, 0, vertexCount);
     }
     
     unbind();
@@ -123,8 +152,8 @@ std::shared_ptr<Mesh> Mesh::createQuad() {
     };
     
     std::vector<unsigned int> indices = {
-        0, 1, 2,  // First triangle
-        2, 3, 0   // Second triangle
+        0, 1, 2,
+        0, 2, 3
     };
     
     auto mesh = std::make_shared<Mesh>(vertices, indices);
@@ -162,12 +191,12 @@ std::shared_ptr<Mesh> Mesh::createPlane(float width, float height, int subdivisi
             int bottomRight = bottomLeft + 1;
             
             indices.push_back(topLeft);
-            indices.push_back(bottomLeft);
             indices.push_back(topRight);
+            indices.push_back(bottomLeft);
             
             indices.push_back(topRight);
-            indices.push_back(bottomLeft);
             indices.push_back(bottomRight);
+            indices.push_back(bottomLeft);
         }
     }
     
@@ -180,13 +209,12 @@ std::shared_ptr<Mesh> Mesh::createPlane(float width, float height, int subdivisi
 std::shared_ptr<Mesh> Mesh::createCube() {
     std::vector<Vertex> vertices = {
         {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f}},
         {{-0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f}},
+        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f}},
         {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
 
-        // Front face (Z+)
         {{-0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
         {{ 0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
         {{ 0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
@@ -194,33 +222,33 @@ std::shared_ptr<Mesh> Mesh::createCube() {
         {{-0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
         {{-0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
 
-        {{-0.5f,  0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-        {{-0.5f,  0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
-        {{-0.5f, -0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-        {{-0.5f,  0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-0.5f, -0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+        {{-0.5f,  0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
+        {{-0.5f,  0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
+        {{-0.5f,  0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
 
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
-        {{ 0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+        {{ 0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
+        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
+        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
+        {{ 0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+        {{ 0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
 
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {0.0f, 0.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{ 0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 1.0f}},
-        {{ 0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 1.0f}},
-        {{-0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f}},
+        {{ 0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 1.0f}},
+        {{ 0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{ 0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{-0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f}},
 
-        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-        {{-0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
-        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}}
+        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+        {{-0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
+        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}}
     };
     
     std::vector<unsigned int> indices;
@@ -262,12 +290,12 @@ std::shared_ptr<Mesh> Mesh::createSphere(int segments, int rings, float radius) 
             int i3 = i2 + 1;
 
             indices.push_back(i0);
-            indices.push_back(i2);
             indices.push_back(i1);
+            indices.push_back(i2);
 
             indices.push_back(i1);
-            indices.push_back(i2);
             indices.push_back(i3);
+            indices.push_back(i2);
         }
     }
 

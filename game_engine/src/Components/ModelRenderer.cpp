@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <set>
+#include <unordered_map>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -32,6 +33,8 @@
 #include "../../vendor/tinygltf/stb_image.h"
 
 namespace GameEngine {
+
+std::unordered_map<std::string, std::shared_ptr<ModelData>> ModelRenderer::meshCache;
 
 ModelRenderer::ModelRenderer()
     : castShadows(true)
@@ -106,6 +109,19 @@ bool ModelRenderer::loadModel(const std::string& modelPath) {
     // Unload current model first
     unloadModel();
     
+    auto cached = getCachedModel(modelPath);
+    if (cached && cached->isLoaded) {
+        modelData.meshes = cached->meshes;
+        modelData.materials = cached->materials;
+        modelData.meshNodeTransforms = cached->meshNodeTransforms;
+        modelData.meshMaterialIndices = cached->meshMaterialIndices;
+        modelData.modelPath = cached->modelPath;
+        modelData.modelName = cached->modelName;
+        modelData.isLoaded = cached->isLoaded;
+        std::cout << "ModelRenderer: Using cached model: " << modelPath << std::endl;
+        return true;
+    }
+    
     // Convert filepath to Vita format (app0:/path for VPK files) on Vita builds
     std::string actualPath = modelPath;
 #ifdef VITA_BUILD
@@ -142,6 +158,17 @@ bool ModelRenderer::loadModel(const std::string& modelPath) {
         modelData.modelPath = modelPath;
         modelData.modelName = getFileName(modelPath);
         modelData.isLoaded = true;
+        
+        auto cachedData = std::make_shared<ModelData>();
+        cachedData->meshes = modelData.meshes;
+        cachedData->materials = modelData.materials;
+        cachedData->meshNodeTransforms = modelData.meshNodeTransforms;
+        cachedData->meshMaterialIndices = modelData.meshMaterialIndices;
+        cachedData->modelPath = modelData.modelPath;
+        cachedData->modelName = modelData.modelName;
+        cachedData->isLoaded = modelData.isLoaded;
+        meshCache[modelPath] = cachedData;
+        std::cout << "ModelRenderer: Cached model: " << modelPath << std::endl;
     } else {
         std::cerr << "ModelRenderer: Failed to load model: " << modelPath << std::endl;
     }
@@ -485,11 +512,13 @@ std::shared_ptr<Mesh> ModelRenderer::createMeshFromGLTF(const tinygltf::Model& g
         
         // Create mesh from vertices and indices
         if (!vertices.empty()) {
-            mesh->setVertices(vertices);
+            mesh->setVertices(vertices);  // This already calls calculateBounds()
             if (!indices.empty()) {
                 mesh->setIndices(indices);
             }
-            mesh->upload();
+            // Use uploadAndClearCPUData to save memory on PS Vita
+            // Note: Bounds are preserved even after clearing CPU data
+            mesh->uploadAndClearCPUData();
             return mesh;
         } else {
             std::cerr << "ModelRenderer: No vertices created for mesh" << std::endl;
@@ -834,6 +863,19 @@ std::string ModelRenderer::getFileName(const std::string& filepath) {
         return filepath.substr(slashPos + 1);
     }
     return filepath;
+}
+
+std::shared_ptr<ModelData> ModelRenderer::getCachedModel(const std::string& modelPath) {
+    auto it = meshCache.find(modelPath);
+    if (it != meshCache.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+void ModelRenderer::clearMeshCache() {
+    meshCache.clear();
+    std::cout << "ModelRenderer: Mesh cache cleared" << std::endl;
 }
 
 } // namespace GameEngine

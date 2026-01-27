@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace tinygltf {
     class Model;
@@ -76,6 +77,10 @@ private:
     
     static std::string getFileExtension(const std::string& filepath);
     static std::string getFileName(const std::string& filepath);
+    
+    static std::unordered_map<std::string, std::shared_ptr<ModelData>> meshCache;
+    static std::shared_ptr<ModelData> getCachedModel(const std::string& modelPath);
+    static void clearMeshCache();
 };
 
 } // namespace GameEngine
