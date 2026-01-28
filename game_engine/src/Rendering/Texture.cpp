@@ -18,13 +18,14 @@
 namespace GameEngine {
 
 Texture::Texture()
-    : textureID(0), width(0), height(0), format(TextureFormat::RGBA)
+    : textureID(0), width(0), height(0), format(TextureFormat::RGBA), isCubemapTexture(false)
 {
 }
 
 Texture::~Texture() {
     if (textureID) {
         glDeleteTextures(1, &textureID);
+        textureID = 0;
     }
 }
 
@@ -403,13 +404,131 @@ bool Texture::createFromData(const void* data, int w, int h, TextureFormat fmt) 
     return true;
 }
 
+bool Texture::createCubemap(const std::vector<std::string>& facePaths) {
+    if (facePaths.size() != 6) {
+        std::cerr << "Cubemap requires exactly 6 face textures" << std::endl;
+        return false;
+    }
+    
+    GLenum faces[] = {
+        GL_TEXTURE_CUBE_MAP_POSITIVE_X,
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
+        GL_TEXTURE_CUBE_MAP_POSITIVE_Y,
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,
+        GL_TEXTURE_CUBE_MAP_POSITIVE_Z,
+        GL_TEXTURE_CUBE_MAP_NEGATIVE_Z
+    };
+    
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+    
+    isCubemapTexture = true;
+    
+    for (unsigned int i = 0; i < 6; i++) {
+        int w, h, channels;
+        unsigned char* imageData = nullptr;
+        
+#ifdef LINUX_BUILD
+        imageData = stbi_load(facePaths[i].c_str(), &w, &h, &channels, 0);
+#else
+        std::string vitaPath = facePaths[i];
+        if (vitaPath.find("assets/textures/") != std::string::npos) {
+            size_t lastSlash = vitaPath.find_last_of("/");
+            if (lastSlash != std::string::npos) {
+                vitaPath = "app0:/" + vitaPath.substr(lastSlash + 1);
+            } else {
+                vitaPath = "app0:/" + vitaPath;
+            }
+        } else if (vitaPath.find("app0:/") == std::string::npos) {
+            vitaPath = "app0:/" + vitaPath;
+        }
+        
+        SceUID fd = sceIoOpen(vitaPath.c_str(), SCE_O_RDONLY, 0);
+        if (fd < 0) {
+            std::cerr << "Failed to open cubemap face: " << vitaPath << std::endl;
+            continue;
+        }
+        
+        SceOff fileSize = sceIoLseek(fd, 0, SCE_SEEK_END);
+        sceIoLseek(fd, 0, SCE_SEEK_SET);
+        
+        if (fileSize <= 0) {
+            std::cerr << "Invalid file size for cubemap face: " << vitaPath << std::endl;
+            sceIoClose(fd);
+            continue;
+        }
+        
+        unsigned char* fileData = new unsigned char[fileSize];
+        int bytesRead = sceIoRead(fd, fileData, fileSize);
+        sceIoClose(fd);
+        
+        if (bytesRead != fileSize) {
+            std::cerr << "Failed to read cubemap face: " << vitaPath << std::endl;
+            delete[] fileData;
+            continue;
+        }
+        
+        imageData = stbi_load_from_memory(fileData, fileSize, &w, &h, &channels, 0);
+        delete[] fileData;
+#endif
+        
+        if (!imageData) {
+            std::cerr << "Failed to load cubemap face " << i << ": " << facePaths[i] << std::endl;
+            continue;
+        }
+        
+        GLenum glFormat = (channels == 3) ? GL_RGB : GL_RGBA;
+        GLenum internalFormat = glFormat;
+        
+        if (i == 0) {
+            width = w;
+            height = h;
+            format = (channels == 3) ? TextureFormat::RGB : TextureFormat::RGBA;
+        }
+        
+        glTexImage2D(faces[i], 0, internalFormat, w, h, 0, glFormat, GL_UNSIGNED_BYTE, imageData);
+        stbi_image_free(imageData);
+    }
+    
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    // VitaGL headers may not expose GL_TEXTURE_WRAP_R
+#ifdef GL_TEXTURE_WRAP_R
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+#endif
+    
+    glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+    
+    std::cout << "Successfully created cubemap texture (" << width << "x" << height << ")" << std::endl;
+    return true;
+}
+
+void Texture::bindCubemap(int textureUnit) const {
+    glActiveTexture(GL_TEXTURE0 + textureUnit);
+    if (isCubemapTexture) {
+        glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, textureID);
+    }
+}
+
 void Texture::bind(int textureUnit) const {
     glActiveTexture(GL_TEXTURE0 + textureUnit);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    if (isCubemapTexture) {
+        glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, textureID);
+    }
 }
 
 void Texture::unbind() const {
-    glBindTexture(GL_TEXTURE_2D, 0);
+    if (isCubemapTexture) {
+        glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 }
 
 void Texture::setFilter(TextureFilter minFilter, TextureFilter magFilter) {

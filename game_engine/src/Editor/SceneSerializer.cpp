@@ -11,6 +11,7 @@
 #include "Components/Area3DComponent.h"
 #include "Components/AnimationComponent.h"
 #include "Components/SoundComponent.h"
+#include "Components/SkyboxComponent.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Rendering/TextureManager.h"
@@ -1731,7 +1732,14 @@ std::string SceneSerializer::serializeSceneToJson(std::shared_ptr<Scene> scene) 
         sceneJson["activeCamera"] = nullptr;
     }
     
-    return sceneJson.dump(2); // Pretty print with 2 spaces indentation
+    auto activeSkybox = scene->getActiveSkybox();
+    if (activeSkybox) {
+        sceneJson["activeSkybox"] = activeSkybox->getName();
+    } else {
+        sceneJson["activeSkybox"] = nullptr;
+    }
+    
+    return sceneJson.dump(2);
 }
 
 std::shared_ptr<Scene> SceneSerializer::deserializeSceneFromJson(const std::string& jsonData) {
@@ -1772,12 +1780,19 @@ std::shared_ptr<Scene> SceneSerializer::deserializeSceneFromJson(const std::stri
             }
         }
         
-        // Set active camera
         if (sceneJson.contains("activeCamera") && !sceneJson["activeCamera"].is_null()) {
             std::string activeCameraName = sceneJson["activeCamera"];
             auto cameraNode = scene->findNode(activeCameraName);
             if (cameraNode) {
                 scene->setActiveCamera(cameraNode);
+            }
+        }
+        
+        if (sceneJson.contains("activeSkybox") && !sceneJson["activeSkybox"].is_null()) {
+            std::string activeSkyboxName = sceneJson["activeSkybox"];
+            auto skyboxNode = scene->findNode(activeSkyboxName);
+            if (skyboxNode) {
+                scene->setActiveSkybox(skyboxNode);
             }
         }
         
@@ -1862,7 +1877,10 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             json materialJson;
                             materialJson["color"] = {color.x, color.y, color.z};
                             
-                            // Save texture paths
+                            materialJson["metallic"] = material->getMetallic();
+                            materialJson["roughness"] = material->getRoughness();
+                            materialJson["reflectionStrength"] = material->getReflectionStrength();
+                            
                             std::string diffusePath = material->getDiffuseTexturePath();
                             std::string normalPath = material->getNormalTexturePath();
                             std::string armPath = material->getARMTexturePath();
@@ -2041,6 +2059,20 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                         componentJson["volume"] = soundComp->getVolume();
                         componentJson["loop"] = soundComp->isLooping();
                     }
+                } else if (component->getTypeName() == "SkyboxComponent") {
+                    auto skyboxComp = node->getComponent<SkyboxComponent>();
+                    if (skyboxComp) {
+                        componentJson["active"] = skyboxComp->isActive();
+                        auto texturePaths = skyboxComp->getTexturePaths();
+                        if (texturePaths.size() >= 6) {
+                            componentJson["rightTexture"] = texturePaths[0];
+                            componentJson["leftTexture"] = texturePaths[1];
+                            componentJson["topTexture"] = texturePaths[2];
+                            componentJson["bottomTexture"] = texturePaths[3];
+                            componentJson["frontTexture"] = texturePaths[4];
+                            componentJson["backTexture"] = texturePaths[5];
+                        }
+                    }
                 }
                 
                 componentsArray.push_back(componentJson);
@@ -2164,7 +2196,16 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                             }
                         }
                         
-                        // Load texture paths and assign textures
+                        if (materialJson.contains("metallic")) {
+                            material->setMetallic(materialJson["metallic"]);
+                        }
+                        if (materialJson.contains("roughness")) {
+                            material->setRoughness(materialJson["roughness"]);
+                        }
+                        if (materialJson.contains("reflectionStrength")) {
+                            material->setReflectionStrength(materialJson["reflectionStrength"]);
+                        }
+                        
                         auto& textureManager = TextureManager::getInstance();
                         
                         if (materialJson.contains("diffuseTexture")) {
@@ -2413,7 +2454,35 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         soundComp->setSoundFile(componentJson["soundFile"]);
                     }
                     
-                    soundComp->start(); // Initialize the sound component
+                    soundComp->start();
+                } else if (type == "SkyboxComponent") {
+                    auto skyboxComp = node->addComponent<SkyboxComponent>();
+                    
+                    if (componentJson.contains("rightTexture")) {
+                        skyboxComp->setRightTexture(componentJson["rightTexture"]);
+                    }
+                    if (componentJson.contains("leftTexture")) {
+                        skyboxComp->setLeftTexture(componentJson["leftTexture"]);
+                    }
+                    if (componentJson.contains("topTexture")) {
+                        skyboxComp->setTopTexture(componentJson["topTexture"]);
+                    }
+                    if (componentJson.contains("bottomTexture")) {
+                        skyboxComp->setBottomTexture(componentJson["bottomTexture"]);
+                    }
+                    if (componentJson.contains("frontTexture")) {
+                        skyboxComp->setFrontTexture(componentJson["frontTexture"]);
+                    }
+                    if (componentJson.contains("backTexture")) {
+                        skyboxComp->setBackTexture(componentJson["backTexture"]);
+                    }
+                    
+                    skyboxComp->start();
+                    
+                    if (componentJson.contains("active")) {
+                        bool active = componentJson["active"];
+                        skyboxComp->setActive(active);
+                    }
                 } else if (type == "Area3DComponent") {
 #ifdef LINUX_BUILD
                     std::cout << "Deserializing Area3DComponent for node: " << name << std::endl;

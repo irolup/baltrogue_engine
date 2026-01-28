@@ -2,6 +2,7 @@
 #include "Scene/SceneNode.h"
 #include "Rendering/Renderer.h"
 #include "Components/CameraComponent.h"
+#include "Components/SkyboxComponent.h"
 #include "Core/Engine.h"
 
 namespace GameEngine {
@@ -211,6 +212,35 @@ std::shared_ptr<SceneNode> Scene::getActiveGameCamera() const {
         };
     
     return findActiveCamera(rootNode);
+}
+
+void Scene::setActiveSkybox(std::shared_ptr<SceneNode> skyboxNode) {
+    if (skyboxNode && skyboxNode->getComponent<SkyboxComponent>()) {
+        std::function<void(std::shared_ptr<SceneNode>)> deactivateAllSkyboxes = 
+            [&](std::shared_ptr<SceneNode> node) {
+                if (!node) return;
+                
+                auto skyboxComp = node->getComponent<SkyboxComponent>();
+                if (skyboxComp) {
+                    skyboxComp->setActive(false);
+                }
+                
+                for (size_t i = 0; i < node->getChildCount(); ++i) {
+                    deactivateAllSkyboxes(node->getChild(i));
+                }
+            };
+        
+        if (rootNode) {
+            deactivateAllSkyboxes(rootNode);
+        }
+        
+        activeSkybox = skyboxNode;
+        
+        auto skyboxComponent = skyboxNode->getComponent<SkyboxComponent>();
+        skyboxComponent->setActive(true);
+    } else if (!skyboxNode) {
+        activeSkybox.reset();
+    }
 }
 
 } // namespace GameEngine

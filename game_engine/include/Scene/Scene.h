@@ -39,6 +39,9 @@ public:
     void setActiveCamera(std::shared_ptr<SceneNode> cameraNode);
     std::shared_ptr<SceneNode> getActiveGameCamera() const;
     
+    std::shared_ptr<SceneNode> getActiveSkybox() const { return activeSkybox.lock(); }
+    void setActiveSkybox(std::shared_ptr<SceneNode> skyboxNode);
+    
     void setSelectedNode(std::shared_ptr<SceneNode> node);
     std::shared_ptr<SceneNode> getSelectedNode() const { return selectedNode.lock(); }
     void clearSelection();
@@ -52,6 +55,7 @@ private:
     std::string name;
     std::shared_ptr<SceneNode> rootNode;
     std::weak_ptr<SceneNode> activeCamera;
+    std::weak_ptr<SceneNode> activeSkybox;
     std::weak_ptr<SceneNode> selectedNode;
     
     size_t nodeCounter;

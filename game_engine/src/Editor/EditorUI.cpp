@@ -14,6 +14,7 @@
 #include "Components/ScriptComponent.h"
 #include "Components/AnimationComponent.h"
 #include "Components/SoundComponent.h"
+#include "Components/SkyboxComponent.h"
 #include "Core/Engine.h"
 #include "Editor/BuildSystem.h"
 #include "Editor/SceneSerializer.h"
@@ -736,6 +737,24 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                     }
                 }
                 
+                if (ImGui::MenuItem("Skybox")) {
+                    auto scene = editor.getActiveScene();
+                    if (scene) {
+                        auto child = scene->createNode(editor.generateUniqueNodeName("Skybox"));
+                        auto skyboxComponent = child->addComponent<SkyboxComponent>();
+                        // Default paths to skybox_1
+                        skyboxComponent->setRightTexture("assets/textures/skyboxes/skybox_1/right.jpg");
+                        skyboxComponent->setLeftTexture("assets/textures/skyboxes/skybox_1/left.jpg");
+                        skyboxComponent->setTopTexture("assets/textures/skyboxes/skybox_1/top.jpg");
+                        skyboxComponent->setBottomTexture("assets/textures/skyboxes/skybox_1/bottom.jpg");
+                        skyboxComponent->setFrontTexture("assets/textures/skyboxes/skybox_1/front.jpg");
+                        skyboxComponent->setBackTexture("assets/textures/skyboxes/skybox_1/back.jpg");
+                        skyboxComponent->start();
+                        scene->setActiveSkybox(child);
+                        node->addChild(child);
+                    }
+                }
+                
                 if (ImGui::BeginMenu("Mesh Shapes")) {
                     if (ImGui::MenuItem("Plane")) {
                         auto scene = editor.getActiveScene();
@@ -1230,6 +1249,23 @@ void EditorUI::renderProperties() {
                         soundComponent->start();
                     }
                 }
+                if (ImGui::MenuItem("Skybox Component")) {
+                    if (!selected->getComponent<SkyboxComponent>()) {
+                        auto scene = editor.getActiveScene();
+                        auto skyboxComponent = selected->addComponent<SkyboxComponent>();
+                        // Set default paths to skybox_1
+                        skyboxComponent->setRightTexture("assets/textures/skyboxes/skybox_1/right.jpg");
+                        skyboxComponent->setLeftTexture("assets/textures/skyboxes/skybox_1/left.jpg");
+                        skyboxComponent->setTopTexture("assets/textures/skyboxes/skybox_1/top.jpg");
+                        skyboxComponent->setBottomTexture("assets/textures/skyboxes/skybox_1/bottom.jpg");
+                        skyboxComponent->setFrontTexture("assets/textures/skyboxes/skybox_1/front.jpg");
+                        skyboxComponent->setBackTexture("assets/textures/skyboxes/skybox_1/back.jpg");
+                        skyboxComponent->start();
+                        if (scene) {
+                            scene->setActiveSkybox(selected);
+                        }
+                    }
+                }
                 ImGui::EndPopup();
             }
             
@@ -1295,6 +1331,8 @@ void EditorUI::renderProperties() {
                     selected->removeComponent<ScriptComponent>();
                 } else if (componentToRemove == "SoundComponent") {
                     selected->removeComponent<SoundComponent>();
+                } else if (componentToRemove == "SkyboxComponent") {
+                    selected->removeComponent<SkyboxComponent>();
                 }
             }
             

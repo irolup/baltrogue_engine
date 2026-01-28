@@ -383,7 +383,7 @@ void TextComponent::initializeFont() {
         }
 #else
         // Vita builds - try to load external shaders first
-        if (!textShader->loadFromFiles("app0:/text.vert", "app0:/text.frag")) {
+        if (!textShader->loadFromFiles("app0:/assets/shaders/text.vert", "app0:/assets/shaders/text.frag")) {
             // Fallback to embedded CG/HLSL shaders (VitaGL uses CG/HLSL)
             std::string vertexSource = R"(
                 struct VS_INPUT {

@@ -16,6 +16,9 @@ uniform vec3 u_CameraPos;
 uniform vec3 u_DiffuseColor;
 uniform float u_Metallic;
 uniform float u_Roughness;
+uniform float u_ReflectionStrength;
+uniform bool u_HasEnvironmentMap;
+uniform samplerCube u_EnvironmentMap;
 
 // Texture uniforms
 uniform sampler2D u_DiffuseTexture;
@@ -138,6 +141,14 @@ void main() {
     // Apply material properties
     vec3 ambient = vec3(0.1) * diffuseColor * ao; // Ambient lighting with AO
     result = ambient + result * diffuseColor;
+
+    if (u_HasEnvironmentMap && u_ReflectionStrength > 0.0) {
+        vec3 I = normalize(vWorldPos - u_CameraPos);
+        vec3 R = reflect(I, normalize(normal));
+        vec3 env = textureCube(u_EnvironmentMap, R).rgb;
+        // Single control: 0 = no reflection, 1 = full mirror
+        result = mix(result, env, u_ReflectionStrength);
+    }
     
     // Output final color
     gl_FragColor = vec4(result, 1.0);

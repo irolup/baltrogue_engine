@@ -497,8 +497,7 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
         }
     #else
         // Vita builds use CG/HLSL shaders
-        // Try from app root (app0:)
-        if (lightingShader->loadFromFiles("app0:/lighting.vert", "app0:/lighting.frag")) {
+        if (lightingShader->loadFromFiles("app0:/assets/shaders/lighting.vert", "app0:/assets/shaders/lighting.frag")) {
             return lightingShader;
         }
         

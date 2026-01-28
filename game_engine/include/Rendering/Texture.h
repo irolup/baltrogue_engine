@@ -3,6 +3,7 @@
 
 #include <string>
 #include <memory>
+#include <vector>
 #include "Platform.h"
 
 namespace GameEngine {
@@ -39,6 +40,10 @@ public:
     bool createEmpty(int width, int height, TextureFormat format = TextureFormat::RGBA);
     bool createFromData(const void* data, int width, int height, TextureFormat format = TextureFormat::RGBA);
     
+    bool createCubemap(const std::vector<std::string>& facePaths);
+    void bindCubemap(int textureUnit = 0) const;
+    bool isCubemap() const { return isCubemapTexture; }
+    
     bool loadSTBImage(const std::string& filepath);
     
     void bind(int textureUnit = 0) const;
@@ -64,6 +69,7 @@ private:
     int width, height;
     TextureFormat format;
     std::string filepath;
+    bool isCubemapTexture;
     
     GLenum getGLFormat(TextureFormat fmt) const;
     GLenum getGLFilter(TextureFilter filter) const;

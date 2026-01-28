@@ -5,7 +5,9 @@
 #include "Components/MeshRenderer.h"
 #include "Components/ModelRenderer.h"
 #include "Components/TextComponent.h"
+#include "Components/SkyboxComponent.h"
 #include "Rendering/Shader.h"
+#include "Rendering/Texture.h"
 #include "Rendering/LightingManager.h"
 #include <algorithm>
 #include <iostream>
@@ -16,6 +18,7 @@ namespace GameEngine {
 
 Renderer::Renderer()
     : activeCamera(nullptr)
+    , currentScene(nullptr)
     , viewport(0, 0, 800, 600)
     , clearColor(0.2f, 0.3f, 0.3f)
     , wireframeEnabled(false)
@@ -61,6 +64,7 @@ void Renderer::present() {
 }
 
 void Renderer::renderScene(Scene& scene) {
+    currentScene = &scene;
     setupCamera();
     
     if (activeCamera) {
@@ -74,6 +78,10 @@ void Renderer::renderScene(Scene& scene) {
     }
     
     processRenderQueue();
+    
+    renderSkybox(scene);
+    
+    currentScene = nullptr;
     
     static int frameCount = 0;
     frameCount++;
@@ -261,6 +269,26 @@ void Renderer::processRenderQueue() {
             material->setCameraPosition(cameraPos);
         }
         
+        if (currentScene) {
+            auto activeSkyboxNode = currentScene->getActiveSkybox();
+            if (activeSkyboxNode) {
+                auto skyboxComp = activeSkyboxNode->getComponent<SkyboxComponent>();
+                if (skyboxComp && skyboxComp->isActive()) {
+                    auto envMap = skyboxComp->getCubemapTexture();
+                    if (envMap) {
+                        material->setTexture("u_EnvironmentMap", envMap);
+                        material->setBool("u_HasEnvironmentMap", true);
+                    } else {
+                        material->setBool("u_HasEnvironmentMap", false);
+                    }
+                } else {
+                    material->setBool("u_HasEnvironmentMap", false);
+                }
+            } else {
+                material->setBool("u_HasEnvironmentMap", false);
+            }
+        }
+        
         applyMaterial(*material);
         
         auto shader = material->getShader();
@@ -413,6 +441,63 @@ bool Renderer::isAABBInFrustum(const glm::vec3& min, const glm::vec3& max, const
     }
     
     return true;
+}
+
+void Renderer::renderSkybox(Scene& scene) {
+    auto activeSkyboxNode = scene.getActiveSkybox();
+    if (!activeSkyboxNode) return;
+    
+    auto skyboxComp = activeSkyboxNode->getComponent<SkyboxComponent>();
+    if (!skyboxComp || !skyboxComp->isActive()) return;
+    
+    auto cubemapTexture = skyboxComp->getCubemapTexture();
+    auto skyboxMesh = skyboxComp->getSkyboxMesh();
+    auto skyboxMaterial = skyboxComp->getSkyboxMaterial();
+    
+    if (!cubemapTexture || !skyboxMesh || !skyboxMaterial || !activeCamera) return;
+    
+    GLboolean depthMaskEnabled;
+    GLint depthFunc;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskEnabled);
+    glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
+    
+    glDepthMask(GL_FALSE);
+    glDepthFunc(GL_LEQUAL);
+    
+    bool cullingWasEnabled = cullFaceEnabled;
+    if (cullFaceEnabled) {
+        glDisable(GL_CULL_FACE);
+    }
+    
+    glm::mat4 viewMatrix = glm::mat4(glm::mat3(activeCamera->getViewMatrix()));
+    
+    glm::mat4 projectionMatrix = activeCamera->getProjectionMatrix();
+    
+    skyboxMaterial->apply();
+    
+    auto shader = skyboxMaterial->getShader();
+    if (shader && shader->isValid()) {
+        shader->use();
+        shader->setMat4("view", viewMatrix);
+        shader->setMat4("projection", projectionMatrix);
+        shader->setInt("skybox", 0);
+        
+        cubemapTexture->bindCubemap(0);
+    }
+    
+    skyboxMesh->bind();
+    skyboxMesh->draw();
+    skyboxMesh->unbind();
+    
+    glDepthMask(depthMaskEnabled);
+    glDepthFunc(GL_LESS);
+    
+    if (cullingWasEnabled && cullFaceEnabled) {
+        glEnable(GL_CULL_FACE);
+    }
+    
+    stats.drawCalls++;
+    stats.triangles += skyboxMesh->getTriangleCount();
 }
 
 } // namespace GameEngine

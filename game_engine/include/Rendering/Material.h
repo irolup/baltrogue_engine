@@ -46,6 +46,9 @@ public:
     float getRoughness() const { return roughness; }
     void setRoughness(float r) { roughness = r; setFloat("u_Roughness", roughness); }
     
+    float getReflectionStrength() const { return reflectionStrength; }
+    void setReflectionStrength(float r) { reflectionStrength = r; setFloat("u_ReflectionStrength", reflectionStrength); }
+    
     std::shared_ptr<Texture> getDiffuseTexture() const { return diffuseTexture; }
     void setDiffuseTexture(std::shared_ptr<Texture> texture, const std::string& path = "");
     
@@ -92,6 +95,7 @@ private:
     glm::vec3 color;
     float metallic;
     float roughness;
+    float reflectionStrength;
     
     std::shared_ptr<Texture> diffuseTexture;
     std::shared_ptr<Texture> normalTexture;

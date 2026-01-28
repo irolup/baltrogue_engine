@@ -66,6 +66,7 @@ private:
     void bindSceneToLua();
     void bindAnimationToLua();
     void bindSoundToLua();
+    void bindSkyboxToLua();
 };
 
 } // namespace GameEngine

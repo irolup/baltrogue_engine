@@ -13,11 +13,14 @@
 #include "Components/TextComponent.h"
 #include "Components/Area3DComponent.h"
 #include "Components/PhysicsComponent.h"
+#include "Components/SkyboxComponent.h"
 #include "Core/Engine.h"
 #include "Rendering/LightingManager.h"
 #include "Rendering/Material.h"
 #include "Rendering/Shader.h"
 #include "Rendering/Renderer.h"
+#include "Rendering/Texture.h"
+#include "Rendering/Mesh.h"
 #include "Physics/PhysicsManager.h"
 
 #include <imgui.h>
@@ -497,7 +500,65 @@ void EditorSystem::renderSceneDirectly(Scene& scene, CameraComponent* camera) {
         renderNodeDirectly(rootNode, glm::mat4(1.0f), viewMatrix, projectionMatrix, isEditorCamera);
     }
     
+    renderSkyboxDirectly(scene, camera, viewMatrix, projectionMatrix);
+    
     renderPhysicsDebugShapes(viewMatrix, projectionMatrix);
+}
+
+void EditorSystem::renderSkyboxDirectly(Scene& scene, CameraComponent* camera, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
+    if (!camera) return;
+    
+    auto activeSkyboxNode = scene.getActiveSkybox();
+    if (!activeSkyboxNode) return;
+    
+    auto skyboxComp = activeSkyboxNode->getComponent<SkyboxComponent>();
+    if (!skyboxComp || !skyboxComp->isActive()) return;
+    
+    auto cubemapTexture = skyboxComp->getCubemapTexture();
+    auto skyboxMesh = skyboxComp->getSkyboxMesh();
+    auto skyboxMaterial = skyboxComp->getSkyboxMaterial();
+    
+    if (!cubemapTexture || !skyboxMesh || !skyboxMaterial) return;
+    
+    // Save current state
+    GLboolean depthMaskEnabled;
+    GLint depthFunc;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskEnabled);
+    glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
+    
+    glDepthMask(GL_FALSE);
+    glDepthFunc(GL_LEQUAL);
+    
+    GLboolean cullFaceEnabled;
+    glGetBooleanv(GL_CULL_FACE, &cullFaceEnabled);
+    if (cullFaceEnabled) {
+        glDisable(GL_CULL_FACE);
+    }
+    
+    glm::mat4 skyboxViewMatrix = glm::mat4(glm::mat3(viewMatrix));
+    
+    skyboxMaterial->apply();
+    
+    auto shader = skyboxMaterial->getShader();
+    if (shader && shader->isValid()) {
+        shader->use();
+        shader->setMat4("view", skyboxViewMatrix);
+        shader->setMat4("projection", projectionMatrix);
+        shader->setInt("skybox", 0);
+        
+        cubemapTexture->bindCubemap(0);
+    }
+    
+    skyboxMesh->bind();
+    skyboxMesh->draw();
+    skyboxMesh->unbind();
+    
+    glDepthMask(depthMaskEnabled);
+    glDepthFunc(GL_LESS);
+    
+    if (cullFaceEnabled) {
+        glEnable(GL_CULL_FACE);
+    }
 }
 
 void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm::mat4& parentTransform,
@@ -512,6 +573,26 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
         auto material = meshRenderer->getMaterial();
         
         if (mesh && material) {
+            if (activeScene) {
+                auto activeSkyboxNode = activeScene->getActiveSkybox();
+                if (activeSkyboxNode) {
+                    auto skyboxComp = activeSkyboxNode->getComponent<SkyboxComponent>();
+                    if (skyboxComp && skyboxComp->isActive()) {
+                        auto envMap = skyboxComp->getCubemapTexture();
+                        if (envMap) {
+                            material->setTexture("u_EnvironmentMap", envMap);
+                            material->setBool("u_HasEnvironmentMap", true);
+                        } else {
+                            material->setBool("u_HasEnvironmentMap", false);
+                        }
+                    } else {
+                        material->setBool("u_HasEnvironmentMap", false);
+                    }
+                } else {
+                    material->setBool("u_HasEnvironmentMap", false);
+                }
+            }
+
             material->apply();
             
             auto shader = material->getShader();
@@ -617,7 +698,11 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
     
 #ifdef EDITOR_BUILD
     auto area3DComponent = node->getComponent<Area3DComponent>();
-    if (area3DComponent && area3DComponent->getShowDebugShape()) {
+    // Gate Area3D wireframes behind the global debug toggle so they don't
+    // unexpectedly show up after loading a scene.
+    if (area3DComponent &&
+        area3DComponent->getShowDebugShape() &&
+        PhysicsManager::getInstance().isDebugDrawEnabled()) {
         area3DComponent->renderDebugWireframe(viewMatrix, projectionMatrix);
     }
 #endif

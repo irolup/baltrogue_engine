@@ -1,5 +1,6 @@
 {
   "activeCamera": "PlayerCamera",
+  "activeSkybox": "Skybox",
   "name": "Pickup Zone Example",
   "rootNode": {
     "active": true,
@@ -108,7 +109,10 @@
                     0.20000000298023224
                   ],
                   "diffuseTexture": "assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_diff_1k.png",
-                  "normalTexture": "assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_nor_gl_1k.png"
+                  "metallic": 0.0,
+                  "normalTexture": "assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_nor_gl_1k.png",
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
                 },
                 "meshType": "CUBE",
                 "type": "MeshRenderer"
@@ -775,7 +779,10 @@
                     1.0,
                     0.5,
                     0.20000000298023224
-                  ]
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
                 },
                 "meshType": "CUBE",
                 "type": "MeshRenderer"
@@ -870,7 +877,10 @@
                     0.5,
                     0.20000000298023224
                   ],
-                  "diffuseTexture": "assets/textures/memes/spider_diff_.png"
+                  "diffuseTexture": "assets/textures/memes/spider_diff_.png",
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
                 },
                 "meshType": "SPHERE",
                 "type": "MeshRenderer"
@@ -1024,7 +1034,10 @@
                     1.0,
                     0.5,
                     0.20000000298023224
-                  ]
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
                 },
                 "meshType": "CUBE",
                 "type": "MeshRenderer"
@@ -1118,7 +1131,10 @@
                     1.0,
                     0.5,
                     0.20000000298023224
-                  ]
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
                 },
                 "meshType": "CUBE",
                 "type": "MeshRenderer"
@@ -1212,7 +1228,10 @@
                     1.0,
                     0.5,
                     0.20000000298023224
-                  ]
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
                 },
                 "meshType": "CUBE",
                 "type": "MeshRenderer"
@@ -1309,7 +1328,10 @@
                         1.0,
                         0.5,
                         0.20000000298023224
-                      ]
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
                     },
                     "meshType": "CUBE",
                     "type": "MeshRenderer"
@@ -1403,7 +1425,10 @@
                         1.0,
                         0.5,
                         0.20000000298023224
-                      ]
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
                     },
                     "meshType": "CUBE",
                     "type": "MeshRenderer"
@@ -1497,7 +1522,10 @@
                         1.0,
                         0.5,
                         0.20000000298023224
-                      ]
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
                     },
                     "meshType": "CUBE",
                     "type": "MeshRenderer"
@@ -1633,6 +1661,40 @@
             0.0,
             -1.2000000476837158,
             -13.899999618530273
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "active": true,
+            "backTexture": "assets/textures/skyboxes/skybox_1/back.jpg",
+            "bottomTexture": "assets/textures/skyboxes/skybox_1/bottom.jpg",
+            "frontTexture": "assets/textures/skyboxes/skybox_1/front.jpg",
+            "leftTexture": "assets/textures/skyboxes/skybox_1/left.jpg",
+            "rightTexture": "assets/textures/skyboxes/skybox_1/right.jpg",
+            "topTexture": "assets/textures/skyboxes/skybox_1/top.jpg",
+            "type": "SkyboxComponent"
+          }
+        ],
+        "name": "Skybox",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
           ],
           "rotation": [
             0.0,

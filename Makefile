@@ -144,14 +144,16 @@ $(EDITOR_BUILD_DIR):
 $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 	vita-mksfoex -s TITLE_ID=$(TITLEID) "$(TARGET)" $(BUILD_DIR)/param.sfo
 	vita-pack-vpk -s $(BUILD_DIR)/param.sfo -b $(BUILD_DIR)/eboot.bin \
-		-a assets/shaders/lambertian.vert=lambertian.vert \
-		-a assets/shaders/lambertian.frag=lambertian.frag \
-		-a assets/shaders/lambertian_hlsl.vert=lambertian_hlsl.vert \
-		-a assets/shaders/lambertian_hlsl.frag=lambertian_hlsl.frag \
-		-a assets/shaders/lighting.vert=lighting.vert \
-		-a assets/shaders/lighting.frag=lighting.frag \
-		-a assets/shaders/text.vert=text.vert \
-		-a assets/shaders/text.frag=text.frag \
+		-a assets/shaders/lambertian.vert=assets/shaders/lambertian.vert \
+		-a assets/shaders/lambertian.frag=assets/shaders/lambertian.frag \
+		-a assets/shaders/lambertian_hlsl.vert=assets/shaders/lambertian_hlsl.vert \
+		-a assets/shaders/lambertian_hlsl.frag=assets/shaders/lambertian_hlsl.frag \
+		-a assets/shaders/lighting.vert=assets/shaders/lighting.vert \
+		-a assets/shaders/lighting.frag=assets/shaders/lighting.frag \
+		-a assets/shaders/text.vert=assets/shaders/text.vert \
+		-a assets/shaders/text.frag=assets/shaders/text.frag \
+		-a assets/shaders/skybox.vert=assets/shaders/skybox.vert \
+		-a assets/shaders/skybox.frag=assets/shaders/skybox.frag \
 		-a textures.txt=textures.txt \
 		-a fonts.txt=fonts.txt \
 		-a scripts.txt=scripts.txt \
@@ -169,6 +171,12 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/textures/red_brick/red_brick_diff_1k.png=red_brick_diff_1k.png \
 		-a assets/textures/red_brick/red_brick_arm_1k.png=red_brick_arm_1k.png \
 		-a assets/textures/red_brick/red_brick_nor_gl_1k.png=red_brick_nor_gl_1k.png \
+		-a assets/textures/skyboxes/skybox_1/right.jpg=right.jpg \
+		-a assets/textures/skyboxes/skybox_1/left.jpg=left.jpg \
+		-a assets/textures/skyboxes/skybox_1/top.jpg=top.jpg \
+		-a assets/textures/skyboxes/skybox_1/bottom.jpg=bottom.jpg \
+		-a assets/textures/skyboxes/skybox_1/front.jpg=front.jpg \
+		-a assets/textures/skyboxes/skybox_1/back.jpg=back.jpg \
 		-a assets/fonts/DroidSans.ttf=assets/fonts/DroidSans.ttf \
 		-a assets/fonts/ProggyVector.ttf=assets/fonts/ProggyVector.ttf \
 		-a assets/fonts/ProggyClean.ttf=assets/fonts/ProggyClean.ttf \

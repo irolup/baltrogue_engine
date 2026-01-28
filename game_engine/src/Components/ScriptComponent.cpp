@@ -7,6 +7,7 @@
 #include "Components/PhysicsComponent.h"
 #include "Components/AnimationComponent.h"
 #include "Components/SoundComponent.h"
+#include "Components/SkyboxComponent.h"
 #include "Rendering/AnimationManager.h"
 #include "Scene/SceneNode.h"
 #include "Input/InputManager.h"
@@ -348,6 +349,7 @@ void ScriptComponent::bindEngineToLua() {
     bindSceneToLua();
     bindAnimationToLua();
     bindSoundToLua();
+    bindSkyboxToLua();
     
     // Bind MenuManager
     MenuManager::getInstance().bindToLua(luaState);
@@ -3549,6 +3551,170 @@ void ScriptComponent::bindSoundToLua() {
     lua_settable(luaState, -3);
     
     lua_setglobal(luaState, "sound");
+}
+
+void ScriptComponent::bindSkyboxToLua() {
+    if (!luaState) {
+        return;
+    }
+    
+    // Set active skybox by node name
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto skyboxComp = node->getComponent<SkyboxComponent>();
+                    if (skyboxComp) {
+                        activeScene->setActiveSkybox(node);
+                        lua_pushboolean(L, true);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_setglobal(luaState, "setActiveSkybox");
+    
+    // Get active skybox node name
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene) {
+                auto skyboxNode = activeScene->getActiveSkybox();
+                if (skyboxNode) {
+                    lua_pushstring(L, skyboxNode->getName().c_str());
+                    return 1;
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        lua_pushnil(L);
+        return 1;
+    });
+    lua_setglobal(luaState, "getActiveSkybox");
+    
+    // Set skybox textures
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+        if (!lua_istable(L, 2)) {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+        
+        std::vector<std::string> paths(6);
+        bool allSet = true;
+        
+        // Get 6 texture paths
+        for (int i = 0; i < 6; i++) {
+            lua_pushinteger(L, i + 1);
+            lua_gettable(L, 2);
+            
+            if (lua_isstring(L, -1)) {
+                paths[i] = lua_tostring(L, -1);
+            } else {
+                allSet = false;
+            }
+            
+            lua_pop(L, 1);
+        }
+        
+        if (!allSet) {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto skyboxComp = node->getComponent<SkyboxComponent>();
+                    if (skyboxComp) {
+                        bool result = skyboxComp->setTextures(paths);
+                        lua_pushboolean(L, result);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_setglobal(luaState, "setSkyboxTextures");
+    
+    // Enable/disable skybox
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        bool enabled = lua_toboolean(L, 2) != 0;
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto skyboxComp = node->getComponent<SkyboxComponent>();
+                    if (skyboxComp) {
+                        if (enabled) {
+                            activeScene->setActiveSkybox(node);
+                        } else {
+                            skyboxComp->setActive(false);
+                        }
+                        lua_pushboolean(L, true);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+            // Handle exceptions gracefully
+        }
+#endif
+        
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_setglobal(luaState, "setSkyboxEnabled");
 }
 
 } // namespace GameEngine

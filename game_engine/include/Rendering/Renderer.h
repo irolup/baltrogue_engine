@@ -13,6 +13,7 @@ class SceneNode;
 class Mesh;
 class Material;
 class CameraComponent;
+class SkyboxComponent;
 
 struct RenderCommand {
     std::shared_ptr<Mesh> mesh;
@@ -74,6 +75,7 @@ public:
     
 private:
     CameraComponent* activeCamera;
+    Scene* currentScene;
     glm::ivec4 viewport;
     glm::vec3 clearColor;
     
@@ -99,6 +101,7 @@ private:
     void setupCamera();
     void applyMaterial(const Material& material);
     void updateFrustum();
+    void renderSkybox(Scene& scene);
     bool isMeshInFrustum(const Mesh& mesh, const glm::mat4& modelMatrix) const;
     bool isAABBInFrustum(const glm::vec3& min, const glm::vec3& max, const glm::mat4& transform) const;
 };

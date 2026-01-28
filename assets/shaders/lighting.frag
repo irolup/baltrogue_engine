@@ -26,6 +26,9 @@ uniform float3 u_CameraPos;
 uniform float3 u_DiffuseColor;
 uniform float u_Metallic;
 uniform float u_Roughness;
+uniform float u_ReflectionStrength;
+uniform int u_HasEnvironmentMap;
+uniform samplerCUBE u_EnvironmentMap;
 
 // Texture samplers
 uniform sampler2D u_DiffuseTexture;
@@ -140,6 +143,14 @@ float4 main(FragmentInput input) : COLOR {
     // Apply material properties with textures
     float3 ambient = float3(0.1f, 0.1f, 0.1f) * diffuseColor * ambientOcclusion; // Ambient lighting with AO
     result = ambient + result * diffuseColor;
+
+    if (u_HasEnvironmentMap && u_ReflectionStrength > 0.0f) {
+        float3 I = normalize(input.worldPos - u_CameraPos);
+        float3 R = reflect(I, normalize(normal));
+        float3 env = texCUBE(u_EnvironmentMap, R).rgb;
+        // Single control: 0 = no reflection, 1 = full mirror
+        result = lerp(result, env, u_ReflectionStrength);
+    }
     
     // Output final color
     return float4(result, 1.0f);

@@ -16,6 +16,7 @@ Material::Material()
     , color(1.0f, 1.0f, 1.0f)
     , metallic(0.0f)
     , roughness(0.5f)
+    , reflectionStrength(0.0f)
     , diffuseTexture(nullptr)
     , normalTexture(nullptr)
     , armTexture(nullptr)
@@ -30,6 +31,7 @@ Material::Material(std::shared_ptr<Shader> materialShader)
     , color(1.0f, 1.0f, 1.0f)
     , metallic(0.0f)
     , roughness(0.5f)
+    , reflectionStrength(0.0f)
     , diffuseTexture(nullptr)
     , normalTexture(nullptr)
     , armTexture(nullptr)
@@ -114,7 +116,11 @@ void Material::setCameraPosition(const glm::vec3& cameraPos) {
 }
 
 void Material::apply() const {
-    const_cast<Material*>(this)->shader = Shader::getLightingShader();
+    // Only fall back to the default lighting shader if this material
+    // doesn't already have an explicit shader (e.g. skybox materials).
+    if (!shader) {
+        const_cast<Material*>(this)->shader = Shader::getLightingShader();
+    }
     
     if (!shader || !shader->isValid()) {
         return;
@@ -122,7 +128,11 @@ void Material::apply() const {
     
     shader->use();
     applyProperties();
-    setupLightingUniforms();
+    // Only lighting shader needs light uniforms; other shaders (like skybox)
+    // should not get lighting uniforms pushed.
+    if (shader == Shader::getLightingShader()) {
+        setupLightingUniforms();
+    }
 }
 
 void Material::drawInspector() {
@@ -138,6 +148,10 @@ void Material::drawInspector() {
         
         if (ImGui::SliderFloat("Roughness", &roughness, 0.0f, 1.0f)) {
             setFloat("u_Roughness", roughness);
+        }
+        
+        if (ImGui::SliderFloat("Reflection Strength", &reflectionStrength, 0.0f, 1.0f)) {
+            setReflectionStrength(reflectionStrength);
         }
         
         ImGui::Separator();
@@ -243,6 +257,14 @@ void Material::applyProperties() const {
     if (!shader) return;
     
     shader->setVec3("u_DiffuseColor", color);
+    shader->setFloat("u_ReflectionStrength", reflectionStrength);
+    
+    bool hasEnvMap = false;
+    auto envIt = textureProperties.find("u_EnvironmentMap");
+    if (envIt != textureProperties.end() && envIt->second && envIt->second->isCubemap()) {
+        hasEnvMap = true;
+    }
+    shader->setBool("u_HasEnvironmentMap", hasEnvMap);
     
     for (const auto& prop : floatProperties) {
         shader->setFloat(prop.first, prop.second);
@@ -307,7 +329,11 @@ void Material::applyProperties() const {
     
     for (const auto& prop : textureProperties) {
         if (prop.second) {
-            prop.second->bind(textureUnit);
+            if ((prop.first == "skybox" || prop.first == "u_EnvironmentMap") && prop.second->isCubemap()) {
+                prop.second->bindCubemap(textureUnit);
+            } else {
+                prop.second->bind(textureUnit);
+            }
             shader->setInt(prop.first, textureUnit);
             textureUnit++;
         }
