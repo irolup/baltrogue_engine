@@ -8,6 +8,7 @@
 #include <string>
 #include <glm/glm.hpp>
 #include "Rendering/Framebuffer.h"
+#include "Rendering/Shader.h"
 #include "Components/CameraComponent.h"
 #include "Editor/SceneSerializer.h"
 #include "Editor/BuildSystem.h"
@@ -67,7 +68,25 @@ public:
     void setViewportSize(const glm::vec2& size);
     std::unique_ptr<Framebuffer>& getViewportFramebuffer() { return viewportFramebuffer; }
 
+    void setGridOrigin(const glm::vec3& origin) { gridOrigin = origin; gridMeshDirty = true; }
+    glm::vec3 getGridOrigin() const { return gridOrigin; }
+    void setGridCellSize(float size) { gridCellSize = size > 0.0f ? size : 1.0f; gridMeshDirty = true; }
+    float getGridCellSize() const { return gridCellSize; }
+    void setGridSize(int sizeX, int sizeZ);
+    int getGridSizeX() const { return gridSizeX; }
+    int getGridSizeZ() const { return gridSizeZ; }
+    bool isGridLockEnabled() const { return gridLockEnabled; }
+    void setGridLockEnabled(bool enabled) { gridLockEnabled = enabled; }
+    bool isShowGridEnabled() const { return showGrid; }
+    void setShowGridEnabled(bool enabled) { showGrid = enabled; }
+    glm::vec3 snapWorldToGrid(const glm::vec3& worldPos, bool snapY = false) const;
+    void worldToGridCell(const glm::vec3& worldPos, int& outGx, int& outGz) const;
+    glm::vec3 gridCellToWorld(int gx, int gz, float y = 0.0f) const;
+    bool isGridCellInBounds(int gx, int gz) const;
+
 private:
+    void buildGridMesh();
+    void renderGridInViewport(CameraComponent* camera);
     std::shared_ptr<Scene> activeScene;
     std::weak_ptr<SceneNode> selectedNode;
     
@@ -80,7 +99,21 @@ private:
     glm::vec2 viewportSize;
     
     std::unique_ptr<EditorUI> ui;
-    
+
+    glm::vec3 gridOrigin;
+    float gridCellSize;
+    int gridSizeX;
+    int gridSizeZ;
+    bool gridLockEnabled;
+    bool showGrid;
+    bool gridMeshDirty;
+
+    GLuint gridVao;
+    GLuint gridVbo;
+    GLuint gridIbo;
+    GLsizei gridLineCount;
+    std::shared_ptr<Shader> gridShader;
+
     void createDefaultScene();
     void handleViewportInput();
     void handleGameCameraInput(float deltaTime);

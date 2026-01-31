@@ -27,6 +27,8 @@
 #include "Physics/PhysicsManager.h"
 #include "Input/InputMapping.h"
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <cmath>
 #include <iostream>
 #include <memory>
 
@@ -84,6 +86,7 @@ void EditorUI::setupDockspace() {
 }
 
 void EditorUI::renderMenuBar() {
+    static bool openGridSettingsNextFrame = false;
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Scene")) {
@@ -135,13 +138,70 @@ void EditorUI::renderMenuBar() {
             if (ImGui::MenuItem("Physics Debug Shapes", nullptr, &physicsDebugEnabled)) {
                 PhysicsManager::getInstance().setDebugDrawEnabled(physicsDebugEnabled);
             }
-            
+            ImGui::Separator();
+            bool gridLock = editor.isGridLockEnabled();
+            if (ImGui::MenuItem("Grid Lock", nullptr, &gridLock)) {
+                editor.setGridLockEnabled(gridLock);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("When enabled, node position snaps to the placement grid (X, Y, Z).");
+            }
+            bool showGrid = editor.isShowGridEnabled();
+            if (ImGui::MenuItem("Show Grid", nullptr, &showGrid)) {
+                editor.setShowGridEnabled(showGrid);
+            }
+            if (ImGui::MenuItem("Grid Settings...")) {
+                openGridSettingsNextFrame = true;
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Disable All Physics Debug")) {
                 PhysicsManager::getInstance().setDebugDrawEnabled(false);
             }
             
             ImGui::EndMenu();
+        }
+        if (openGridSettingsNextFrame) {
+            ImGui::OpenPopup("GridSettings");
+            openGridSettingsNextFrame = false;
+        }
+        if (ImGui::BeginPopupModal("GridSettings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            float cellSize = editor.getGridCellSize();
+            if (ImGui::DragFloat("Cell Size", &cellSize, 0.1f, 0.1f, 20.0f, "%.2f")) {
+                editor.setGridCellSize(cellSize);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("World units per grid cell (e.g. 1.0 = 1 unit).");
+            }
+            glm::vec3 origin = editor.getGridOrigin();
+            if (ImGui::DragFloat3("Grid Origin", &origin.x, 0.25f)) {
+                editor.setGridOrigin(origin);
+            }
+            ImGui::Spacing();
+            ImGui::Text("Grid distance (cells) - min 1 x 1");
+            int sx = editor.getGridSizeX();
+            int sz = editor.getGridSizeZ();
+            bool gridSizeChanged = false;
+            if (ImGui::SliderInt("Distance X (cells)", &sx, 1, 128)) {
+                sx = (sx < 1) ? 1 : sx;
+                gridSizeChanged = true;
+            }
+            if (ImGui::SliderInt("Distance Z (cells)", &sz, 1, 128)) {
+                sz = (sz < 1) ? 1 : sz;
+                gridSizeChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Number of cells; minimum 1x1 (grid would disappear at 0x0).");
+            }
+            if (gridSizeChanged) {
+                editor.setGridSize(sx, sz);
+            }
+            ImGui::Spacing();
+            ImGui::Text("Base tile bounds for future AI pathfinding.");
+            ImGui::Spacing();
+            if (ImGui::Button("OK", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
         
         if (ImGui::BeginMenu("Create")) {
@@ -1117,6 +1177,16 @@ void EditorUI::renderProperties() {
             
             glm::vec3 position = transform.getPosition();
             if (ImGui::DragFloat3("Position", &position.x, 0.1f)) {
+                if (editor.isGridLockEnabled()) {
+                    glm::vec3 worldPos = glm::vec3(selected->getWorldMatrix()[3]);
+                    worldPos = editor.snapWorldToGrid(worldPos, true);
+                    if (selected->getParent()) {
+                        glm::vec4 localPos = glm::inverse(selected->getParent()->getWorldMatrix()) * glm::vec4(worldPos, 1.0f);
+                        position = glm::vec3(localPos);
+                    } else {
+                        position = worldPos;
+                    }
+                }
                 transform.setPosition(position);
             }
             
@@ -1560,23 +1630,25 @@ void EditorUI::renderViewport() {
                     if (manipulated && isViewportFocused) {
                         glm::mat4 newWorldMatrix;
                         memcpy(glm::value_ptr(newWorldMatrix), matrix, 16 * sizeof(float));
-                        
+                        glm::vec3 worldPos(newWorldMatrix[3][0], newWorldMatrix[3][1], newWorldMatrix[3][2]);
+                        if (editor.isGridLockEnabled()) {
+                            worldPos = editor.snapWorldToGrid(worldPos, true);
+                            newWorldMatrix[3][0] = worldPos.x;
+                            newWorldMatrix[3][1] = worldPos.y;
+                            newWorldMatrix[3][2] = worldPos.z;
+                        }
                         auto parent = selectedNode->getParent();
                         if (parent) {
-                            glm::mat4 parentWorldMatrix = parent->getWorldMatrix();
-                            glm::mat4 parentWorldInverse = glm::inverse(parentWorldMatrix);
+                            glm::mat4 parentWorldInverse = glm::inverse(parent->getWorldMatrix());
                             glm::mat4 newLocalMatrix = parentWorldInverse * newWorldMatrix;
-                            
                             float translation[3], rotation[3], scale[3];
                             ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(newLocalMatrix), translation, rotation, scale);
-                            
                             selectedNode->getTransform().setPosition(glm::vec3(translation[0], translation[1], translation[2]));
                             selectedNode->getTransform().setEulerAngles(glm::vec3(rotation[0], rotation[1], rotation[2]));
                             selectedNode->getTransform().setScale(glm::vec3(scale[0], scale[1], scale[2]));
                         } else {
                             float translation[3], rotation[3], scale[3];
-                            ImGuizmo::DecomposeMatrixToComponents(matrix, translation, rotation, scale);
-                            
+                            ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(newWorldMatrix), translation, rotation, scale);
                             selectedNode->getTransform().setPosition(glm::vec3(translation[0], translation[1], translation[2]));
                             selectedNode->getTransform().setEulerAngles(glm::vec3(rotation[0], rotation[1], rotation[2]));
                             selectedNode->getTransform().setScale(glm::vec3(scale[0], scale[1], scale[2]));

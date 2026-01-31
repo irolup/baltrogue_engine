@@ -31,6 +31,7 @@
 #include <iostream>
 #include <memory>
 #include <algorithm>
+#include <cmath>
 
 namespace GameEngine {
 
@@ -39,6 +40,17 @@ EditorSystem::EditorSystem()
     , cameraMode(CameraMode::EDITOR_CAMERA)
     , editorCamera(nullptr)
     , viewportFocused(false)
+    , gridOrigin(0.0f, 0.0f, 0.0f)
+    , gridCellSize(1.0f)
+    , gridSizeX(64)
+    , gridSizeZ(64)
+    , gridLockEnabled(false)
+    , showGrid(true)
+    , gridMeshDirty(true)
+    , gridVao(0)
+    , gridVbo(0)
+    , gridIbo(0)
+    , gridLineCount(0)
 {
     ui = std::unique_ptr<EditorUI>(new EditorUI(*this));
 }
@@ -79,6 +91,20 @@ bool EditorSystem::initialize() {
 }
 
 void EditorSystem::shutdown() {
+    if (gridVao) {
+        glDeleteVertexArrays(1, &gridVao);
+        gridVao = 0;
+    }
+    if (gridVbo) {
+        glDeleteBuffers(1, &gridVbo);
+        gridVbo = 0;
+    }
+    if (gridIbo) {
+        glDeleteBuffers(1, &gridIbo);
+        gridIbo = 0;
+    }
+    gridShader.reset();
+    gridLineCount = 0;
     if (ImGui::GetCurrentContext()) {
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplGlfw_Shutdown();
@@ -190,6 +216,121 @@ void EditorSystem::createDefaultScene() {
     gameCameraNode->getTransform().setPosition(glm::vec3(0, 0, 5));
     activeScene->getRootNode()->addChild(gameCameraNode);
     activeScene->setActiveCamera(gameCameraNode);
+}
+
+void EditorSystem::setGridSize(int sizeX, int sizeZ) {
+    gridSizeX = sizeX > 0 ? sizeX : 1;
+    gridSizeZ = sizeZ > 0 ? sizeZ : 1;
+    gridMeshDirty = true;
+}
+
+glm::vec3 EditorSystem::snapWorldToGrid(const glm::vec3& worldPos, bool snapY) const {
+    glm::vec3 p = worldPos - gridOrigin;
+    float invCell = 1.0f / gridCellSize;
+    float gx = std::floor(p.x * invCell + 0.5f);
+    float gz = std::floor(p.z * invCell + 0.5f);
+    glm::vec3 snapped(gridOrigin.x + gx * gridCellSize,
+                      snapY ? (gridOrigin.y + std::floor(p.y * invCell + 0.5f) * gridCellSize) : worldPos.y,
+                      gridOrigin.z + gz * gridCellSize);
+    return snapped;
+}
+
+void EditorSystem::worldToGridCell(const glm::vec3& worldPos, int& outGx, int& outGz) const {
+    glm::vec3 p = worldPos - gridOrigin;
+    float invCell = 1.0f / gridCellSize;
+    outGx = static_cast<int>(std::floor(p.x * invCell));
+    outGz = static_cast<int>(std::floor(p.z * invCell));
+}
+
+glm::vec3 EditorSystem::gridCellToWorld(int gx, int gz, float y) const {
+    return glm::vec3(gridOrigin.x + (gx + 0.5f) * gridCellSize,
+                    y,
+                    gridOrigin.z + (gz + 0.5f) * gridCellSize);
+}
+
+bool EditorSystem::isGridCellInBounds(int gx, int gz) const {
+    return gx >= 0 && gx < gridSizeX && gz >= 0 && gz < gridSizeZ;
+}
+
+void EditorSystem::buildGridMesh() {
+    if (gridVao) {
+        glDeleteVertexArrays(1, &gridVao);
+        glDeleteBuffers(1, &gridVbo);
+        glDeleteBuffers(1, &gridIbo);
+        gridVao = gridVbo = gridIbo = 0;
+    }
+    int slicesX = gridSizeX;
+    int slicesZ = gridSizeZ;
+    if (slicesX < 1 || slicesZ < 1) return;
+    std::vector<glm::vec3> vertices;
+    std::vector<unsigned int> indices;
+    const float halfX = (float)slicesX * 0.5f * gridCellSize;
+    const float halfZ = (float)slicesZ * 0.5f * gridCellSize;
+    for (int j = 0; j <= slicesZ; ++j) {
+        for (int i = 0; i <= slicesX; ++i) {
+            float x = gridOrigin.x - halfX + (float)i * gridCellSize;
+            float z = gridOrigin.z - halfZ + (float)j * gridCellSize;
+            vertices.push_back(glm::vec3(x, gridOrigin.y, z));
+        }
+    }
+    for (int j = 0; j < slicesZ; ++j) {
+        for (int i = 0; i < slicesX; ++i) {
+            int row1 = j * (slicesX + 1);
+            int row2 = (j + 1) * (slicesX + 1);
+            indices.push_back((unsigned int)(row1 + i));
+            indices.push_back((unsigned int)(row1 + i + 1));
+            indices.push_back((unsigned int)(row1 + i + 1));
+            indices.push_back((unsigned int)(row2 + i + 1));
+            indices.push_back((unsigned int)(row2 + i + 1));
+            indices.push_back((unsigned int)(row2 + i));
+            indices.push_back((unsigned int)(row2 + i));
+            indices.push_back((unsigned int)(row1 + i));
+        }
+    }
+    gridLineCount = (GLsizei)indices.size();
+    if (vertices.empty() || indices.empty()) return;
+    glGenVertexArrays(1, &gridVao);
+    glBindVertexArray(gridVao);
+    glGenBuffers(1, &gridVbo);
+    glBindBuffer(GL_ARRAY_BUFFER, gridVbo);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(vertices.size() * sizeof(glm::vec3)), vertices.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+    glGenBuffers(1, &gridIbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gridIbo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(indices.size() * sizeof(unsigned int)), indices.data(), GL_STATIC_DRAW);
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    gridMeshDirty = false;
+}
+
+void EditorSystem::renderGridInViewport(CameraComponent* camera) {
+    if (!camera || !showGrid) return;
+    if (gridMeshDirty || gridVao == 0) {
+        buildGridMesh();
+        if (gridVao == 0) return;
+    }
+    if (!gridShader) {
+        gridShader = std::make_shared<Shader>();
+        if (!gridShader->loadFromFiles("assets/linux_shaders/grid.vert", "assets/linux_shaders/grid.frag") &&
+            !gridShader->loadFromFiles("./assets/linux_shaders/grid.vert", "./assets/linux_shaders/grid.frag") &&
+            !gridShader->loadFromFiles("../assets/linux_shaders/grid.vert", "../assets/linux_shaders/grid.frag")) {
+            gridShader.reset();
+            return;
+        }
+    }
+    if (!gridShader->isValid() || gridLineCount == 0) return;
+    glm::mat4 view = camera->getViewMatrix();
+    glm::mat4 projection = camera->getProjectionMatrix();
+    glm::mat4 mvp = projection * view;
+    glEnable(GL_DEPTH_TEST);
+    gridShader->use();
+    gridShader->setMat4("mvp", mvp);
+    gridShader->setVec4("color", glm::vec4(0.35f, 0.35f, 0.35f, 0.8f));
+    glBindVertexArray(gridVao);
+    glDrawElements(GL_LINES, gridLineCount, GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
 }
 
 void EditorSystem::setCameraMode(CameraMode mode) {
@@ -483,7 +624,9 @@ void EditorSystem::renderSceneToViewport() {
     lightingManager.update();
     
     renderSceneDirectly(*activeScene, cameraComponent);
-    
+    if (showGrid) {
+        renderGridInViewport(cameraComponent);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, currentFramebuffer);
     glViewport(currentViewport[0], currentViewport[1], currentViewport[2], currentViewport[3]);
 }
