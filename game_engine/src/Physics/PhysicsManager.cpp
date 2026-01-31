@@ -112,6 +112,7 @@ bool PhysicsManager::initialize() {
     btVector3 worldMin(-1000, -1000, -1000);
     btVector3 worldMax(1000, 1000, 1000);
     broadphase = new btAxisSweep3(worldMin, worldMax);
+    //broadphase = new btDbvtBroadphase(); if we want to use the dbvt broadphase and remove the axis sweep 3 and the min and max vectors
     
     dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
     

@@ -82,6 +82,14 @@ void Mesh::unbind() const {
     glBindVertexArray(0);
 }
 
+size_t Mesh::getMemoryUsageBytes() const {
+    size_t vertexCount = cpuDataCleared ? cachedVertexCount : vertices.size();
+    size_t indexCount = cpuDataCleared ? cachedIndexCount : indices.size();
+    size_t vertexBytes = vertexCount * sizeof(Vertex);
+    size_t indexBytes = indexCount * sizeof(unsigned int);
+    return sizeof(Mesh) + vertexBytes + indexBytes;
+}
+
 void Mesh::draw() const {
     if (!uploaded) {
         const_cast<Mesh*>(this)->upload();

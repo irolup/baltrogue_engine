@@ -95,6 +95,18 @@ void TextureManager::clearCache() {
     discoveredTextures.clear();
 }
 
+size_t TextureManager::getTotalTextureMemoryBytes() const {
+    size_t total = 0;
+    for (const auto& pair : textureCache) {
+        if (pair.second) total += pair.second->getMemoryUsageBytes();
+    }
+    return total;
+}
+
+size_t TextureManager::getTextureCount() const {
+    return textureCache.size();
+}
+
 bool TextureManager::discoverTexturesInDirectory(const std::string& directory) {
 #ifdef LINUX_BUILD
     try {

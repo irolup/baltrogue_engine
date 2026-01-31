@@ -59,6 +59,8 @@ public:
     size_t getVertexCount() const { return cpuDataCleared ? cachedVertexCount : vertices.size(); }
     size_t getIndexCount() const { return cpuDataCleared ? cachedIndexCount : indices.size(); }
     size_t getTriangleCount() const { return cpuDataCleared ? (cachedIndexCount / 3) : (indices.size() / 3); }
+    
+    size_t getMemoryUsageBytes() const;
     MeshType getMeshType() const { return meshType; }
     void setMeshType(MeshType type) { meshType = type; }
     

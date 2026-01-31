@@ -2,6 +2,7 @@
 
 #include "Editor/EditorUI.h"
 #include "Editor/EditorSystem.h"
+#include "Core/MemoryProfiler.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneNode.h"
 #include "Components/MeshRenderer.h"
@@ -47,6 +48,8 @@ EditorUI::EditorUI(EditorSystem& editorSystem)
     , showProperties(true)
     , showViewport(true)
     , showFileExplorer(false)
+    , showInputMapping(false)
+    , showMemoryViewer(false)
     , sceneGraphWidth(300.0f)
     , propertiesWidth(350.0f)
     , fileExplorerHeight(200.0f)
@@ -608,7 +611,10 @@ void EditorUI::renderMenuBar() {
             }
             ImGui::EndMenu();
         }
-        
+        if (ImGui::BeginMenu("Help")) {
+            ImGui::MenuItem("Memory", nullptr, &showMemoryViewer);
+            ImGui::EndMenu();
+        }
         ImGui::EndMainMenuBar();
     }
 }
@@ -1783,6 +1789,43 @@ void EditorUI::renderInputMapping() {
     ImGui::BulletText("Input codes: W=87, A=65, S=83, D=68, Space=32, Shift=340, Ctrl=341, E=69, Esc=256");
     ImGui::BulletText("Vita buttons: Cross=16384, Circle=32768, Square=8192, Triangle=4096");
     
+    ImGui::End();
+}
+
+void EditorUI::renderMemoryViewer() {
+    if (!showMemoryViewer) return;
+    ImGui::Begin("Memory", &showMemoryViewer);
+    ImGui::Separator();
+    auto scene = editor.getActiveScene();
+    auto entries = MemoryProfiler::getSummary(scene.get());
+    size_t totalBytes = 0;
+    for (const auto& e : entries) totalBytes += e.bytes;
+    if (entries.empty()) {
+        ImGui::TextUnformatted("No data (no scene or no resources).");
+    } else {
+        if (ImGui::BeginTable("MemoryTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+            ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Bytes", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableSetupColumn("%", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableHeadersRow();
+            for (const auto& e : entries) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted(e.name.c_str());
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%zu", e.bytes);
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%zu", e.count);
+                ImGui::TableSetColumnIndex(3);
+                float pct = totalBytes > 0 ? (100.0f * static_cast<float>(e.bytes) / static_cast<float>(totalBytes)) : 0.0f;
+                ImGui::Text("%.1f%%", pct);
+            }
+            ImGui::EndTable();
+        }
+        ImGui::Separator();
+        ImGui::Text("Total tracked: %zu bytes (%.2f MB)", totalBytes, totalBytes / (1024.0 * 1024.0));
+    }
     ImGui::End();
 }
 

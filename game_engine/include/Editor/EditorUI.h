@@ -27,6 +27,7 @@ public:
     void renderFileExplorer();
     void renderCameraControls();
     void renderInputMapping();
+    void renderMemoryViewer();
     void renderSceneNode(std::shared_ptr<SceneNode> node, int depth = 0);
 
 private:
@@ -38,6 +39,7 @@ private:
     bool showViewport;
     bool showFileExplorer;
     bool showInputMapping;
+    bool showMemoryViewer;
     
     float sceneGraphWidth;
     float propertiesWidth;

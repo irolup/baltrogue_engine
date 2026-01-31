@@ -5,6 +5,7 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <cstddef>
 #include "Rendering/Texture.h"
 
 namespace GameEngine {
@@ -33,6 +34,9 @@ public:
     std::string getTextureTypeSuffix(TextureType type) const;
     bool hasTexture(const std::string& filepath) const;
     void clearCache();
+    
+    size_t getTotalTextureMemoryBytes() const;
+    size_t getTextureCount() const;
     
 private:
     TextureManager() = default;

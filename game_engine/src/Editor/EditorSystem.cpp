@@ -110,6 +110,7 @@ void EditorSystem::render() {
     ui->renderViewport();
     ui->renderFileExplorer();
     ui->renderInputMapping();
+    ui->renderMemoryViewer();
     
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

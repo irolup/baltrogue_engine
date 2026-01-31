@@ -60,6 +60,8 @@ public:
     void setWrap(TextureWrap wrapS, TextureWrap wrapT);
     void generateMipmaps();
     
+    size_t getMemoryUsageBytes() const;
+    
     static std::shared_ptr<Texture> getWhiteTexture();
     static std::shared_ptr<Texture> getBlackTexture();
     static std::shared_ptr<Texture> getErrorTexture();

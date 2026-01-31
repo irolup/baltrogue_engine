@@ -124,6 +124,25 @@ bool FontManager::isFontLoaded(const std::string& fontPath, float fontSize) cons
     return fontCache.find(key) != fontCache.end();
 }
 
+size_t FontManager::getTotalFontMemoryBytes() const {
+    size_t total = 0;
+    for (const auto& pair : fontCache) {
+        if (!pair.second) continue;
+        const FontAtlas& atlas = *pair.second;
+        size_t bytes = atlas.texture ? atlas.texture->getMemoryUsageBytes() : 0;
+        if (bytes <= sizeof(Texture) && atlas.atlasWidth > 0 && atlas.atlasHeight > 0)
+            bytes += static_cast<size_t>(atlas.atlasWidth) * atlas.atlasHeight;
+        total += bytes;
+        total += atlas.packedChars.size() * sizeof(stbtt_packedchar);
+        total += atlas.alignedQuads.size() * sizeof(stbtt_aligned_quad);
+    }
+    return total;
+}
+
+size_t FontManager::getFontCount() const {
+    return fontCache.size();
+}
+
 bool FontManager::loadFontFile(const std::string& fontPath, std::vector<uint8_t>& fontData) {
     std::ifstream file(fontPath, std::ios::binary);
     if (!file.is_open()) {

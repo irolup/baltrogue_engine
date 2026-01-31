@@ -624,4 +624,12 @@ GLenum Texture::getGLWrap(TextureWrap wrap) const {
     }
 }
 
+size_t Texture::getMemoryUsageBytes() const {
+    if (width <= 0 || height <= 0) return sizeof(Texture);
+    int bytesPerPixel = (format == TextureFormat::RGB) ? 3 : 4;
+    size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+    if (isCubemapTexture) pixels *= 6;
+    return sizeof(Texture) + (pixels * bytesPerPixel);
+}
+
 } // namespace GameEngine

@@ -5,6 +5,7 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <cstddef>
 #include <glm/glm.hpp>
 
 namespace GameEngine {
@@ -47,6 +48,9 @@ public:
     
     std::string getFontKey(const std::string& fontPath, float fontSize) const;
     bool isFontLoaded(const std::string& fontPath, float fontSize) const;
+    
+    size_t getTotalFontMemoryBytes() const;
+    size_t getFontCount() const;
     
 private:
     FontManager() = default;
