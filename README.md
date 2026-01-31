@@ -7,7 +7,7 @@ This project is a cross-platform Game Engine that supports both PS Vita and Linu
 ### Rendering
 - [x] Basic 2D Rendering
 - [x] Basic 3D Rendering
-- [ ] Skyboxes
+- [x] Skyboxes
 - [x] Skeletal Animations (GLTF bone animations)
 - [x] GLTF/GLB Model Loading
 - [x] PBR (with normal map)
