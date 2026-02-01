@@ -61,3 +61,10 @@ action:menu_cancel,PC,0,256,0,0.1,1,-1,0
 action:menu_cancel,VITA,1,8,0,0.1,1,-1,0
 action:pause,PC,0,256,0,0.1,1,-1,0
 action:pause,VITA,1,8,0,0.1,1,-1,0
+action:TogglePerspective,PC,0,80,0,0.1,1,-1,0
+action:TogglePerspective,VITA,1,4096,0,0.1,1,-1,0
+action:PhysicsGrab,PC,3,0,1,0.1,1,-1,0
+action:PhysicsGrab,VITA,1,256,1,0.1,1,-1,0
+action:PhysicsRotate,PC,0,82,1,0.1,1,-1,0
+action:PhysicsRotate,VITA,1,512,1,0.1,1,-1,0
+action:RespawnBall,PC,0,77,0,0.1,1,-1,0

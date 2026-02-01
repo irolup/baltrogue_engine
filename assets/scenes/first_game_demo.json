@@ -285,6 +285,35 @@
         "active": true,
         "components": [
           {
+            "pauseExempt": true,
+            "scriptPath": "scripts/physics_gun.lua",
+            "type": "ScriptComponent"
+          }
+        ],
+        "name": "Physics_Gun_Controller",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
             "color": [
               1.0,
               1.0,

@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <vector>
+#include <string>
 #include <glm/glm.hpp>
 
 class btDiscreteDynamicsWorld;
@@ -67,6 +68,9 @@ public:
     // Physics component registration
     void registerPhysicsComponent(PhysicsComponent* component);
     void unregisterPhysicsComponent(PhysicsComponent* component);
+    
+    void raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
+                 std::string& hitNodeName, glm::vec3& hitPoint, float& hitDistance);
     
     
 private:

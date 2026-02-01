@@ -14,6 +14,9 @@
 #include "Physics/PhysicsManager.h"
 #include "Rendering/Renderer.h"
 #include "Core/Transform.h"
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/euler_angles.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <iostream>
 #include <filesystem>
 #include <chrono>
@@ -1686,6 +1689,44 @@ void ScriptComponent::bindCommonFunctions() {
     });
     lua_setglobal(luaState, "getNodeVelocity");
     
+    // Raycast against dynamic rigidbodies. Returns nodeName, hitX, hitY, hitZ, hitDistance or nil.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        float ox = luaL_checknumber(L, 1);
+        float oy = luaL_checknumber(L, 2);
+        float oz = luaL_checknumber(L, 3);
+        float dx = luaL_checknumber(L, 4);
+        float dy = luaL_checknumber(L, 5);
+        float dz = luaL_checknumber(L, 6);
+        float maxDist = luaL_checknumber(L, 7);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            std::string hitNodeName;
+            glm::vec3 hitPoint;
+            float hitDistance;
+            PhysicsManager::getInstance().raycast(
+                glm::vec3(ox, oy, oz), glm::vec3(dx, dy, dz), maxDist,
+                hitNodeName, hitPoint, hitDistance);
+            if (hitNodeName.empty()) {
+                lua_pushnil(L);
+                return 1;
+            }
+            lua_pushstring(L, hitNodeName.c_str());
+            lua_pushnumber(L, hitPoint.x);
+            lua_pushnumber(L, hitPoint.y);
+            lua_pushnumber(L, hitPoint.z);
+            lua_pushnumber(L, hitDistance);
+            return 5;
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushnil(L);
+        return 1;
+    });
+    lua_setglobal(luaState, "physicsRaycast");
+    
     // Set angular velocity on a node's PhysicsComponent (for dynamic bodies)
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         const char* nodeName = luaL_checkstring(L, 1);
@@ -1750,8 +1791,138 @@ void ScriptComponent::bindCommonFunctions() {
     });
     lua_setglobal(luaState, "setNodeGravityEnabled");
     
-    // Set angular factor (rotation lock) on a node's PhysicsComponent
-    // Use (0, 0, 0) to lock all rotation, (0, 1, 0) to allow only Y-axis rotation, etc.
+    // Push node's current world transform to its PhysicsComponent.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->syncTransformToPhysics();
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {}
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "syncNodeTransformToPhysics");
+    
+    // Get node world rotation as euler angles (degrees). Returns pitch, yaw, roll.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    glm::mat4 worldMatrix = node->getWorldMatrix();
+                    glm::quat worldQuat = glm::quat_cast(worldMatrix);
+                    glm::vec3 eulerRad = glm::eulerAngles(worldQuat);
+                    glm::vec3 eulerDeg = glm::degrees(eulerRad);
+                    lua_pushnumber(L, eulerDeg.x);
+                    lua_pushnumber(L, eulerDeg.y);
+                    lua_pushnumber(L, eulerDeg.z);
+                    return 3;
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {}
+#endif
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+        return 3;
+    });
+    lua_setglobal(luaState, "getNodeWorldEuler");
+    
+    // Set node world rotation from euler angles (degrees).
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float ex = luaL_checknumber(L, 2);
+        float ey = luaL_checknumber(L, 3);
+        float ez = luaL_checknumber(L, 4);
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    glm::quat worldQuat = glm::quat(glm::radians(glm::vec3(ex, ey, ez)));
+                    auto parent = node->getParent();
+                    if (parent) {
+                        glm::quat parentRot = glm::quat_cast(parent->getWorldMatrix());
+                        glm::quat localQuat = glm::inverse(parentRot) * worldQuat;
+                        node->getTransform().setRotation(localQuat);
+                    } else {
+                        node->getTransform().setRotation(worldQuat);
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {}
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "setNodeWorldRotation");
+    
+    // Apply rotation around world axis (degrees) to node's current world rotation.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float ax = luaL_checknumber(L, 2);
+        float ay = luaL_checknumber(L, 3);
+        float az = luaL_checknumber(L, 4);
+        float angleDeg = luaL_checknumber(L, 5);
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    glm::vec3 axis(ax, ay, az);
+                    float len = glm::length(axis);
+                    if (len > 0.0001f) {
+                        axis /= len;
+                        glm::quat worldQuat = glm::quat_cast(node->getWorldMatrix());
+                        glm::quat deltaQuat = glm::angleAxis(glm::radians(angleDeg), axis);
+                        glm::quat newWorldQuat = deltaQuat * worldQuat;
+                        auto parent = node->getParent();
+                        if (parent) {
+                            glm::quat parentRot = glm::quat_cast(parent->getWorldMatrix());
+                            glm::quat localQuat = glm::inverse(parentRot) * newWorldQuat;
+                            node->getTransform().setRotation(localQuat);
+                        } else {
+                            node->getTransform().setRotation(newWorldQuat);
+                        }
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {}
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "applyNodeRotationAroundAxis");
+    
+    // Set angular factor on a node's PhysicsComponent.
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         const char* nodeName = luaL_checkstring(L, 1);
         float x = luaL_checknumber(L, 2);
@@ -1893,6 +2064,91 @@ void ScriptComponent::bindCommonFunctions() {
         return 3;
     });
     lua_setglobal(luaState, "getNodeRotation");
+    
+    // Get a node's world-space forward direction (normalized). Returns fx, fy, fz.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    glm::mat4 worldMatrix = node->getWorldMatrix();
+                    glm::vec3 forward = -glm::normalize(glm::vec3(worldMatrix[2]));
+                    lua_pushnumber(L, forward.x);
+                    lua_pushnumber(L, forward.y);
+                    lua_pushnumber(L, forward.z);
+                    return 3;
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, -1);
+        return 3;
+    });
+    lua_setglobal(luaState, "getNodeForward");
+    
+    // Get a node's world-space right direction (normalized). Returns rx, ry, rz.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    glm::mat4 worldMatrix = node->getWorldMatrix();
+                    glm::vec3 right = glm::normalize(glm::vec3(worldMatrix[0]));
+                    lua_pushnumber(L, right.x); lua_pushnumber(L, right.y); lua_pushnumber(L, right.z);
+                    return 3;
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {}
+#endif
+        lua_pushnumber(L, 1); lua_pushnumber(L, 0); lua_pushnumber(L, 0);
+        return 3;
+    });
+    lua_setglobal(luaState, "getNodeRight");
+    
+    // Get a node's world-space up direction (normalized). Returns ux, uy, uz.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    glm::mat4 worldMatrix = node->getWorldMatrix();
+                    glm::vec3 up = glm::normalize(glm::vec3(worldMatrix[1]));
+                    lua_pushnumber(L, up.x); lua_pushnumber(L, up.y); lua_pushnumber(L, up.z);
+                    return 3;
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {}
+#endif
+        lua_pushnumber(L, 0); lua_pushnumber(L, 1); lua_pushnumber(L, 0);
+        return 3;
+    });
+    lua_setglobal(luaState, "getNodeUp");
     
     // Generic node scale setter - sets any node's scale by name
     lua_pushcfunction(luaState, [](lua_State* L) -> int {

@@ -191,6 +191,7 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a scripts/main_menu.lua=scripts/main_menu.lua \
 		-a scripts/goal_controller.lua=scripts/goal_controller.lua \
 		-a scripts/animated_character.lua=scripts/animated_character.lua \
+		-a scripts/physics_gun.lua=scripts/physics_gun.lua \
 		-a assets/scenes/main_menu.json=assets/scenes/main_menu.json \
 		-a assets/scenes/first_game_demo.json=assets/scenes/first_game_demo.json \
  $@

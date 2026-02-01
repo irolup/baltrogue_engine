@@ -182,7 +182,11 @@ void InputManager::updateKeyboardInput() {
         GLFW_KEY_W, GLFW_KEY_A, GLFW_KEY_S, GLFW_KEY_D,
         GLFW_KEY_SPACE, GLFW_KEY_LEFT_SHIFT, GLFW_KEY_LEFT_CONTROL,
         GLFW_KEY_ESCAPE, GLFW_KEY_ENTER, GLFW_KEY_TAB,
-        GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_UP, GLFW_KEY_DOWN
+        GLFW_KEY_LEFT, GLFW_KEY_RIGHT, GLFW_KEY_UP, GLFW_KEY_DOWN,
+        GLFW_KEY_P,
+        GLFW_KEY_R,
+        GLFW_KEY_E,
+        GLFW_KEY_M,
     };
     
     for (int key : keys) {

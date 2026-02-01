@@ -29,6 +29,12 @@ local minPitch = -55.0
 local maxPitch = 30.0
 local minCameraHeight = 0.5
 
+local thirdPersonCamLocalPos = { 0.0, 3.0, 3.7 }
+local thirdPersonCamLocalRot = { -25.0, 0.0, 0.0 }
+local firstPersonCamLocalPos = { 0.0, 0.7, 0.0 }
+local firstPersonCamLocalRot = { 0.0, 0.0, 0.0 }
+local playerModelNodeName = "PlayerModel"
+
 local walkSoundNodeName = "Walk_Sound"
 local walkSound = nil
 local isMoving = false
@@ -40,7 +46,10 @@ local stopSoundFrameCount = 0
 
 function start()
     lastJumpTime = getTime()
-    
+    if setNodeVisible then
+        setNodeVisible(playerModelNodeName, true)
+    end
+
     if input and input.setMouseCapture then
         input.setMouseCapture(true)
         isMouseCaptured = true
@@ -125,8 +134,11 @@ function update(deltaTime)
     lookH = lookH + (input.getActionAxis("LookRight") - input.getActionAxis("LookLeft")) * arrowLookStrength * mouseSensitivity * deltaTime
     lookV = lookV + (input.getActionAxis("LookUp") - input.getActionAxis("LookDown")) * arrowLookStrength * mouseSensitivity * deltaTime
 
-    cameraYaw = cameraYaw - lookH
-    cameraPitch = math.max(minPitch, math.min(maxPitch, cameraPitch + lookV))
+    local physicsRotateHeld = input.isActionHeld and input.isActionHeld("PhysicsRotate")
+    if not physicsRotateHeld then
+        cameraYaw = cameraYaw - lookH
+        cameraPitch = math.max(minPitch, math.min(maxPitch, cameraPitch + lookV))
+    end
 
     local currentTime = getTime()
     local speedBoostActive = (currentTime < speedBoostEndTime)
@@ -195,29 +207,36 @@ function update(deltaTime)
     local desiredVelX = rightX * moveH * currentMoveSpeed + forwardX * moveV * currentMoveSpeed
     local desiredVelZ = rightZ * moveH * currentMoveSpeed + forwardZ * moveV * currentMoveSpeed
 
-	if (moveH ~= 0 or moveV ~= 0) then
-		local angle = 0
-		if desiredVelZ ~= 0 then
-			angle = math.atan(desiredVelX / desiredVelZ)
-			if desiredVelZ < 0 then
-				angle = angle + math.pi
-			end
-		else
-			if desiredVelX > 0 then
-				angle = math.pi / 2
-			else
-				angle = -math.pi / 2
-			end
-		end
-		local targetYaw = math.deg(angle) + 180
-
-		local diff = targetYaw - currentPlayerYaw
-		diff = (diff + 180) % 360 - 180
-
-		currentPlayerYaw = currentPlayerYaw + diff * math.min(turnSpeed * deltaTime, 1)
-
+	if isFirstPerson then
 		if setNodeRotation then
-			setNodeRotation(playerRootName, 0, currentPlayerYaw, 0)
+			setNodeRotation(playerRootName, 0, cameraYaw, 0)
+		end
+		currentPlayerYaw = cameraYaw
+	else
+		if (moveH ~= 0 or moveV ~= 0) then
+			local angle = 0
+			if desiredVelZ ~= 0 then
+				angle = math.atan(desiredVelX / desiredVelZ)
+				if desiredVelZ < 0 then
+					angle = angle + math.pi
+				end
+			else
+				if desiredVelX > 0 then
+					angle = math.pi / 2
+				else
+					angle = -math.pi / 2
+				end
+			end
+			local targetYaw = math.deg(angle) + 180
+
+			local diff = targetYaw - currentPlayerYaw
+			diff = (diff + 180) % 360 - 180
+
+			currentPlayerYaw = currentPlayerYaw + diff * math.min(turnSpeed * deltaTime, 1)
+
+			if setNodeRotation then
+				setNodeRotation(playerRootName, 0, currentPlayerYaw, 0)
+			end
 		end
 	end
 
@@ -250,28 +269,40 @@ function update(deltaTime)
         end
     end
 
-    local px, py, pz = getNodePosition(playerRootName)
-    if px and py and pz then
-        local radYaw = math.rad(cameraYaw)
-        local radPitch = math.rad(cameraPitch)
-
-        local camX = px + cameraDistance * math.cos(radPitch) * math.sin(radYaw)
-        local camY = py + cameraDistance * math.sin(radPitch) + cameraHeight
-        local camZ = pz + cameraDistance * math.cos(radPitch) * math.cos(radYaw)
-
-        local minY = py + minCameraHeight
-        if camY < minY then
-            camY = minY
-        end
-
-        setNodePosition(cameraName, camX, camY, camZ)
-
-        if setNodeLookAt then
-            setNodeLookAt(cameraName, px, py + cameraHeight, pz)
+    if input.isActionPressed("TogglePerspective") then
+        isFirstPerson = not isFirstPerson
+        if setNodeVisible then
+            setNodeVisible(playerModelNodeName, not isFirstPerson)
         end
     end
 
-    if input.isActionPressed("Interact") then
-        isFirstPerson = not isFirstPerson
+    local px, py, pz = getNodePosition(playerRootName)
+    if px and py and pz then
+        if isFirstPerson then
+            if setNodeLocalPosition then
+                setNodeLocalPosition(cameraName, firstPersonCamLocalPos[1], firstPersonCamLocalPos[2], firstPersonCamLocalPos[3])
+            end
+            if setNodeRotation then
+                setNodeRotation(cameraName, -cameraPitch, 0.0, 0.0)
+            end
+        else
+            local radYaw = math.rad(cameraYaw)
+            local radPitch = math.rad(cameraPitch)
+
+            local camX = px + cameraDistance * math.cos(radPitch) * math.sin(radYaw)
+            local camY = py + cameraDistance * math.sin(radPitch) + cameraHeight
+            local camZ = pz + cameraDistance * math.cos(radPitch) * math.cos(radYaw)
+
+            local minY = py + minCameraHeight
+            if camY < minY then
+                camY = minY
+            end
+
+            setNodePosition(cameraName, camX, camY, camZ)
+
+            if setNodeLookAt then
+                setNodeLookAt(cameraName, px, py + cameraHeight, pz)
+            end
+        end
     end
 end

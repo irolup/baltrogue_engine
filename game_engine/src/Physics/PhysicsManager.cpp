@@ -7,6 +7,8 @@
 // Bullet includes
 #include <btBulletDynamicsCommon.h>
 #include <btBulletCollisionCommon.h>
+#include <BulletCollision/CollisionDispatch/btCollisionWorld.h>
+#include <BulletCollision/CollisionDispatch/btCollisionObject.h>
 #include <BulletCollision/CollisionDispatch/btGhostObject.h>
 #include "BulletDynamics/ConstraintSolver/btSequentialImpulseConstraintSolverMt.h"
 #include "BulletCollision/CollisionDispatch/btCollisionDispatcherMt.h"
@@ -279,6 +281,47 @@ void PhysicsManager::unregisterPhysicsComponent(PhysicsComponent* component) {
 }
 
 void PhysicsManager::cleanupPhysicsObjects() {
+}
+
+// Raycast callback that only accepts dynamic rigidbodies.
+struct DynamicOnlyRayResultCallback : public btCollisionWorld::ClosestRayResultCallback {
+    DynamicOnlyRayResultCallback(const btVector3& rayFromWorld, const btVector3& rayToWorld)
+        : ClosestRayResultCallback(rayFromWorld, rayToWorld) {}
+    virtual btScalar addSingleResult(btCollisionWorld::LocalRayResult& rayResult, bool normalInWorldSpace) override {
+        const btCollisionObject* obj = rayResult.m_collisionObject;
+        btRigidBody* body = btRigidBody::upcast(const_cast<btCollisionObject*>(obj));
+        if (!body || body->isKinematicObject() || body->isStaticObject() || !obj->getUserPointer()) return btScalar(2.0);
+        PhysicsComponent* comp = static_cast<PhysicsComponent*>(obj->getUserPointer());
+        if (!comp || !comp->getOwner() || comp->getBodyType() != PhysicsBodyType::DYNAMIC)
+            return btScalar(2.0);
+        return ClosestRayResultCallback::addSingleResult(rayResult, normalInWorldSpace);
+    }
+};
+
+void PhysicsManager::raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
+                             std::string& hitNodeName, glm::vec3& hitPoint, float& hitDistance) {
+    hitNodeName.clear();
+    hitPoint = origin;
+    hitDistance = maxDistance;
+    if (!dynamicsWorld || maxDistance <= 0.0f) return;
+    glm::vec3 dir = direction;
+    float len = glm::length(dir);
+    if (len < 1e-6f) return;
+    dir /= len;
+    btVector3 rayFrom(origin.x, origin.y, origin.z);
+    btVector3 rayTo(origin.x + dir.x * maxDistance, origin.y + dir.y * maxDistance, origin.z + dir.z * maxDistance);
+    DynamicOnlyRayResultCallback callback(rayFrom, rayTo);
+    dynamicsWorld->rayTest(rayFrom, rayTo, callback);
+    if (!callback.hasHit()) return;
+    const btCollisionObject* obj = callback.m_collisionObject;
+    if (!obj || !obj->getUserPointer()) return;
+    PhysicsComponent* comp = static_cast<PhysicsComponent*>(obj->getUserPointer());
+    if (!comp || !comp->getOwner()) return;
+    hitNodeName = comp->getOwner()->getName();
+    hitPoint.x = callback.m_hitPointWorld.x();
+    hitPoint.y = callback.m_hitPointWorld.y();
+    hitPoint.z = callback.m_hitPointWorld.z();
+    hitDistance = callback.m_closestHitFraction * maxDistance;
 }
 
 } // namespace GameEngine
