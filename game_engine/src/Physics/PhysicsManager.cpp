@@ -298,6 +298,24 @@ struct DynamicOnlyRayResultCallback : public btCollisionWorld::ClosestRayResultC
     }
 };
 
+// Raycast against all rigid bodies (static + dynamic) to find obstacle distance; optionally exclude one node (e.g. held object). Ignores ghost/trigger objects.
+struct AllCollidersRayResultCallback : public btCollisionWorld::ClosestRayResultCallback {
+    std::string excludeNodeName;
+    AllCollidersRayResultCallback(const btVector3& rayFromWorld, const btVector3& rayToWorld, const std::string& exclude)
+        : ClosestRayResultCallback(rayFromWorld, rayToWorld), excludeNodeName(exclude) {}
+    virtual btScalar addSingleResult(btCollisionWorld::LocalRayResult& rayResult, bool normalInWorldSpace) override {
+        const btCollisionObject* obj = rayResult.m_collisionObject;
+        if (!btRigidBody::upcast(const_cast<btCollisionObject*>(obj)))
+            return btScalar(2.0);
+        if (obj->getUserPointer() && !excludeNodeName.empty()) {
+            PhysicsComponent* comp = static_cast<PhysicsComponent*>(obj->getUserPointer());
+            if (comp && comp->getOwner() && comp->getOwner()->getName() == excludeNodeName)
+                return btScalar(2.0);
+        }
+        return ClosestRayResultCallback::addSingleResult(rayResult, normalInWorldSpace);
+    }
+};
+
 void PhysicsManager::raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
                              std::string& hitNodeName, glm::vec3& hitPoint, float& hitDistance) {
     hitNodeName.clear();
@@ -322,6 +340,21 @@ void PhysicsManager::raycast(const glm::vec3& origin, const glm::vec3& direction
     hitPoint.y = callback.m_hitPointWorld.y();
     hitPoint.z = callback.m_hitPointWorld.z();
     hitDistance = callback.m_closestHitFraction * maxDistance;
+}
+
+float PhysicsManager::raycastClosestObstacle(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
+                                             const std::string& excludeNodeName) {
+    if (!dynamicsWorld || maxDistance <= 0.0f) return -1.0f;
+    glm::vec3 dir = direction;
+    float len = glm::length(dir);
+    if (len < 1e-6f) return -1.0f;
+    dir /= len;
+    btVector3 rayFrom(origin.x, origin.y, origin.z);
+    btVector3 rayTo(origin.x + dir.x * maxDistance, origin.y + dir.y * maxDistance, origin.z + dir.z * maxDistance);
+    AllCollidersRayResultCallback callback(rayFrom, rayTo, excludeNodeName);
+    dynamicsWorld->rayTest(rayFrom, rayTo, callback);
+    if (!callback.hasHit()) return -1.0f;
+    return callback.m_closestHitFraction * maxDistance;
 }
 
 } // namespace GameEngine

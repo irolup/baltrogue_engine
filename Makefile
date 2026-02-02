@@ -184,6 +184,7 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/fonts/sui.ttf=assets/fonts/sui.ttf \
 		-a assets/models/Player.glb=assets/models/Player.glb \
 		-a assets/models/lightning.glb=assets/models/lightning.glb \
+		-a assets/models/Pistol.glb=assets/models/Pistol.glb \
 		-a assets/audios/walk_sound.wav=assets/audios/walk_sound.wav \
 		-a scripts/pause_menu.lua=scripts/pause_menu.lua \
 		-a scripts/collectible_behavior.lua=scripts/collectible_behavior.lua \

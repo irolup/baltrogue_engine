@@ -147,98 +147,73 @@ std::shared_ptr<Shader> Shader::getDefaultShader() {
     if (!defaultShader) {
         defaultShader = std::make_shared<Shader>();
         
-#ifdef LINUX_BUILD
-        // Linux builds use GLSL shaders
+#ifdef VITA_BUILD
+        std::string vertexSource = R"(
+            struct VertexInput {
+                float3 aPosition : POSITION;
+                float3 aNormal   : NORMAL;
+                float2 aTexCoord : TEXCOORD0;
+            };
+            struct VertexOutput {
+                float4 position  : POSITION;
+                float3 FragPos  : TEXCOORD0;
+                float3 Normal   : TEXCOORD1;
+                float2 TexCoord : TEXCOORD2;
+            };
+            uniform float4x4 modelMatrix;
+            uniform float4x4 viewMatrix;
+            uniform float4x4 projectionMatrix;
+            uniform float3x3 normalMatrix;
+            VertexOutput main(VertexInput input) {
+                VertexOutput output;
+                float4 worldPos = mul(float4(input.aPosition, 1.0), modelMatrix);
+                float4 viewPos = mul(worldPos, viewMatrix);
+                output.position = mul(viewPos, projectionMatrix);
+                output.FragPos = worldPos.xyz;
+                output.Normal = normalize(mul(input.aNormal, normalMatrix));
+                output.TexCoord = input.aTexCoord;
+                return output;
+            }
+        )";
+        std::string fragmentSource = R"(
+            struct FragmentInput {
+                float3 FragPos  : TEXCOORD0;
+                float3 Normal   : TEXCOORD1;
+                float2 TexCoord : TEXCOORD2;
+            };
+            uniform float3 u_DiffuseColor;
+            float4 main(FragmentInput input) : COLOR {
+                return float4(u_DiffuseColor, 1.0);
+            }
+        )";
+#else
         std::string vertexSource = R"(
             #version 120
-            attribute vec3 aPos;
-            attribute vec3 aNormal;
-            attribute vec2 aTexCoord;
-            
+            attribute vec3 position;
+            attribute vec3 normal;
+            attribute vec2 texCoords;
             uniform mat4 modelMatrix;
             uniform mat4 viewMatrix;
             uniform mat4 projectionMatrix;
             uniform mat3 normalMatrix;
-            
             varying vec3 FragPos;
             varying vec3 Normal;
             varying vec2 TexCoord;
-            
             void main() {
-                FragPos = vec3(modelMatrix * vec4(aPos, 1.0));
-                Normal = normalMatrix * aNormal;
-                TexCoord = aTexCoord;
-                
-                gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(aPos, 1.0);
+                FragPos = vec3(modelMatrix * vec4(position, 1.0));
+                Normal = normalMatrix * normal;
+                TexCoord = texCoords;
+                gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
             }
         )";
-        
         std::string fragmentSource = R"(
             #version 120
             varying vec3 FragPos;
             varying vec3 Normal;
             varying vec2 TexCoord;
-            
-            uniform vec3 diffuseColor;
-            
+            uniform vec3 u_DiffuseColor;
             void main() {
-                // Use flat lighting - no directional lighting to ensure consistency across platforms
-                vec3 color = diffuseColor;
-                gl_FragColor = vec4(color, 1.0);
-            }
-        )";
-        
-        if (!defaultShader->loadFromSource(vertexSource, fragmentSource)) {
-            std::cerr << "Failed to load default shader!" << std::endl;
-            defaultShader.reset();
-        }
-#else
-        // Vita builds use CG/HLSL shaders
-        std::string vertexSource = R"(
-            struct VS_INPUT {
-                float3 aPos : POSITION;
-                float3 aNormal : NORMAL;
-                float2 aTexCoord : TEXCOORD0;
-            };
-            
-            struct VS_OUTPUT {
-                float4 Position : POSITION;
-                float3 FragPos : TEXCOORD0;
-                float3 Normal : TEXCOORD1;
-                float2 TexCoord : TEXCOORD2;
-            };
-            
-            float4x4 modelMatrix;
-            float4x4 viewMatrix;
-            float4x4 projectionMatrix;
-            float3x3 normalMatrix;
-            
-            VS_OUTPUT main(VS_INPUT input) {
-                VS_OUTPUT output;
-                
-                float4 worldPos = mul(modelMatrix, float4(input.aPos, 1.0));
-                output.FragPos = worldPos.xyz;
-                output.Normal = mul(normalMatrix, input.aNormal);
-                output.TexCoord = input.aTexCoord;
-                
-                output.Position = mul(projectionMatrix, mul(viewMatrix, worldPos));
-                return output;
-            }
-        )";
-        
-        std::string fragmentSource = R"(
-            struct PS_INPUT {
-                float3 FragPos : TEXCOORD0;
-                float3 Normal : TEXCOORD1;
-                float2 TexCoord : TEXCOORD2;
-            };
-            
-            float3 diffuseColor;
-            
-            float4 main(PS_INPUT input) : COLOR {
-                // Use flat lighting - no directional lighting to ensure consistency across platforms
-                float3 color = diffuseColor;
-                return float4(color, 1.0);
+                gl_FragColor = vec4(u_DiffuseColor, 1.0);
             }
         )";
 #endif

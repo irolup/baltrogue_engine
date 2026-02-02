@@ -1727,6 +1727,37 @@ void ScriptComponent::bindCommonFunctions() {
     });
     lua_setglobal(luaState, "physicsRaycast");
     
+    // Raycast against all rigid bodies (static + dynamic); returns distance to closest obstacle or nil. Exclude node name (e.g. held object) so the ray doesn't hit it.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        float ox = luaL_checknumber(L, 1);
+        float oy = luaL_checknumber(L, 2);
+        float oz = luaL_checknumber(L, 3);
+        float dx = luaL_checknumber(L, 4);
+        float dy = luaL_checknumber(L, 5);
+        float dz = luaL_checknumber(L, 6);
+        float maxDist = luaL_checknumber(L, 7);
+        const char* excludeName = lua_tostring(L, 8);
+        std::string excludeNodeName = excludeName ? excludeName : "";
+#ifndef VITA_BUILD
+        try {
+#endif
+            float dist = PhysicsManager::getInstance().raycastClosestObstacle(
+                glm::vec3(ox, oy, oz), glm::vec3(dx, dy, dz), maxDist, excludeNodeName);
+            if (dist < 0.0f) {
+                lua_pushnil(L);
+                return 1;
+            }
+            lua_pushnumber(L, dist);
+            return 1;
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushnil(L);
+        return 1;
+    });
+    lua_setglobal(luaState, "physicsRaycastObstacle");
+    
     // Set angular velocity on a node's PhysicsComponent (for dynamic bodies)
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         const char* nodeName = luaL_checkstring(L, 1);
@@ -1880,6 +1911,51 @@ void ScriptComponent::bindCommonFunctions() {
         return 0;
     });
     lua_setglobal(luaState, "setNodeWorldRotation");
+    
+    // Set node world rotation so its -Z (forward) points at world position (tx, ty, tz). Node position unchanged.
+    // Named setNodeLookAtPosition to avoid overwriting the global setNodeLookAt
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float tx = luaL_checknumber(L, 2);
+        float ty = luaL_checknumber(L, 3);
+        float tz = luaL_checknumber(L, 4);
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    glm::vec3 pos = glm::vec3(node->getWorldMatrix()[3]);
+                    glm::vec3 forward = glm::normalize(glm::vec3(tx, ty, tz) - pos);
+                    float len = glm::length(forward);
+                    if (len > 1e-6f) {
+                        glm::vec3 up(0.0f, 1.0f, 0.0f);
+                        if (std::abs(glm::dot(forward, up)) > 0.99f)
+                            up = glm::vec3(0.0f, 0.0f, 1.0f);
+                        glm::vec3 right = glm::normalize(glm::cross(up, forward));
+                        glm::vec3 actualUp = glm::cross(forward, right);
+                        glm::mat3 rot(right, actualUp, -forward);
+                        glm::quat worldQuat = glm::quat_cast(rot);
+                        auto parent = node->getParent();
+                        if (parent) {
+                            glm::quat parentRot = glm::quat_cast(parent->getWorldMatrix());
+                            glm::quat localQuat = glm::inverse(parentRot) * worldQuat;
+                            node->getTransform().setRotation(localQuat);
+                        } else {
+                            node->getTransform().setRotation(worldQuat);
+                        }
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {}
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "setNodeLookAtPosition");
     
     // Apply rotation around world axis (degrees) to node's current world rotation.
     lua_pushcfunction(luaState, [](lua_State* L) -> int {

@@ -19,6 +19,7 @@ enum class MeshType {
     SPHERE,
     CAPSULE,
     CYLINDER,
+    LINE,
     CUSTOM
 };
 
@@ -87,6 +88,8 @@ public:
     static std::shared_ptr<Mesh> createWireframeCapsule(float radius = 0.5f, float height = 1.0f, int segments = 16);
     static std::shared_ptr<Mesh> createWireframeCylinder(float radius = 0.5f, float height = 1.0f, int segments = 16);
     static std::shared_ptr<Mesh> createWireframePlane(float width = 1.0f, float height = 1.0f);
+
+    static std::shared_ptr<Mesh> createLineSegment();
 
     static std::shared_ptr<Mesh> loadFromFile(const std::string& filepath);
     

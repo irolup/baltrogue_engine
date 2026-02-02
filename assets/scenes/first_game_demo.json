@@ -649,6 +649,76 @@
                   ]
                 },
                 "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "material": {
+                      "color": [
+                        1.0,
+                        0.20000000298023224,
+                        0.20000000298023224
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
+                    },
+                    "meshType": "LINE",
+                    "type": "MeshRenderer"
+                  }
+                ],
+                "name": "GunLaser",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    -1.0
+                  ],
+                  "rotation": [
+                    -120.00000762939453,
+                    1.7075473124350538e-06,
+                    70.0
+                  ],
+                  "scale": [
+                    0.019999999552965164,
+                    0.019999999552965164,
+                    0.30000001192092896
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "castShadows": true,
+                    "isLoaded": true,
+                    "modelName": "Pistol.glb",
+                    "modelPath": "assets/models/Pistol.glb",
+                    "receiveShadows": true,
+                    "type": "ModelRenderer"
+                  }
+                ],
+                "name": "GunMesh",
+                "transform": {
+                  "position": [
+                    0.5331722497940063,
+                    -0.1847386360168457,
+                    -1.2546043395996094
+                  ],
+                  "rotation": [
+                    -0.0001190377734019421,
+                    -0.647803008556366,
+                    8.624673500889912e-05
+                  ],
+                  "scale": [
+                    0.2000000923871994,
+                    0.20000006258487701,
+                    0.2000000923871994
+                  ]
+                },
+                "visible": true
               }
             ],
             "components": [

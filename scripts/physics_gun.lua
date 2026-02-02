@@ -3,10 +3,14 @@
 
 local cameraName = "PlayerCamera"
 local playerModelNodeName = "PlayerModel"
+local gunLaserNodeName = "GunLaser"  -- Line from side of camera to raycast target
 local maxGrabDistance = 30.0
 local ballRootName = "Ball"
 local ballPhysicsNodeName = "SphereCollision"
 local ballSpawnX, ballSpawnY, ballSpawnZ = 0.0, 0.0, 0.0
+-- Beam origin offset from camera: right, down, forward (positive = in front so we see the beam)
+local beamOffsetRight, beamOffsetDown, beamOffsetForward = 0.2, 0.1, 0.3
+local beamWidth = 0.08  -- line thickness (scale x/y) so laser is visible
 
 -- Currently held object
 local heldNodeName = nil
@@ -84,6 +88,9 @@ function update(deltaTime)
     -- Physics gun only works in first person
     local firstPerson = not (isNodeVisible and isNodeVisible(playerModelNodeName))
     if not firstPerson then
+        if setNodeVisible and gunLaserNodeName then
+            setNodeVisible(gunLaserNodeName, false)
+        end
         if heldNodeName then
             if setNodeAngularVelocity then
                 setNodeAngularVelocity(heldNodeName, 0, 0, 0)
@@ -100,6 +107,9 @@ function update(deltaTime)
     local grabHeld = input.isActionPressed("PhysicsGrab") or (input.getActionAxis and input.getActionAxis("PhysicsGrab") > 0.5)
 
     if not grabHeld then
+        if setNodeVisible and gunLaserNodeName then
+            setNodeVisible(gunLaserNodeName, false)
+        end
         if heldNodeName then
             if setNodeAngularVelocity then
                 setNodeAngularVelocity(heldNodeName, 0, 0, 0)
@@ -110,7 +120,6 @@ function update(deltaTime)
             heldNodeName = nil
         end
         rotationInputX, rotationInputY = 0, 0
-        return
     end
 
     local camX, camY, camZ = getActiveCameraPosition()
@@ -127,7 +136,7 @@ function update(deltaTime)
         rayDirX, rayDirY, rayDirZ = rayDirX/len, rayDirY/len, rayDirZ/len
     end
 
-    if not heldNodeName then
+    if not heldNodeName and grabHeld then
         local hitNode, hitX, hitY, hitZ, hitDist = physicsRaycast(rayOriginX, rayOriginY, rayOriginZ, rayDirX, rayDirY, rayDirZ, maxGrabDistance)
         if hitNode and type(hitNode) == "string" and hitNode ~= "" and hitX and hitY and hitZ and hitDist then
             heldNodeName = hitNode
@@ -163,10 +172,17 @@ function update(deltaTime)
 
     if heldNodeName and input.isActionHeld and input.isActionHeld("PhysicsRotate") then
         local mx, my = 0, 0
+        -- Mouse (PC)
         if input.getMouseDelta then
             local dx, dy = input.getMouseDelta()
             mx = (dx or 0) * 0.25
             my = (dy or 0) * 0.25
+        end
+        -- Right stick / look axes (Vita)
+        if input.getActionAxis then
+            local stickDegPerSec = 180.0
+            mx = mx + (input.getActionAxis("LookHorizontal") or 0) * stickDegPerSec * dt
+            my = my + (input.getActionAxis("LookVertical") or 0) * stickDegPerSec * dt
         end
         rotationInputX = rotationInputX + mx
         rotationInputY = rotationInputY + my
@@ -182,9 +198,18 @@ function update(deltaTime)
             setNodeWorldRotation(heldNodeName, camPitch + rotationDiffX, camYaw + rotationDiffY, camRoll + rotationDiffZ)
         end
 
-        local holdX = rayOriginX + rayDirX * currentGrabDistance
-        local holdY = rayOriginY + rayDirY * currentGrabDistance
-        local holdZ = rayOriginZ + rayDirZ * currentGrabDistance
+        local effectiveGrabDistance = currentGrabDistance
+        if physicsRaycastObstacle then
+            local obstacleDist = physicsRaycastObstacle(rayOriginX, rayOriginY, rayOriginZ, rayDirX, rayDirY, rayDirZ, maxGrabDistance, heldNodeName)
+            if obstacleDist and obstacleDist > 0 then
+                local margin = 0.2
+                effectiveGrabDistance = math.min(currentGrabDistance, math.max(0.5, obstacleDist - margin))
+            end
+        end
+
+        local holdX = rayOriginX + rayDirX * effectiveGrabDistance
+        local holdY = rayOriginY + rayDirY * effectiveGrabDistance
+        local holdZ = rayOriginZ + rayDirZ * effectiveGrabDistance
 
         if (rotationInputX ~= 0 or rotationInputY ~= 0) and getNodeRight and getNodeUp and applyNodeRotationAroundAxis then
             local rx, ry, rz = getNodeRight(cameraName)
@@ -212,5 +237,9 @@ function update(deltaTime)
         if syncNodeTransformToPhysics then
             syncNodeTransformToPhysics(heldNodeName)
         end
+    end
+
+    if setNodeVisible and gunLaserNodeName then
+        setNodeVisible(gunLaserNodeName, grabHeld)
     end
 end

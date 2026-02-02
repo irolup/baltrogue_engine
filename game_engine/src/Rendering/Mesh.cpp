@@ -804,6 +804,18 @@ std::shared_ptr<Mesh> Mesh::createWireframePlane(float width, float height) {
     return mesh;
 }
 
+std::shared_ptr<Mesh> Mesh::createLineSegment() {
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    vertices.push_back({{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}});
+    vertices.push_back({{0.0f, 0.0f, -1.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f}});
+    indices.insert(indices.end(), {0, 1});
+    auto mesh = std::make_shared<Mesh>(vertices, indices);
+    mesh->setMeshType(MeshType::LINE);
+    mesh->setRenderMode(GL_LINES);
+    return mesh;
+}
+
 void Mesh::cleanupBuffers() {
     if (VAO) {
         glDeleteVertexArrays(1, &VAO);

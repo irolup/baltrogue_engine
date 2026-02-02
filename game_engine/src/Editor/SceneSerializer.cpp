@@ -14,6 +14,7 @@
 #include "Components/SkyboxComponent.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
+#include "Rendering/Shader.h"
 #include "Rendering/TextureManager.h"
 // Using nlohmann/json library for proper JSON serialization
 #include "../../vendor/json/single_include/nlohmann/json.hpp"
@@ -300,6 +301,10 @@ int main() {
                         case MeshType::CYLINDER:
                             meshType = "Cylinder";
                             meshCreationCode = "Mesh::createCylinder(0.5f, 1.0f)";
+                            break;
+                        case MeshType::LINE:
+                            meshType = "Line";
+                            meshCreationCode = "Mesh::createLineSegment()";
                             break;
                         default:
                             meshType = "Cube";
@@ -1012,6 +1017,10 @@ int main() {
                         case MeshType::CYLINDER:
                             meshType = "Cylinder";
                             meshCreationCode = "Mesh::createCylinder(0.5f, 1.0f)";
+                            break;
+                        case MeshType::LINE:
+                            meshType = "Line";
+                            meshCreationCode = "Mesh::createLineSegment()";
                             break;
                         default:
                             meshType = "Cube";
@@ -1866,6 +1875,7 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                                 case MeshType::SPHERE: meshType = "SPHERE"; break;
                                 case MeshType::CAPSULE: meshType = "CAPSULE"; break;
                                 case MeshType::CYLINDER: meshType = "CYLINDER"; break;
+                                case MeshType::LINE: meshType = "LINE"; break;
                                 default: meshType = "CUBE"; break;
                             }
                             componentJson["meshType"] = meshType;
@@ -2179,6 +2189,8 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                             mesh = Mesh::createCapsule(0.5f, 0.5f);
                         } else if (meshType == "CYLINDER") {
                             mesh = Mesh::createCylinder(0.5f, 1.0f);
+                        } else if (meshType == "LINE") {
+                            mesh = Mesh::createLineSegment();
                         } else {
                             mesh = Mesh::createCube(); // Default
                         }
@@ -2230,6 +2242,11 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                             if (armTexture) {
                                 material->setARMTexture(armTexture, armPath);
                             }
+                        }
+                        
+                        auto meshForShader = meshRenderer->getMesh();
+                        if (meshForShader && meshForShader->getMeshType() == MeshType::LINE) {
+                            material->setShader(Shader::getDefaultShader());
                         }
                         
                         meshRenderer->setMaterial(material);

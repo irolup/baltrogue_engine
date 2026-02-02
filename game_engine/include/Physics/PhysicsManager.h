@@ -71,6 +71,9 @@ public:
     
     void raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
                  std::string& hitNodeName, glm::vec3& hitPoint, float& hitDistance);
+
+    float raycastClosestObstacle(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
+                                 const std::string& excludeNodeName = std::string());
     
     
 private:

@@ -34,6 +34,7 @@ local thirdPersonCamLocalRot = { -25.0, 0.0, 0.0 }
 local firstPersonCamLocalPos = { 0.0, 0.7, 0.0 }
 local firstPersonCamLocalRot = { 0.0, 0.0, 0.0 }
 local playerModelNodeName = "PlayerModel"
+local gunMeshNodeName = "GunMesh"
 
 local walkSoundNodeName = "Walk_Sound"
 local walkSound = nil
@@ -48,6 +49,7 @@ function start()
     lastJumpTime = getTime()
     if setNodeVisible then
         setNodeVisible(playerModelNodeName, true)
+        setNodeVisible(gunMeshNodeName, false)
     end
 
     if input and input.setMouseCapture then
@@ -134,7 +136,8 @@ function update(deltaTime)
     lookH = lookH + (input.getActionAxis("LookRight") - input.getActionAxis("LookLeft")) * arrowLookStrength * mouseSensitivity * deltaTime
     lookV = lookV + (input.getActionAxis("LookUp") - input.getActionAxis("LookDown")) * arrowLookStrength * mouseSensitivity * deltaTime
 
-    local physicsRotateHeld = input.isActionHeld and input.isActionHeld("PhysicsRotate")
+    -- Only lock camera look when in first person AND holding physics rotate (R/R2); third person is never affected
+    local physicsRotateHeld = isFirstPerson and input.isActionHeld and input.isActionHeld("PhysicsRotate")
     if not physicsRotateHeld then
         cameraYaw = cameraYaw - lookH
         cameraPitch = math.max(minPitch, math.min(maxPitch, cameraPitch + lookV))
@@ -273,6 +276,7 @@ function update(deltaTime)
         isFirstPerson = not isFirstPerson
         if setNodeVisible then
             setNodeVisible(playerModelNodeName, not isFirstPerson)
+            setNodeVisible(gunMeshNodeName, isFirstPerson)  -- visible in first person only
         end
     end
 
