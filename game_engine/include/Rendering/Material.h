@@ -71,6 +71,21 @@ public:
     bool hasNormalTexture() const { return normalTexture != nullptr; }
     bool hasARMTexture() const { return armTexture != nullptr; }
     
+    // Custom shader support
+    void setShaderFromPaths(const std::string& vertexPath, const std::string& fragmentPath);
+    void setShaderFromPathsForPlatform(const std::string& vertexPath, const std::string& fragmentPath, const std::string& platform);
+    
+    std::string getShaderVertexPath() const;
+    std::string getShaderFragmentPath() const;
+    std::string getShaderVertexPathForPlatform(const std::string& platform) const;
+    std::string getShaderFragmentPathForPlatform(const std::string& platform) const;
+
+    void setShaderVertexPathForPlatform(const std::string& platform, const std::string& path);
+    void setShaderFragmentPathForPlatform(const std::string& platform, const std::string& path);
+
+    bool isUsingCustomShader() const;
+    void useDefaultLitShader();
+    
     void drawInspector();
     
     void setupLightingUniforms() const;
@@ -104,6 +119,11 @@ private:
     std::string diffuseTexturePath;
     std::string normalTexturePath;
     std::string armTexturePath;
+    
+    std::string shaderVertexPathLinux;
+    std::string shaderFragmentPathLinux;
+    std::string shaderVertexPathVita;
+    std::string shaderFragmentPathVita;
     
     void applyProperties() const;
 };

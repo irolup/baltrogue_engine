@@ -662,7 +662,13 @@
                       ],
                       "metallic": 0.0,
                       "reflectionStrength": 0.0,
-                      "roughness": 0.5
+                      "roughness": 0.5,
+                      "shaderFragmentPath": "assets/linux_shaders/unlit_1.frag",
+                      "shaderFragmentPathLinux": "assets/linux_shaders/unlit_1.frag",
+                      "shaderFragmentPathVita": "assets/shaders/unlit_1.frag",
+                      "shaderVertexPath": "assets/linux_shaders/unlit_1.vert",
+                      "shaderVertexPathLinux": "assets/linux_shaders/unlit_1.vert",
+                      "shaderVertexPathVita": "assets/shaders/unlit_1.vert"
                     },
                     "meshType": "LINE",
                     "type": "MeshRenderer"

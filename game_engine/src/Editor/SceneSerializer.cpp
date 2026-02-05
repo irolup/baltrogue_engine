@@ -15,6 +15,7 @@
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Rendering/Shader.h"
+#include "Rendering/ShaderManager.h"
 #include "Rendering/TextureManager.h"
 // Using nlohmann/json library for proper JSON serialization
 #include "../../vendor/json/single_include/nlohmann/json.hpp"
@@ -1891,18 +1892,47 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             materialJson["roughness"] = material->getRoughness();
                             materialJson["reflectionStrength"] = material->getReflectionStrength();
                             
-                            std::string diffusePath = material->getDiffuseTexturePath();
-                            std::string normalPath = material->getNormalTexturePath();
-                            std::string armPath = material->getARMTexturePath();
+                            if (material->hasDiffuseTexture()) {
+                                std::string diffusePath = material->getDiffuseTexturePath();
+                                if (!diffusePath.empty()) {
+                                    materialJson["diffuseTexture"] = diffusePath;
+                                }
+                            }
+                            if (material->hasNormalTexture()) {
+                                std::string normalPath = material->getNormalTexturePath();
+                                if (!normalPath.empty()) {
+                                    materialJson["normalTexture"] = normalPath;
+                                }
+                            }
+                            if (material->hasARMTexture()) {
+                                std::string armPath = material->getARMTexturePath();
+                                if (!armPath.empty()) {
+                                    materialJson["armTexture"] = armPath;
+                                }
+                            }
                             
-                            if (!diffusePath.empty()) {
-                                materialJson["diffuseTexture"] = diffusePath;
+                            std::string linuxVertexPath = material->getShaderVertexPathForPlatform("linux");
+                            std::string linuxFragmentPath = material->getShaderFragmentPathForPlatform("linux");
+                            std::string vitaVertexPath = material->getShaderVertexPathForPlatform("vita");
+                            std::string vitaFragmentPath = material->getShaderFragmentPathForPlatform("vita");
+                            
+                            if (!linuxVertexPath.empty() && !linuxFragmentPath.empty()) {
+                                materialJson["shaderVertexPathLinux"] = linuxVertexPath;
+                                materialJson["shaderFragmentPathLinux"] = linuxFragmentPath;
                             }
-                            if (!normalPath.empty()) {
-                                materialJson["normalTexture"] = normalPath;
+                            
+                            if (!vitaVertexPath.empty() && !vitaFragmentPath.empty()) {
+                                materialJson["shaderVertexPathVita"] = vitaVertexPath;
+                                materialJson["shaderFragmentPathVita"] = vitaFragmentPath;
                             }
-                            if (!armPath.empty()) {
-                                materialJson["armTexture"] = armPath;
+                            
+                            if (material->isUsingCustomShader()) {
+                                std::string vertexPath = material->getShaderVertexPath();
+                                std::string fragmentPath = material->getShaderFragmentPath();
+                                if (!vertexPath.empty() && !fragmentPath.empty()) {
+                                    materialJson["shaderVertexPath"] = vertexPath;
+                                    materialJson["shaderFragmentPath"] = fragmentPath;
+                                }
                             }
                             
                             componentJson["material"] = materialJson;
@@ -2244,9 +2274,52 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                             }
                         }
                         
-                        auto meshForShader = meshRenderer->getMesh();
-                        if (meshForShader && meshForShader->getMeshType() == MeshType::LINE) {
-                            material->setShader(Shader::getDefaultShader());
+                        bool loadedLinuxPaths = false;
+                        bool loadedVitaPaths = false;
+                        
+                        if (materialJson.contains("shaderVertexPathLinux") && materialJson.contains("shaderFragmentPathLinux")) {
+                            std::string linuxVertexPath = materialJson["shaderVertexPathLinux"];
+                            std::string linuxFragmentPath = materialJson["shaderFragmentPathLinux"];
+                            if (!linuxVertexPath.empty() && !linuxFragmentPath.empty()) {
+                                material->setShaderFromPathsForPlatform(linuxVertexPath, linuxFragmentPath, "linux");
+                                loadedLinuxPaths = true;
+                            }
+                        }
+                        
+                        if (materialJson.contains("shaderVertexPathVita") && materialJson.contains("shaderFragmentPathVita")) {
+                            std::string vitaVertexPath = materialJson["shaderVertexPathVita"];
+                            std::string vitaFragmentPath = materialJson["shaderFragmentPathVita"];
+                            if (!vitaVertexPath.empty() && !vitaFragmentPath.empty()) {
+#ifdef VITA_BUILD
+                                if (vitaVertexPath.find("app0:/") != 0 && vitaVertexPath.find("assets/") == 0) {
+                                    vitaVertexPath = "app0:/" + vitaVertexPath;
+                                }
+                                if (vitaFragmentPath.find("app0:/") != 0 && vitaFragmentPath.find("assets/") == 0) {
+                                    vitaFragmentPath = "app0:/" + vitaFragmentPath;
+                                }
+#endif
+                                material->setShaderFromPathsForPlatform(vitaVertexPath, vitaFragmentPath, "vita");
+                                loadedVitaPaths = true;
+                            }
+                        }
+                        
+                        if (!loadedLinuxPaths && !loadedVitaPaths && 
+                            materialJson.contains("shaderVertexPath") && materialJson.contains("shaderFragmentPath")) {
+                            std::string vertexPath = materialJson["shaderVertexPath"];
+                            std::string fragmentPath = materialJson["shaderFragmentPath"];
+                            if (!vertexPath.empty() && !fragmentPath.empty()) {
+                                if (vertexPath.find("linux_shaders") != std::string::npos || 
+                                    fragmentPath.find("linux_shaders") != std::string::npos) {
+                                    material->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "linux");
+                                } else {
+                                    material->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "vita");
+                                }
+                            }
+                        }
+                        
+                        auto& shaderManager = ShaderManager::getInstance();
+                        if (material->getShader() && material->getShader()->isValid()) {
+                            shaderManager.registerShaderType(material->getShader(), ShaderType::Lit);
                         }
                         
                         meshRenderer->setMaterial(material);
@@ -2425,26 +2498,21 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                 } else if (type == "ScriptComponent") {
                     auto scriptComp = node->addComponent<ScriptComponent>();
                     
-                    // Check for both "scriptPath" (current) and "script" (legacy) for compatibility
                     std::string scriptPath = "";
                     if (componentJson.contains("scriptPath") && !componentJson["scriptPath"].is_null()) {
                         scriptPath = componentJson["scriptPath"];
                     } else if (componentJson.contains("script") && !componentJson["script"].is_null()) {
-                        scriptPath = componentJson["script"]; // Legacy support
+                        scriptPath = componentJson["script"];
                     }
                     
                     if (!scriptPath.empty()) {
                         scriptComp->loadScript(scriptPath);
-                        // Don't start scripts during deserialization, they will be started
-                        // when Scene::start() is called after the entire scene is loaded
-                        // This ensures all nodes and components are available when scripts start
                     } else {
 #ifdef LINUX_BUILD
                         std::cout << "ScriptComponent on node \"" << name << "\" has empty script path, skipping start()" << std::endl;
 #endif
                     }
                     
-                    // Load pause exempt setting
                     if (componentJson.contains("pauseExempt") && componentJson["pauseExempt"].is_boolean()) {
                         bool pauseExempt = componentJson["pauseExempt"];
                         scriptComp->setPauseExempt(pauseExempt);

@@ -154,6 +154,8 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/shaders/text.frag=assets/shaders/text.frag \
 		-a assets/shaders/skybox.vert=assets/shaders/skybox.vert \
 		-a assets/shaders/skybox.frag=assets/shaders/skybox.frag \
+		-a assets/shaders/unlit_1.vert=assets/shaders/unlit_1.vert \
+		-a assets/shaders/unlit_1.frag=assets/shaders/unlit_1.frag \
 		-a textures.txt=textures.txt \
 		-a fonts.txt=fonts.txt \
 		-a scripts.txt=scripts.txt \
@@ -195,7 +197,7 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a scripts/physics_gun.lua=scripts/physics_gun.lua \
 		-a assets/scenes/main_menu.json=assets/scenes/main_menu.json \
 		-a assets/scenes/first_game_demo.json=assets/scenes/first_game_demo.json \
- $@
+		$@
 $(BUILD_DIR)/eboot.bin: $(BUILD_DIR)/$(TARGET).velf
 	vita-make-fself -s $< $@
 
