@@ -12,6 +12,7 @@ This project is a cross-platform Game Engine that supports both PS Vita and Linu
 - [x] GLTF/GLB Model Loading
 - [x] PBR (with normal map)
 - [x] Multi-light Lighting System (Directional, Point, Spot)
+- [x] Custom Shader Support (Lit and Unlit, GLSL + CG templates)
 
 ### Audio
 - [x] 2D Audio
