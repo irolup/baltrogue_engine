@@ -12,6 +12,12 @@ namespace GameEngine {
 class Shader;
 class Texture;
 
+enum class BlendMode {
+    Opaque,
+    Alpha,
+    Additive
+};
+
 class Material {
 public:
     Material();
@@ -48,6 +54,9 @@ public:
     
     float getReflectionStrength() const { return reflectionStrength; }
     void setReflectionStrength(float r) { reflectionStrength = r; setFloat("u_ReflectionStrength", reflectionStrength); }
+    
+    BlendMode getBlendMode() const { return blendMode; }
+    void setBlendMode(BlendMode mode) { blendMode = mode; }
     
     std::shared_ptr<Texture> getDiffuseTexture() const { return diffuseTexture; }
     void setDiffuseTexture(std::shared_ptr<Texture> texture, const std::string& path = "");
@@ -111,6 +120,7 @@ private:
     float metallic;
     float roughness;
     float reflectionStrength;
+    BlendMode blendMode;
     
     std::shared_ptr<Texture> diffuseTexture;
     std::shared_ptr<Texture> normalTexture;

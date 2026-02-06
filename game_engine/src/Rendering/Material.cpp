@@ -24,6 +24,7 @@ Material::Material()
     , metallic(0.0f)
     , roughness(0.5f)
     , reflectionStrength(0.0f)
+    , blendMode(BlendMode::Opaque)
     , diffuseTexture(nullptr)
     , normalTexture(nullptr)
     , armTexture(nullptr)
@@ -43,6 +44,7 @@ Material::Material(std::shared_ptr<Shader> materialShader)
     , metallic(0.0f)
     , roughness(0.5f)
     , reflectionStrength(0.0f)
+    , blendMode(BlendMode::Opaque)
     , diffuseTexture(nullptr)
     , normalTexture(nullptr)
     , armTexture(nullptr)
@@ -272,6 +274,22 @@ void Material::apply() const {
     shader->use();
     applyProperties();
     
+    switch (blendMode) {
+        case BlendMode::Opaque:
+            glDisable(GL_BLEND);
+            break;
+        case BlendMode::Alpha:
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glBlendEquation(GL_FUNC_ADD);
+            break;
+        case BlendMode::Additive:
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            glBlendEquation(GL_FUNC_ADD);
+            break;
+    }
+    
     auto& shaderManager = ShaderManager::getInstance();
     bool isLit = (shader == Shader::getLightingShader()) || shaderManager.isLitShader(shader);
     
@@ -297,6 +315,12 @@ void Material::drawInspector() {
         
         if (ImGui::SliderFloat("Reflection Strength", &reflectionStrength, 0.0f, 1.0f)) {
             setReflectionStrength(reflectionStrength);
+        }
+        
+        const char* blendModeNames[] = { "Opaque", "Alpha", "Additive" };
+        int currentBlend = static_cast<int>(blendMode);
+        if (ImGui::Combo("Blend Mode", &currentBlend, blendModeNames, 3)) {
+            setBlendMode(static_cast<BlendMode>(currentBlend));
         }
         
         ImGui::Separator();

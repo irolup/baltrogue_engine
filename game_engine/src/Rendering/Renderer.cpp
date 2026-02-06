@@ -9,6 +9,7 @@
 #include "Rendering/Shader.h"
 #include "Rendering/Texture.h"
 #include "Rendering/LightingManager.h"
+#include "Core/Engine.h"
 #include <algorithm>
 #include <iostream>
 #include <iomanip>
@@ -77,9 +78,8 @@ void Renderer::renderScene(Scene& scene) {
         renderNode(*scene.getRootNode(), glm::mat4(1.0f));
     }
     
-    processRenderQueue();
-    
     renderSkybox(scene);
+    processRenderQueue();
     
     currentScene = nullptr;
     
@@ -297,6 +297,8 @@ void Renderer::processRenderQueue() {
             shader->setMat3("normalMatrix", command.normalMatrix);
             shader->setMat4("viewMatrix", cachedViewMatrix);
             shader->setMat4("projectionMatrix", cachedProjectionMatrix);
+            shader->setFloat("u_Time", GetEngine().getTime().getTotalTime());
+            shader->setVec2("u_ViewportSize", glm::vec2(viewport.z, viewport.w));
             
             if (!command.boneTransforms.empty()) {
                 shader->setMat4Array("u_BoneMatrices", command.boneTransforms.data(), command.boneTransforms.size());
@@ -461,7 +463,7 @@ void Renderer::renderSkybox(Scene& scene) {
     glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskEnabled);
     glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
     
-    glDepthMask(GL_FALSE);
+    glDepthMask(GL_TRUE);
     glDepthFunc(GL_LEQUAL);
     
     bool cullingWasEnabled = cullFaceEnabled;

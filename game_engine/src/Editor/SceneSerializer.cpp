@@ -1891,7 +1891,11 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             materialJson["metallic"] = material->getMetallic();
                             materialJson["roughness"] = material->getRoughness();
                             materialJson["reflectionStrength"] = material->getReflectionStrength();
-                            
+                            switch (material->getBlendMode()) {
+                                case BlendMode::Opaque:  materialJson["blendMode"] = "Opaque"; break;
+                                case BlendMode::Alpha:   materialJson["blendMode"] = "Alpha"; break;
+                                case BlendMode::Additive: materialJson["blendMode"] = "Additive"; break;
+                            }
                             if (material->hasDiffuseTexture()) {
                                 std::string diffusePath = material->getDiffuseTexturePath();
                                 if (!diffusePath.empty()) {
@@ -2246,6 +2250,12 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         }
                         if (materialJson.contains("reflectionStrength")) {
                             material->setReflectionStrength(materialJson["reflectionStrength"]);
+                        }
+                        if (materialJson.contains("blendMode")) {
+                            std::string bm = materialJson["blendMode"];
+                            if (bm == "Alpha") material->setBlendMode(BlendMode::Alpha);
+                            else if (bm == "Additive") material->setBlendMode(BlendMode::Additive);
+                            else material->setBlendMode(BlendMode::Opaque);
                         }
                         
                         auto& textureManager = TextureManager::getInstance();
