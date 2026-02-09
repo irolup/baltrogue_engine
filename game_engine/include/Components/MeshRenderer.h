@@ -23,6 +23,9 @@ public:
     void setMaterial(std::shared_ptr<Material> material);
     std::shared_ptr<Material> getMaterial() const { return material; }
     
+    void setMaterialOverride(std::shared_ptr<Material> overrideMaterial);
+    std::shared_ptr<Material> getMaterialOverride() const { return materialOverride; }
+    
     bool getCastShadows() const { return castShadows; }
     void setCastShadows(bool cast) { castShadows = cast; }
     
@@ -34,6 +37,7 @@ public:
 private:
     std::shared_ptr<Mesh> mesh;
     std::shared_ptr<Material> material;
+    std::shared_ptr<Material> materialOverride;
     bool castShadows;
     bool receiveShadows;
 };

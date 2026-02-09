@@ -4,11 +4,13 @@
 #include "Components/CameraComponent.h"
 #include "Components/MeshRenderer.h"
 #include "Components/ModelRenderer.h"
+#include "Components/BeamRenderer.h"
 #include "Components/TextComponent.h"
 #include "Components/SkyboxComponent.h"
 #include "Rendering/Shader.h"
 #include "Rendering/Texture.h"
 #include "Rendering/LightingManager.h"
+#include "Rendering/Material.h"
 #include "Core/Engine.h"
 #include <algorithm>
 #include <iostream>
@@ -118,6 +120,11 @@ void Renderer::renderNode(SceneNode& node, const glm::mat4& parentTransform) {
     if (modelRenderer && modelRenderer->isEnabled()) {
         modelRenderer->render(*this);
     }
+
+    auto beamRenderer = node.getComponent<BeamRenderer>();
+    if (beamRenderer && beamRenderer->isEnabled()) {
+        beamRenderer->render(*this);
+    }
     
     auto textComponent = node.getComponent<TextComponent>();
     if (textComponent) {
@@ -202,19 +209,19 @@ void Renderer::setCullFace(bool enabled) {
 }
 
 void Renderer::processRenderQueue() {
-    std::sort(renderQueue.begin(), renderQueue.end(), 
+    std::sort(renderQueue.begin(), renderQueue.end(),
         [](const RenderCommand& a, const RenderCommand& b) {
             if (!a.material && !b.material) return false;
             if (!a.material) return false;
             if (!b.material) return true;
-            
+            bool aOpaque = (a.material->getBlendMode() == BlendMode::Opaque);
+            bool bOpaque = (b.material->getBlendMode() == BlendMode::Opaque);
+            if (aOpaque != bOpaque)
+                return aOpaque;
             auto shaderA = a.material->getShader();
             auto shaderB = b.material->getShader();
-            
-            if (shaderA != shaderB) {
+            if (shaderA != shaderB)
                 return shaderA.get() < shaderB.get();
-            }
-            
             return a.material.get() < b.material.get();
         });
     
@@ -230,7 +237,7 @@ void Renderer::processRenderQueue() {
     for (const auto& command : renderQueue) {
         if (!command.mesh) continue;
         
-        if (frustumCullingEnabled && activeCamera && frustumPlanes.size() == 6) {
+        if (!command.isBeam && frustumCullingEnabled && activeCamera && frustumPlanes.size() == 6) {
             glm::vec3 boundsMin = command.mesh->getBoundsMin();
             glm::vec3 boundsMax = command.mesh->getBoundsMax();
             
@@ -269,7 +276,9 @@ void Renderer::processRenderQueue() {
             material->setCameraPosition(cameraPos);
         }
         
-        if (currentScene) {
+        auto shader = material->getShader();
+        bool isDefaultLit = shader && (shader == Shader::getLightingShader());
+        if (isDefaultLit && currentScene) {
             auto activeSkyboxNode = currentScene->getActiveSkybox();
             if (activeSkyboxNode) {
                 auto skyboxComp = activeSkyboxNode->getComponent<SkyboxComponent>();
@@ -291,24 +300,38 @@ void Renderer::processRenderQueue() {
         
         applyMaterial(*material);
         
-        auto shader = material->getShader();
         if (shader && activeCamera && matricesCached) {
-            shader->setMat4("modelMatrix", command.modelMatrix);
-            shader->setMat3("normalMatrix", command.normalMatrix);
-            shader->setMat4("viewMatrix", cachedViewMatrix);
-            shader->setMat4("projectionMatrix", cachedProjectionMatrix);
-            shader->setFloat("u_Time", GetEngine().getTime().getTotalTime());
-            shader->setVec2("u_ViewportSize", glm::vec2(viewport.z, viewport.w));
-            
-            if (!command.boneTransforms.empty()) {
-                shader->setMat4Array("u_BoneMatrices", command.boneTransforms.data(), command.boneTransforms.size());
-                shader->setInt("u_NumBones", static_cast<int>(command.boneTransforms.size()));
+            if (command.isBeam) {
+                shader->setMat4("viewMatrix", cachedViewMatrix);
+                shader->setMat4("projectionMatrix", cachedProjectionMatrix);
+                shader->setVec3("u_BeamStart", command.beamStart);
+                shader->setVec3("u_BeamEnd", command.beamEnd);
+                shader->setFloat("u_BeamHalfWidth", command.beamHalfWidth);
+                shader->setVec3("u_CameraPos", cameraPos);
+                shader->setFloat("u_Time", GetEngine().getTime().getTotalTime());
             } else {
-                shader->setInt("u_NumBones", 0);
+                shader->setMat4("modelMatrix", command.modelMatrix);
+                shader->setMat3("normalMatrix", command.normalMatrix);
+                shader->setMat4("viewMatrix", cachedViewMatrix);
+                shader->setMat4("projectionMatrix", cachedProjectionMatrix);
+                shader->setFloat("u_Time", GetEngine().getTime().getTotalTime());
+                shader->setVec2("u_ViewportSize", glm::vec2(viewport.z, viewport.w));
+                
+                if (!command.boneTransforms.empty()) {
+                    shader->setMat4Array("u_BoneMatrices", command.boneTransforms.data(), command.boneTransforms.size());
+                    shader->setInt("u_NumBones", static_cast<int>(command.boneTransforms.size()));
+                } else {
+                    shader->setInt("u_NumBones", 0);
+                }
             }
         }
         
         command.mesh->draw();
+        
+        if (!material->getDepthWrite()) {
+            glDepthMask(GL_TRUE);
+            glDepthFunc(GL_LESS);
+        }
         
         if (shouldDisableCulling && cullingWasEnabled) {
             glEnable(GL_CULL_FACE);
@@ -458,14 +481,6 @@ void Renderer::renderSkybox(Scene& scene) {
     
     if (!cubemapTexture || !skyboxMesh || !skyboxMaterial || !activeCamera) return;
     
-    GLboolean depthMaskEnabled;
-    GLint depthFunc;
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskEnabled);
-    glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
-    
-    glDepthMask(GL_TRUE);
-    glDepthFunc(GL_LEQUAL);
-    
     bool cullingWasEnabled = cullFaceEnabled;
     if (cullFaceEnabled) {
         glDisable(GL_CULL_FACE);
@@ -476,6 +491,8 @@ void Renderer::renderSkybox(Scene& scene) {
     glm::mat4 projectionMatrix = activeCamera->getProjectionMatrix();
     
     skyboxMaterial->apply();
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LEQUAL);
     
     auto shader = skyboxMaterial->getShader();
     if (shader && shader->isValid()) {
@@ -491,7 +508,7 @@ void Renderer::renderSkybox(Scene& scene) {
     skyboxMesh->draw();
     skyboxMesh->unbind();
     
-    glDepthMask(depthMaskEnabled);
+    glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
     
     if (cullingWasEnabled && cullFaceEnabled) {

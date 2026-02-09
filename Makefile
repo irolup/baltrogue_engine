@@ -156,6 +156,10 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/shaders/skybox.frag=assets/shaders/skybox.frag \
 		-a assets/shaders/unlit_1.vert=assets/shaders/unlit_1.vert \
 		-a assets/shaders/unlit_1.frag=assets/shaders/unlit_1.frag \
+		-a assets/shaders/beam.vert=assets/shaders/beam.vert \
+		-a assets/shaders/beam.frag=assets/shaders/beam.frag \
+		-a assets/shaders/outline.vert=assets/shaders/outline.vert \
+		-a assets/shaders/outline.frag=assets/shaders/outline.frag \
 		-a textures.txt=textures.txt \
 		-a fonts.txt=fonts.txt \
 		-a scripts.txt=scripts.txt \
@@ -179,6 +183,7 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/textures/skyboxes/skybox_1/bottom.jpg=bottom.jpg \
 		-a assets/textures/skyboxes/skybox_1/front.jpg=front.jpg \
 		-a assets/textures/skyboxes/skybox_1/back.jpg=back.jpg \
+		-a assets/textures/noise/Perlin.png=Perlin.png \
 		-a assets/fonts/DroidSans.ttf=assets/fonts/DroidSans.ttf \
 		-a assets/fonts/ProggyVector.ttf=assets/fonts/ProggyVector.ttf \
 		-a assets/fonts/ProggyClean.ttf=assets/fonts/ProggyClean.ttf \

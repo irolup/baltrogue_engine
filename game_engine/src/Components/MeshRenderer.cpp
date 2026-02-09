@@ -31,18 +31,24 @@ void MeshRenderer::render(Renderer& renderer) {
         return;
     }
     
-    // Get the world transform matrix
     glm::mat4 modelMatrix = owner->getWorldMatrix();
+    glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
     
-    // Create render command
     RenderCommand command;
     command.mesh = mesh;
     command.material = material;
     command.modelMatrix = modelMatrix;
-    command.normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
-    
-    // Submit to renderer
+    command.normalMatrix = normalMatrix;
     renderer.submitRenderCommand(command);
+    
+    if (materialOverride) {
+        RenderCommand outlineCmd;
+        outlineCmd.mesh = mesh;
+        outlineCmd.material = materialOverride;
+        outlineCmd.modelMatrix = modelMatrix;
+        outlineCmd.normalMatrix = normalMatrix;
+        renderer.submitRenderCommand(outlineCmd);
+    }
 }
 
 void MeshRenderer::setMesh(std::shared_ptr<Mesh> newMesh) {
@@ -51,6 +57,10 @@ void MeshRenderer::setMesh(std::shared_ptr<Mesh> newMesh) {
 
 void MeshRenderer::setMaterial(std::shared_ptr<Material> newMaterial) {
     material = newMaterial;
+}
+
+void MeshRenderer::setMaterialOverride(std::shared_ptr<Material> overrideMaterial) {
+    materialOverride = overrideMaterial;
 }
 
 void MeshRenderer::drawInspector() {

@@ -103,6 +103,7 @@
               {
                 "material": {
                   "armTexture": "assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_arm_1k.png",
+                  "blendMode": "Opaque",
                   "color": [
                     1.0,
                     0.5,
@@ -319,6 +320,7 @@
               1.0,
               1.0
             ],
+            "constant": 1.0,
             "cutOff": 0.21816615760326385,
             "direction": [
               0.0,
@@ -327,7 +329,9 @@
             ],
             "intensity": 6.339000225067139,
             "lightType": "POINT",
+            "linear": 0.09000000357627869,
             "outerCutOff": 0.30543261766433716,
+            "quadratic": 0.03200000151991844,
             "range": 21.371000289916992,
             "showGizmo": true,
             "type": "LightComponent"
@@ -654,24 +658,29 @@
                 "active": true,
                 "components": [
                   {
+                    "beamWidth": 0.5,
                     "material": {
+                      "blendMode": "Additive",
                       "color": [
-                        1.0,
-                        0.20000000298023224,
-                        0.20000000298023224
+                        0.0,
+                        0.9,
+                        1.0
+                      ],
+                      "customTextureUniforms": [
+                        {
+                          "name": "u_NoiseTexture_1",
+                          "path": "assets/textures/noise/Perlin.png"
+                        }
                       ],
                       "metallic": 0.0,
                       "reflectionStrength": 0.0,
                       "roughness": 0.5,
-                      "shaderFragmentPath": "assets/linux_shaders/unlit_1.frag",
-                      "shaderFragmentPathLinux": "assets/linux_shaders/unlit_1.frag",
-                      "shaderFragmentPathVita": "assets/shaders/unlit_1.frag",
-                      "shaderVertexPath": "assets/linux_shaders/unlit_1.vert",
-                      "shaderVertexPathLinux": "assets/linux_shaders/unlit_1.vert",
-                      "shaderVertexPathVita": "assets/shaders/unlit_1.vert"
+                      "shaderFragmentPathLinux": "assets/linux_shaders/beam.frag",
+                      "shaderFragmentPathVita": "assets/shaders/beam.frag",
+                      "shaderVertexPathLinux": "assets/linux_shaders/beam.vert",
+                      "shaderVertexPathVita": "assets/shaders/beam.vert"
                     },
-                    "meshType": "LINE",
-                    "type": "MeshRenderer"
+                    "type": "BeamRenderer"
                   }
                 ],
                 "name": "GunLaser",
@@ -679,17 +688,17 @@
                   "position": [
                     0.0,
                     0.0,
-                    -1.0
+                    0.0
                   ],
                   "rotation": [
-                    -120.00000762939453,
-                    1.7075473124350538e-06,
-                    70.0
+                    0.0,
+                    -0.0,
+                    0.0
                   ],
                   "scale": [
-                    0.019999999552965164,
-                    0.019999999552965164,
-                    0.30000001192092896
+                    1.0,
+                    1.0,
+                    1.0
                   ]
                 },
                 "visible": true
@@ -880,6 +889,7 @@
             "components": [
               {
                 "material": {
+                  "blendMode": "Opaque",
                   "color": [
                     1.0,
                     0.5,
@@ -977,6 +987,7 @@
             "components": [
               {
                 "material": {
+                  "blendMode": "Opaque",
                   "color": [
                     1.0,
                     0.5,
@@ -1135,6 +1146,7 @@
             "components": [
               {
                 "material": {
+                  "blendMode": "Opaque",
                   "color": [
                     1.0,
                     0.5,
@@ -1232,6 +1244,7 @@
             "components": [
               {
                 "material": {
+                  "blendMode": "Opaque",
                   "color": [
                     1.0,
                     0.5,
@@ -1329,6 +1342,7 @@
             "components": [
               {
                 "material": {
+                  "blendMode": "Opaque",
                   "color": [
                     1.0,
                     0.5,
@@ -1429,6 +1443,7 @@
                 "components": [
                   {
                     "material": {
+                      "blendMode": "Opaque",
                       "color": [
                         1.0,
                         0.5,
@@ -1526,6 +1541,7 @@
                 "components": [
                   {
                     "material": {
+                      "blendMode": "Opaque",
                       "color": [
                         1.0,
                         0.5,
@@ -1623,6 +1639,7 @@
                 "components": [
                   {
                     "material": {
+                      "blendMode": "Opaque",
                       "color": [
                         1.0,
                         0.5,

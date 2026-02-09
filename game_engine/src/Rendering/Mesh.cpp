@@ -816,6 +816,23 @@ std::shared_ptr<Mesh> Mesh::createLineSegment() {
     return mesh;
 }
 
+std::shared_ptr<Mesh> Mesh::createBeam() {
+    std::vector<Vertex> vertices = {
+        {{0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+        {{1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{1.0f,  1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{0.0f,  1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}}
+    };
+    std::vector<unsigned int> indices = {
+        0, 1, 2,
+        0, 2, 3
+    };
+    auto mesh = std::make_shared<Mesh>(vertices, indices);
+    mesh->calculateTangents();
+    mesh->setMeshType(MeshType::BEAM);
+    return mesh;
+}
+
 void Mesh::cleanupBuffers() {
     if (VAO) {
         glDeleteVertexArrays(1, &VAO);

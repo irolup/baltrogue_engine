@@ -664,15 +664,6 @@ void EditorSystem::renderSkyboxDirectly(Scene& scene, CameraComponent* camera, c
     
     if (!cubemapTexture || !skyboxMesh || !skyboxMaterial) return;
     
-    // Save current state
-    GLboolean depthMaskEnabled;
-    GLint depthFunc;
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskEnabled);
-    glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
-    
-    glDepthMask(GL_FALSE);
-    glDepthFunc(GL_LEQUAL);
-    
     GLboolean cullFaceEnabled;
     glGetBooleanv(GL_CULL_FACE, &cullFaceEnabled);
     if (cullFaceEnabled) {
@@ -682,6 +673,8 @@ void EditorSystem::renderSkyboxDirectly(Scene& scene, CameraComponent* camera, c
     glm::mat4 skyboxViewMatrix = glm::mat4(glm::mat3(viewMatrix));
     
     skyboxMaterial->apply();
+    glDepthMask(GL_FALSE);
+    glDepthFunc(GL_LEQUAL);
     
     auto shader = skyboxMaterial->getShader();
     if (shader && shader->isValid()) {
@@ -697,7 +690,7 @@ void EditorSystem::renderSkyboxDirectly(Scene& scene, CameraComponent* camera, c
     skyboxMesh->draw();
     skyboxMesh->unbind();
     
-    glDepthMask(depthMaskEnabled);
+    glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
     
     if (cullFaceEnabled) {

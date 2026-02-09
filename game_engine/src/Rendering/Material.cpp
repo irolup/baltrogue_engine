@@ -4,6 +4,7 @@
 #include "Rendering/Texture.h"
 #include "Rendering/TextureManager.h"
 #include "Rendering/LightingManager.h"
+#include <algorithm>
 #include <iostream>
 #include <vector>
 
@@ -171,6 +172,46 @@ void Material::useDefaultLitShader() {
     shaderFragmentPathVita = "";
 }
 
+void Material::addCustomTextureUniform(const std::string& uniformName, const std::string& texturePath) {
+    if (uniformName.empty() || texturePath.empty()) return;
+    auto& textureManager = TextureManager::getInstance();
+    auto texture = textureManager.getTexture(texturePath);
+    if (!texture) return;
+    for (auto& p : customTextureUniforms) {
+        if (p.first == uniformName) {
+            p.second = texturePath;
+            setTexture(uniformName, texture);
+            return;
+        }
+    }
+    customTextureUniforms.push_back({ uniformName, texturePath });
+    setTexture(uniformName, texture);
+}
+
+void Material::removeCustomTextureUniform(const std::string& uniformName) {
+    customTextureUniforms.erase(
+        std::remove_if(customTextureUniforms.begin(), customTextureUniforms.end(),
+            [&uniformName](const CustomTextureUniform& p) { return p.first == uniformName; }),
+        customTextureUniforms.end());
+    textureProperties.erase(uniformName);
+}
+
+void Material::setCustomTextureUniformPath(const std::string& uniformName, const std::string& texturePath) {
+    if (texturePath.empty()) return;
+    auto& textureManager = TextureManager::getInstance();
+    auto texture = textureManager.getTexture(texturePath);
+    if (!texture) return;
+    for (auto& p : customTextureUniforms) {
+        if (p.first == uniformName) {
+            p.second = texturePath;
+            setTexture(uniformName, texture);
+            return;
+        }
+    }
+    customTextureUniforms.push_back({ uniformName, texturePath });
+    setTexture(uniformName, texture);
+}
+
 void Material::setFloat(const std::string& name, float value) {
     floatProperties[name] = value;
 }
@@ -289,6 +330,9 @@ void Material::apply() const {
             glBlendEquation(GL_FUNC_ADD);
             break;
     }
+    
+    glDepthMask(depthWrite ? GL_TRUE : GL_FALSE);
+    glDepthFunc(depthWrite ? GL_LESS : GL_LEQUAL);
     
     auto& shaderManager = ShaderManager::getInstance();
     bool isLit = (shader == Shader::getLightingShader()) || shaderManager.isLitShader(shader);
@@ -586,6 +630,82 @@ void Material::drawInspector() {
             }
             
             ImGui::EndPopup();
+        }
+        
+        if (isCustomShader) {
+            ImGui::Separator();
+            ImGui::Text("Custom texture uniforms");
+            auto& textureManager = TextureManager::getInstance();
+            auto availableTextures = textureManager.getAvailableTextures();
+            std::vector<std::string> toRemoveCustomUniforms;
+            for (const auto& entry : getCustomTextureUniforms()) {
+                const std::string& uniformName = entry.first;
+                std::string currentPath = entry.second;
+                ImGui::PushID(uniformName.c_str());
+                ImGui::Text("%s", uniformName.c_str());
+                std::string comboLabel = currentPath.empty() ? "None" : currentPath;
+                if (comboLabel.length() > 60) {
+                    size_t start = comboLabel.find("assets/");
+                    if (start != std::string::npos) comboLabel = comboLabel.substr(start);
+                    if (comboLabel.length() > 60) comboLabel = "..." + comboLabel.substr(comboLabel.length() - 57);
+                }
+                if (ImGui::BeginCombo("Texture", comboLabel.c_str())) {
+                    if (ImGui::Selectable("None", currentPath.empty())) {
+                        toRemoveCustomUniforms.push_back(uniformName);
+                    }
+                    for (const auto& texturePath : availableTextures) {
+                        bool selected = (texturePath == currentPath);
+                        if (ImGui::Selectable(texturePath.c_str(), selected)) {
+                            setCustomTextureUniformPath(uniformName, texturePath);
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Remove")) {
+                    toRemoveCustomUniforms.push_back(uniformName);
+                }
+                ImGui::PopID();
+            }
+            for (const auto& name : toRemoveCustomUniforms) {
+                removeCustomTextureUniform(name);
+            }
+            if (ImGui::Button("Add texture uniform")) {
+                textureManager.discoverAllTextures("assets/textures");
+                ImGui::OpenPopup("AddTextureUniformPopup");
+            }
+            if (ImGui::BeginPopup("AddTextureUniformPopup")) {
+                static char customUniformNameBuffer[128] = "";
+                static int customTextureSelectedIdx = -1;
+                ImGui::InputText("Uniform name (e.g. u_NoiseTexture)", customUniformNameBuffer, sizeof(customUniformNameBuffer));
+                ImGui::Text("Select texture from assets/textures:");
+                if (ImGui::BeginChild("CustomTextureList", ImVec2(0, 120), true)) {
+                    for (size_t i = 0; i < availableTextures.size(); ++i) {
+                        const auto& texturePath = availableTextures[i];
+                        bool selected = (customTextureSelectedIdx >= 0 && static_cast<size_t>(customTextureSelectedIdx) == i);
+                        if (ImGui::Selectable(texturePath.c_str(), selected)) {
+                            customTextureSelectedIdx = static_cast<int>(i);
+                        }
+                    }
+                    ImGui::EndChild();
+                }
+                if (ImGui::Button("Add")) {
+                    if (strlen(customUniformNameBuffer) > 0 && customTextureSelectedIdx >= 0 &&
+                        static_cast<size_t>(customTextureSelectedIdx) < availableTextures.size()) {
+                        addCustomTextureUniform(customUniformNameBuffer, availableTextures[static_cast<size_t>(customTextureSelectedIdx)]);
+                        customUniformNameBuffer[0] = '\0';
+                        customTextureSelectedIdx = -1;
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel")) {
+                    customUniformNameBuffer[0] = '\0';
+                    customTextureSelectedIdx = -1;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
         }
         
         if (!textureProperties.empty()) {

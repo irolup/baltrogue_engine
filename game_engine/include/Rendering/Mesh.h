@@ -20,6 +20,7 @@ enum class MeshType {
     CAPSULE,
     CYLINDER,
     LINE,
+    BEAM,
     CUSTOM
 };
 
@@ -28,8 +29,8 @@ struct Vertex {
     glm::vec3 normal;
     glm::vec2 texCoords;
     glm::vec3 tangent;
-    glm::vec4 boneWeights;  // Bone weights (for skinning)
-    glm::vec4 boneIndices;  // Bone indices (for skinning)
+    glm::vec4 boneWeights;
+    glm::vec4 boneIndices;
     
     Vertex() : position(0.0f), normal(0.0f, 1.0f, 0.0f), texCoords(0.0f), tangent(1.0f, 0.0f, 0.0f), 
                boneWeights(0.0f, 0.0f, 0.0f, 0.0f), boneIndices(0.0f, 0.0f, 0.0f, 0.0f) {}
@@ -90,6 +91,7 @@ public:
     static std::shared_ptr<Mesh> createWireframePlane(float width = 1.0f, float height = 1.0f);
 
     static std::shared_ptr<Mesh> createLineSegment();
+    static std::shared_ptr<Mesh> createBeam();
 
     static std::shared_ptr<Mesh> loadFromFile(const std::string& filepath);
     

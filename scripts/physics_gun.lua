@@ -7,10 +7,18 @@ local gunLaserNodeName = "GunLaser"  -- Line from side of camera to raycast targ
 local maxGrabDistance = 30.0
 local ballRootName = "Ball"
 local ballPhysicsNodeName = "SphereCollision"
-local ballSpawnX, ballSpawnY, ballSpawnZ = 0.0, 0.0, 0.0
--- Beam origin offset from camera: right, down, forward (positive = in front so we see the beam)
-local beamOffsetRight, beamOffsetDown, beamOffsetForward = 0.2, 0.1, 0.3
-local beamWidth = 0.08  -- line thickness (scale x/y) so laser is visible
+local ballSpawnX, ballSpawnY, ballSpawnZ = 0, 0, 0
+
+local beamOffsetRight, beamOffsetDown, beamOffsetForward = 0.55, -0.15, -1.7
+
+local outlineVertPath = (_VITA_BUILD and "assets/shaders/outline.vert") or "assets/linux_shaders/outline.vert"
+local outlineFragPath = (_VITA_BUILD and "assets/shaders/outline.frag") or "assets/linux_shaders/outline.frag"
+local outlineParams = {
+    u_OutlineColor = { 0.0, 0.9, 1.0 },
+    u_OutlinePower = 3.0,
+    blendMode = "Alpha",
+    depthWrite = false
+}
 
 -- Currently held object
 local heldNodeName = nil
@@ -92,6 +100,9 @@ function update(deltaTime)
             setNodeVisible(gunLaserNodeName, false)
         end
         if heldNodeName then
+            if scene and scene.clearNodeMaterialOverride then
+                scene.clearNodeMaterialOverride(heldNodeName)
+            end
             if setNodeAngularVelocity then
                 setNodeAngularVelocity(heldNodeName, 0, 0, 0)
             end
@@ -111,6 +122,9 @@ function update(deltaTime)
             setNodeVisible(gunLaserNodeName, false)
         end
         if heldNodeName then
+            if scene and scene.clearNodeMaterialOverride then
+                scene.clearNodeMaterialOverride(heldNodeName)
+            end
             if setNodeAngularVelocity then
                 setNodeAngularVelocity(heldNodeName, 0, 0, 0)
             end
@@ -140,6 +154,9 @@ function update(deltaTime)
         local hitNode, hitX, hitY, hitZ, hitDist = physicsRaycast(rayOriginX, rayOriginY, rayOriginZ, rayDirX, rayDirY, rayDirZ, maxGrabDistance)
         if hitNode and type(hitNode) == "string" and hitNode ~= "" and hitX and hitY and hitZ and hitDist then
             heldNodeName = hitNode
+            if scene and scene.setNodeMaterialOverride then
+                scene.setNodeMaterialOverride(heldNodeName, outlineVertPath, outlineFragPath, outlineParams)
+            end
             if setNodeGravityEnabled then
                 setNodeGravityEnabled(heldNodeName, false)
             end
@@ -241,5 +258,42 @@ function update(deltaTime)
 
     if setNodeVisible and gunLaserNodeName then
         setNodeVisible(gunLaserNodeName, grabHeld)
+    end
+
+    
+    if grabHeld and setBeamEndpoints and gunLaserNodeName then
+        local startX = rayOriginX
+        local startY = rayOriginY
+        local startZ = rayOriginZ
+        if localToWorldOffset then
+            local wx, wy, wz = localToWorldOffset(cameraName, beamOffsetRight, beamOffsetDown, beamOffsetForward)
+            startX = rayOriginX + wx
+            startY = rayOriginY + wy
+            startZ = rayOriginZ + wz
+        end
+        local endX, endY, endZ
+        local beamLength = maxGrabDistance
+        if heldNodeName then
+            local effectiveGrabDistance = currentGrabDistance
+            if physicsRaycastObstacle then
+                local obstacleDist = physicsRaycastObstacle(rayOriginX, rayOriginY, rayOriginZ, rayDirX, rayDirY, rayDirZ, maxGrabDistance, heldNodeName)
+                if obstacleDist and obstacleDist > 0 then
+                    local margin = 0.2
+                    effectiveGrabDistance = math.min(currentGrabDistance, math.max(0.5, obstacleDist - margin))
+                end
+            end
+            beamLength = effectiveGrabDistance
+        else
+            if physicsRaycastObstacle then
+                local obstacleDist = physicsRaycastObstacle(rayOriginX, rayOriginY, rayOriginZ, rayDirX, rayDirY, rayDirZ, maxGrabDistance, "")
+                if obstacleDist and obstacleDist > 0 then
+                    beamLength = obstacleDist
+                end
+            end
+        end
+        endX = rayOriginX + rayDirX * beamLength
+        endY = rayOriginY + rayDirY * beamLength
+        endZ = rayOriginZ + rayDirZ * beamLength
+        setBeamEndpoints(gunLaserNodeName, startX, startY, startZ, endX, endY, endZ)
     end
 end

@@ -5,6 +5,8 @@
 #include "Scene/SceneManager.h"
 #include "Scene/Scene.h"
 #include "Components/CameraComponent.h"
+#include "Components/MeshRenderer.h"
+#include "Rendering/Material.h"
 #include "Core/Engine.h"
 #include "Core/MenuManager.h"
 #include <iostream>
@@ -28,6 +30,39 @@ extern "C" {
 }
 
 namespace GameEngine {
+
+static void applyLuaTableToMaterial(Material* mat, lua_State* L, int tableIndex) {
+    if (!mat || !lua_istable(L, tableIndex)) return;
+    lua_pushnil(L);
+    while (lua_next(L, tableIndex) != 0) {
+        const char* key = lua_tostring(L, -2);
+        if (!key) { lua_pop(L, 1); continue; }
+        if (strcmp(key, "blendMode") == 0) {
+            const char* mode = lua_tostring(L, -1);
+            if (mode) {
+                if (strcmp(mode, "Alpha") == 0) mat->setBlendMode(BlendMode::Alpha);
+                else if (strcmp(mode, "Additive") == 0) mat->setBlendMode(BlendMode::Additive);
+                else mat->setBlendMode(BlendMode::Opaque);
+            }
+        } else if (strcmp(key, "depthWrite") == 0) {
+            mat->setDepthWrite(lua_toboolean(L, -1) != 0);
+        } else if (lua_isnumber(L, -1)) {
+            mat->setFloat(key, (float)lua_tonumber(L, -1));
+        } else if (lua_istable(L, -1)) {
+            int len = (int)lua_rawlen(L, -1);
+            float v[4] = {0, 0, 0, 0};
+            for (int i = 0; i < len && i < 4; i++) {
+                lua_rawgeti(L, -1, i + 1);
+                v[i] = (float)lua_tonumber(L, -1);
+                lua_pop(L, 1);
+            }
+            if (len == 2) mat->setVec2(key, glm::vec2(v[0], v[1]));
+            else if (len == 3) mat->setVec3(key, glm::vec3(v[0], v[1], v[2]));
+            else if (len >= 4) mat->setVec4(key, glm::vec4(v[0], v[1], v[2], v[3]));
+        }
+        lua_pop(L, 1);
+    }
+}
 
 std::unique_ptr<ScriptManager> ScriptManager::instance = nullptr;
 
@@ -782,6 +817,87 @@ void ScriptManager::bindSceneSystem() {
         lua_pushboolean(L, success);
         return 1;
     });
+    lua_settable(globalLuaState, -3);
+    
+    lua_pushstring(globalLuaState, "setNodeMaterialOverride");
+    lua_pushcclosure(globalLuaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        const char* vertexPath = luaL_optstring(L, 2, "");
+        const char* fragmentPath = luaL_optstring(L, 3, "");
+        if (!nodeName || !vertexPath || !fragmentPath) {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+        auto& engine = GetEngine();
+        auto activeScene = engine.getSceneManager().getCurrentScene();
+        if (!activeScene) { lua_pushboolean(L, false); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushboolean(L, false); return 1; }
+        std::shared_ptr<Material> overrideMat;
+        bool hasParams = lua_type(L, 4) == LUA_TTABLE;
+        if (hasParams) {
+            auto baseMat = engine.getOrCreateMaterialByShaderPaths(vertexPath, fragmentPath);
+            if (!baseMat || !baseMat->getShader()) { lua_pushboolean(L, false); return 1; }
+            overrideMat = std::make_shared<Material>(baseMat->getShader());
+            applyLuaTableToMaterial(overrideMat.get(), L, 4);
+        } else {
+            overrideMat = engine.getOrCreateMaterialByShaderPaths(vertexPath, fragmentPath);
+        }
+        if (!overrideMat) { lua_pushboolean(L, false); return 1; }
+        std::shared_ptr<SceneNode> root;
+        SceneNode* parentPtr = node->getParent();
+        if (parentPtr) {
+            root = activeScene->findNode(parentPtr->getName());
+            if (!root) root = node;
+        } else {
+            root = node;
+        }
+        int meshCount = 0;
+        std::function<void(SceneNode*)> visit = [&visit, &overrideMat, &meshCount](SceneNode* n) {
+            if (!n) return;
+            auto mr = n->getComponent<MeshRenderer>();
+            if (mr) { mr->setMaterialOverride(overrideMat); meshCount++; }
+            for (size_t i = 0; i < n->getChildCount(); ++i) {
+                auto ch = n->getChild(i);
+                if (ch) visit(ch.get());
+            }
+        };
+        visit(root.get());
+        lua_pushboolean(L, true);
+        return 1;
+    }, 0);
+    lua_settable(globalLuaState, -3);
+    
+    lua_pushstring(globalLuaState, "clearNodeMaterialOverride");
+    lua_pushcclosure(globalLuaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        if (!nodeName) { lua_pushboolean(L, false); return 1; }
+        auto activeScene = GetEngine().getSceneManager().getCurrentScene();
+        if (!activeScene) { lua_pushboolean(L, false); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushboolean(L, false); return 1; }
+        std::shared_ptr<SceneNode> root;
+        SceneNode* parentPtr = node->getParent();
+        if (parentPtr) {
+            root = activeScene->findNode(parentPtr->getName());
+            if (!root) root = node;
+        } else {
+            root = node;
+        }
+        int meshCount = 0;
+        std::function<void(SceneNode*)> visit = [&visit, &meshCount](SceneNode* n) {
+            if (!n) return;
+            auto mr = n->getComponent<MeshRenderer>();
+            if (mr) { mr->setMaterialOverride(nullptr); meshCount++; }
+            for (size_t i = 0; i < n->getChildCount(); ++i) {
+                auto ch = n->getChild(i);
+                if (ch) visit(ch.get());
+            }
+        };
+        visit(root.get());
+        lua_pushboolean(L, true);
+        return 1;
+    }, 0);
     lua_settable(globalLuaState, -3);
     
     lua_setglobal(globalLuaState, "scene");

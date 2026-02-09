@@ -3,11 +3,13 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <glm/glm.hpp>
 #include "Platform.h"
 #include "Platform/VitaMath.h"
 #include "Scene/SceneManager.h"
 #include "Rendering/Renderer.h"
+#include "Rendering/Material.h"
 #include "Input/InputManager.h"
 #include "Core/Time.h"
 #include "Core/MenuManager.h"
@@ -35,6 +37,7 @@ public:
     
     SceneManager& getSceneManager() { return *sceneManager; }
     Renderer& getRenderer(); // Moved to cpp file to handle initialization
+    std::shared_ptr<Material> getOrCreateMaterialByShaderPaths(const std::string& vertexPath, const std::string& fragmentPath);
     InputManager& getInputManager() { return *inputManager; }
     Time& getTime() { return *timeSystem; }
     PhysicsManager& getPhysicsManager() { return PhysicsManager::getInstance(); }
@@ -58,6 +61,7 @@ private:
     std::unique_ptr<Renderer> renderer;
     std::unique_ptr<InputManager> inputManager;
     std::unique_ptr<Time> timeSystem;
+    std::unordered_map<std::string, std::shared_ptr<Material>> materialCacheByShaderPaths;
     
 #ifdef EDITOR_BUILD
     std::unique_ptr<EditorSystem> editor;

@@ -22,6 +22,10 @@ struct RenderCommand {
     glm::mat3 normalMatrix;
     std::vector<glm::mat4> boneTransforms;
     bool disableCulling = false;
+    bool isBeam = false;
+    glm::vec3 beamStart{0.0f};
+    glm::vec3 beamEnd{0.0f, 0.0f, -1.0f};
+    float beamHalfWidth = 0.04f;
 };
 
 class Renderer {

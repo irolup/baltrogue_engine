@@ -4,6 +4,8 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
+#include <vector>
+#include <utility>
 #include <glm/glm.hpp>
 #include "Platform.h"
 
@@ -58,6 +60,9 @@ public:
     BlendMode getBlendMode() const { return blendMode; }
     void setBlendMode(BlendMode mode) { blendMode = mode; }
     
+    bool getDepthWrite() const { return depthWrite; }
+    void setDepthWrite(bool write) { depthWrite = write; }
+    
     std::shared_ptr<Texture> getDiffuseTexture() const { return diffuseTexture; }
     void setDiffuseTexture(std::shared_ptr<Texture> texture, const std::string& path = "");
     
@@ -80,7 +85,6 @@ public:
     bool hasNormalTexture() const { return normalTexture != nullptr; }
     bool hasARMTexture() const { return armTexture != nullptr; }
     
-    // Custom shader support
     void setShaderFromPaths(const std::string& vertexPath, const std::string& fragmentPath);
     void setShaderFromPathsForPlatform(const std::string& vertexPath, const std::string& fragmentPath, const std::string& platform);
     
@@ -94,6 +98,12 @@ public:
 
     bool isUsingCustomShader() const;
     void useDefaultLitShader();
+    
+    using CustomTextureUniform = std::pair<std::string, std::string>;
+    const std::vector<CustomTextureUniform>& getCustomTextureUniforms() const { return customTextureUniforms; }
+    void addCustomTextureUniform(const std::string& uniformName, const std::string& texturePath);
+    void removeCustomTextureUniform(const std::string& uniformName);
+    void setCustomTextureUniformPath(const std::string& uniformName, const std::string& texturePath);
     
     void drawInspector();
     
@@ -121,6 +131,7 @@ private:
     float roughness;
     float reflectionStrength;
     BlendMode blendMode;
+    bool depthWrite = true;
     
     std::shared_ptr<Texture> diffuseTexture;
     std::shared_ptr<Texture> normalTexture;
@@ -134,6 +145,8 @@ private:
     std::string shaderFragmentPathLinux;
     std::string shaderVertexPathVita;
     std::string shaderFragmentPathVita;
+    
+    std::vector<CustomTextureUniform> customTextureUniforms;
     
     void applyProperties() const;
 };

@@ -1,6 +1,8 @@
 #include "Core/Engine.h"
 #include "Scene/SceneManager.h"
 #include "Rendering/Renderer.h"
+#include "Rendering/Material.h"
+#include "Rendering/Shader.h"
 #include "Input/InputManager.h"
 #include "Core/Time.h"
 #include "Core/MenuManager.h"
@@ -167,6 +169,22 @@ Renderer& Engine::getRenderer() {
         }
     }
     return *renderer;
+}
+
+std::shared_ptr<Material> Engine::getOrCreateMaterialByShaderPaths(const std::string& vertexPath, const std::string& fragmentPath) {
+    if (vertexPath.empty() || fragmentPath.empty()) return nullptr;
+    std::string key = vertexPath + "|" + fragmentPath;
+    auto it = materialCacheByShaderPaths.find(key);
+    if (it != materialCacheByShaderPaths.end()) return it->second;
+    auto mat = std::make_shared<Material>();
+#ifdef LINUX_BUILD
+    mat->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "linux");
+#else
+    mat->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "vita");
+#endif
+    if (!mat->getShader() || !mat->getShader()->isValid()) return nullptr;
+    materialCacheByShaderPaths[key] = mat;
+    return mat;
 }
 
 void Engine::update() {

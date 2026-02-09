@@ -8,6 +8,9 @@
 #include "Components/AnimationComponent.h"
 #include "Components/SoundComponent.h"
 #include "Components/SkyboxComponent.h"
+#include "Components/BeamRenderer.h"
+#include "Components/MeshRenderer.h"
+#include "Rendering/Material.h"
 #include "Rendering/AnimationManager.h"
 #include "Scene/SceneNode.h"
 #include "Input/InputManager.h"
@@ -2353,6 +2356,64 @@ void ScriptComponent::bindCommonFunctions() {
     });
     lua_setglobal(luaState, "setNodeVisible");
     
+    // setBeamEndpoints(nodeName, startX, startY, startZ, endX, endY, endZ) - for BeamRenderer (Garry's Mod-style beam)
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float sx = luaL_checknumber(L, 2);
+        float sy = luaL_checknumber(L, 3);
+        float sz = luaL_checknumber(L, 4);
+        float ex = luaL_checknumber(L, 5);
+        float ey = luaL_checknumber(L, 6);
+        float ez = luaL_checknumber(L, 7);
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    BeamRenderer* beam = node->getComponent<BeamRenderer>();
+                    if (beam) {
+                        beam->setBeamStart(glm::vec3(sx, sy, sz));
+                        beam->setBeamEnd(glm::vec3(ex, ey, ez));
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {}
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "setBeamEndpoints");
+    
+    // setBeamWidth(nodeName, width)
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float width = luaL_checknumber(L, 2);
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    BeamRenderer* beam = node->getComponent<BeamRenderer>();
+                    if (beam) {
+                        beam->setBeamWidth(width);
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {}
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "setBeamWidth");
+    
     // Get node visibility function - checks if a node is visible
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         const char* nodeName = luaL_checkstring(L, 1);
@@ -3180,6 +3241,41 @@ void ScriptComponent::bindArea3DToLua() {
     // Area3D system bound successfully
 }
 
+namespace {
+void applyLuaTableToMaterial(GameEngine::Material* mat, lua_State* L, int tableIndex) {
+    if (!mat || !lua_istable(L, tableIndex)) return;
+    lua_pushnil(L);
+    while (lua_next(L, tableIndex) != 0) {
+        const char* key = lua_tostring(L, -2);
+        if (!key) { lua_pop(L, 1); continue; }
+        if (strcmp(key, "blendMode") == 0) {
+            const char* mode = lua_tostring(L, -1);
+            if (mode) {
+                if (strcmp(mode, "Alpha") == 0) mat->setBlendMode(GameEngine::BlendMode::Alpha);
+                else if (strcmp(mode, "Additive") == 0) mat->setBlendMode(GameEngine::BlendMode::Additive);
+                else mat->setBlendMode(GameEngine::BlendMode::Opaque);
+            }
+        } else if (strcmp(key, "depthWrite") == 0) {
+            mat->setDepthWrite(lua_toboolean(L, -1) != 0);
+        } else if (lua_isnumber(L, -1)) {
+            mat->setFloat(key, (float)lua_tonumber(L, -1));
+        } else if (lua_istable(L, -1)) {
+            int len = (int)lua_rawlen(L, -1);
+            float v[4] = {0, 0, 0, 0};
+            for (int i = 0; i < len && i < 4; i++) {
+                lua_rawgeti(L, -1, i + 1);
+                v[i] = (float)lua_tonumber(L, -1);
+                lua_pop(L, 1);
+            }
+            if (len == 2) mat->setVec2(key, glm::vec2(v[0], v[1]));
+            else if (len == 3) mat->setVec3(key, glm::vec3(v[0], v[1], v[2]));
+            else if (len >= 4) mat->setVec4(key, glm::vec4(v[0], v[1], v[2], v[3]));
+        }
+        lua_pop(L, 1);
+    }
+}
+}
+
 void ScriptComponent::bindSceneToLua() {
     if (!luaState) {
         return;
@@ -3227,6 +3323,82 @@ void ScriptComponent::bindSceneToLua() {
         lua_pushboolean(L, success);
         return 1;
     });
+    lua_settable(luaState, -3);
+    
+    lua_pushstring(luaState, "setNodeMaterialOverride");
+    lua_pushcclosure(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        const char* vertexPath = luaL_optstring(L, 2, "");
+        const char* fragmentPath = luaL_optstring(L, 3, "");
+        if (!nodeName || !vertexPath || !fragmentPath) { lua_pushboolean(L, false); return 1; }
+        auto& engine = GameEngine::GetEngine();
+        auto activeScene = engine.getSceneManager().getCurrentScene();
+        if (!activeScene) { lua_pushboolean(L, false); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushboolean(L, false); return 1; }
+        std::shared_ptr<GameEngine::Material> overrideMat;
+        bool hasParams = lua_type(L, 4) == LUA_TTABLE;
+        if (hasParams) {
+            auto baseMat = engine.getOrCreateMaterialByShaderPaths(vertexPath, fragmentPath);
+            if (!baseMat || !baseMat->getShader()) { lua_pushboolean(L, false); return 1; }
+            overrideMat = std::make_shared<GameEngine::Material>(baseMat->getShader());
+            applyLuaTableToMaterial(overrideMat.get(), L, 4);
+        } else {
+            overrideMat = engine.getOrCreateMaterialByShaderPaths(vertexPath, fragmentPath);
+        }
+        if (!overrideMat) { lua_pushboolean(L, false); return 1; }
+        std::shared_ptr<GameEngine::SceneNode> root;
+        GameEngine::SceneNode* parentPtr = node->getParent();
+        if (parentPtr) {
+            root = activeScene->findNode(parentPtr->getName());
+            if (!root) root = node;
+        } else {
+            root = node;
+        }
+        std::function<void(GameEngine::SceneNode*)> visit = [&visit, &overrideMat](GameEngine::SceneNode* n) {
+            if (!n) return;
+            auto mr = n->getComponent<GameEngine::MeshRenderer>();
+            if (mr) mr->setMaterialOverride(overrideMat);
+            for (size_t i = 0; i < n->getChildCount(); ++i) {
+                auto ch = n->getChild(i);
+                if (ch) visit(ch.get());
+            }
+        };
+        visit(root.get());
+        lua_pushboolean(L, true);
+        return 1;
+    }, 0);
+    lua_settable(luaState, -3);
+    
+    lua_pushstring(luaState, "clearNodeMaterialOverride");
+    lua_pushcclosure(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        if (!nodeName) { lua_pushboolean(L, false); return 1; }
+        auto activeScene = GameEngine::GetEngine().getSceneManager().getCurrentScene();
+        if (!activeScene) { lua_pushboolean(L, false); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushboolean(L, false); return 1; }
+        std::shared_ptr<GameEngine::SceneNode> root;
+        GameEngine::SceneNode* parentPtr = node->getParent();
+        if (parentPtr) {
+            root = activeScene->findNode(parentPtr->getName());
+            if (!root) root = node;
+        } else {
+            root = node;
+        }
+        std::function<void(GameEngine::SceneNode*)> visit = [&visit](GameEngine::SceneNode* n) {
+            if (!n) return;
+            auto mr = n->getComponent<GameEngine::MeshRenderer>();
+            if (mr) mr->setMaterialOverride(nullptr);
+            for (size_t i = 0; i < n->getChildCount(); ++i) {
+                auto ch = n->getChild(i);
+                if (ch) visit(ch.get());
+            }
+        };
+        visit(root.get());
+        lua_pushboolean(L, true);
+        return 1;
+    }, 0);
     lua_settable(luaState, -3);
     
     lua_setglobal(luaState, "scene");

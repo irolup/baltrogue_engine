@@ -9,6 +9,7 @@
 #include <btBulletCollisionCommon.h>
 #include <BulletCollision/CollisionDispatch/btCollisionWorld.h>
 #include <BulletCollision/CollisionDispatch/btCollisionObject.h>
+#include <BulletCollision/BroadphaseCollision/btBroadphaseProxy.h>
 #include <BulletCollision/CollisionDispatch/btGhostObject.h>
 #include "BulletDynamics/ConstraintSolver/btSequentialImpulseConstraintSolverMt.h"
 #include "BulletCollision/CollisionDispatch/btCollisionDispatcherMt.h"
@@ -283,21 +284,6 @@ void PhysicsManager::unregisterPhysicsComponent(PhysicsComponent* component) {
 void PhysicsManager::cleanupPhysicsObjects() {
 }
 
-// Raycast callback that only accepts dynamic rigidbodies.
-struct DynamicOnlyRayResultCallback : public btCollisionWorld::ClosestRayResultCallback {
-    DynamicOnlyRayResultCallback(const btVector3& rayFromWorld, const btVector3& rayToWorld)
-        : ClosestRayResultCallback(rayFromWorld, rayToWorld) {}
-    virtual btScalar addSingleResult(btCollisionWorld::LocalRayResult& rayResult, bool normalInWorldSpace) override {
-        const btCollisionObject* obj = rayResult.m_collisionObject;
-        btRigidBody* body = btRigidBody::upcast(const_cast<btCollisionObject*>(obj));
-        if (!body || body->isKinematicObject() || body->isStaticObject() || !obj->getUserPointer()) return btScalar(2.0);
-        PhysicsComponent* comp = static_cast<PhysicsComponent*>(obj->getUserPointer());
-        if (!comp || !comp->getOwner() || comp->getBodyType() != PhysicsBodyType::DYNAMIC)
-            return btScalar(2.0);
-        return ClosestRayResultCallback::addSingleResult(rayResult, normalInWorldSpace);
-    }
-};
-
 // Raycast against all rigid bodies (static + dynamic) to find obstacle distance; optionally exclude one node (e.g. held object). Ignores ghost/trigger objects.
 struct AllCollidersRayResultCallback : public btCollisionWorld::ClosestRayResultCallback {
     std::string excludeNodeName;
@@ -328,13 +314,17 @@ void PhysicsManager::raycast(const glm::vec3& origin, const glm::vec3& direction
     dir /= len;
     btVector3 rayFrom(origin.x, origin.y, origin.z);
     btVector3 rayTo(origin.x + dir.x * maxDistance, origin.y + dir.y * maxDistance, origin.z + dir.z * maxDistance);
-    DynamicOnlyRayResultCallback callback(rayFrom, rayTo);
+    AllCollidersRayResultCallback callback(rayFrom, rayTo, "");
+    callback.m_collisionFilterGroup = btBroadphaseProxy::AllFilter;
+    callback.m_collisionFilterMask = btBroadphaseProxy::AllFilter;
     dynamicsWorld->rayTest(rayFrom, rayTo, callback);
     if (!callback.hasHit()) return;
     const btCollisionObject* obj = callback.m_collisionObject;
     if (!obj || !obj->getUserPointer()) return;
+    btRigidBody* body = btRigidBody::upcast(const_cast<btCollisionObject*>(obj));
+    if (!body || body->isKinematicObject() || body->isStaticObject()) return;
     PhysicsComponent* comp = static_cast<PhysicsComponent*>(obj->getUserPointer());
-    if (!comp || !comp->getOwner()) return;
+    if (!comp || !comp->getOwner() || comp->getBodyType() != PhysicsBodyType::DYNAMIC) return;
     hitNodeName = comp->getOwner()->getName();
     hitPoint.x = callback.m_hitPointWorld.x();
     hitPoint.y = callback.m_hitPointWorld.y();
@@ -352,6 +342,8 @@ float PhysicsManager::raycastClosestObstacle(const glm::vec3& origin, const glm:
     btVector3 rayFrom(origin.x, origin.y, origin.z);
     btVector3 rayTo(origin.x + dir.x * maxDistance, origin.y + dir.y * maxDistance, origin.z + dir.z * maxDistance);
     AllCollidersRayResultCallback callback(rayFrom, rayTo, excludeNodeName);
+    callback.m_collisionFilterGroup = btBroadphaseProxy::AllFilter;
+    callback.m_collisionFilterMask = btBroadphaseProxy::AllFilter;
     dynamicsWorld->rayTest(rayFrom, rayTo, callback);
     if (!callback.hasHit()) return -1.0f;
     return callback.m_closestHitFraction * maxDistance;

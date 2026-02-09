@@ -121,14 +121,19 @@
         // Set key callback
         glfwSetKeyCallback(window, keyCallback);
         
+        glfwSetFramebufferSizeCallback(window, [](GLFWwindow*, int width, int height) {
+            glViewport(0, 0, width, height);
+        });
+        
         // Initialize GLEW
         if (glewInit() != GLEW_OK) {
             glfwTerminate();
             return false;
         }
         
-        // Set viewport
-        glViewport(0, 0, VITA_WIDTH, VITA_HEIGHT);
+        int fbWidth, fbHeight;
+        glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+        glViewport(0, 0, fbWidth, fbHeight);
         
         return true;
     }
