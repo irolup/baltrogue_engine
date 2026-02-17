@@ -344,9 +344,10 @@ void AnimationComponent::updateBoneTransforms() {
             }
         }
         if ((int)i == rootIndex && !enableRootMotion) {
-            localTransform[3][0] = 0.0f;
-            localTransform[3][1] = 0.0f;
-            localTransform[3][2] = 0.0f;
+            const glm::mat4& rootBind = bones[rootIndex].bindPose;
+            localTransform[3][0] = rootBind[3][0];
+            localTransform[3][1] = rootBind[3][1];
+            localTransform[3][2] = rootBind[3][2];
         }
 
         localBoneTransforms[i] = localTransform;

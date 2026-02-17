@@ -45,6 +45,7 @@ public:
     
     void setCollisionShape(CollisionShapeType shapeType, const glm::vec3& dimensions = glm::vec3(1.0f));
     CollisionShapeType getCollisionShapeType() const { return collisionShapeType; }
+    glm::vec3 getShapeDimensions() const { return shapeDimensions; }
     
     void setBodyType(PhysicsBodyType type);
     PhysicsBodyType getBodyType() const { return bodyType; }

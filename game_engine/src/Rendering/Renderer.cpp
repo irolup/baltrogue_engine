@@ -11,6 +11,7 @@
 #include "Rendering/Texture.h"
 #include "Rendering/LightingManager.h"
 #include "Rendering/Material.h"
+#include "Physics/PhysicsManager.h"
 #include "Core/Engine.h"
 #include <algorithm>
 #include <iostream>
@@ -82,6 +83,38 @@ void Renderer::renderScene(Scene& scene) {
     
     renderSkybox(scene);
     processRenderQueue();
+    
+    // In-game collision shape debug draw with lua
+    if (PhysicsManager::getInstance().isDebugDrawEnabled() && activeCamera) {
+        glm::mat4 viewMat = activeCamera->getViewMatrix();
+        glm::mat4 projMat = activeCamera->getProjectionMatrix();
+        auto debugMaterial = std::make_shared<Material>();
+        debugMaterial->setColor(glm::vec3(0.0f, 1.0f, 0.0f));
+        auto debugShader = std::make_shared<Shader>();
+        const char* vertexSource = "#version 330 core\n"
+            "layout (location = 0) in vec3 aPos;\n"
+            "uniform mat4 modelMatrix;\n"
+            "uniform mat4 viewMatrix;\n"
+            "uniform mat4 projectionMatrix;\n"
+            "void main() { gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(aPos, 1.0); }\n";
+        const char* fragmentSource = "#version 330 core\n"
+            "out vec4 FragColor;\n"
+            "uniform vec3 u_Color;\n"
+            "void main() { FragColor = vec4(u_Color, 1.0); }\n";
+        if (debugShader->loadFromSource(vertexSource, fragmentSource)) {
+            debugMaterial->setShader(debugShader);
+            debugMaterial->setColor(glm::vec3(0.0f, 1.0f, 0.0f));
+            GLint savedPolygonMode[2];
+            glGetIntegerv(GL_POLYGON_MODE, savedPolygonMode);
+            GLboolean savedDepthTest;
+            glGetBooleanv(GL_DEPTH_TEST, &savedDepthTest);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glDisable(GL_DEPTH_TEST);
+            PhysicsManager::getInstance().renderDebugShapes(*debugMaterial, viewMat, projMat);
+            glPolygonMode(GL_FRONT_AND_BACK, savedPolygonMode[0]);
+            if (savedDepthTest) glEnable(GL_DEPTH_TEST);
+        }
+    }
     
     currentScene = nullptr;
     

@@ -70,3 +70,4 @@ action:PhysicsRotate,VITA,1,512,1,0.1,1,-1,0
 action:RespawnBall,PC,0,77,0,0.1,1,-1,0
 action:Embark,PC,0,69,0,0.1,1,-1,0
 action:Embark,VITA,1,2048,0,0.1,1,-1,0
+action:Debug,PC,0,49,0,0.1,1,-1,0

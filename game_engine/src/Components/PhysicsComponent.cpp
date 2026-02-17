@@ -352,8 +352,13 @@ void PhysicsComponent::syncTransformFromPhysics() {
             
             if (owner->getParent()) {
                 if (bodyType == PhysicsBodyType::DYNAMIC) {
-                    auto& parentTransform = owner->getParent()->getTransform();
-                    parentTransform.setPosition(physicsWorldPos);
+                    auto* parent = owner->getParent();
+                    auto& parentTransform = parent->getTransform();
+                    glm::vec3 ownerLocalPos = owner->getTransform().getPosition();
+                    glm::quat parentRot = parentTransform.getRotation();
+                    glm::vec3 scale = parentTransform.getScale();
+                    glm::vec3 ownerOffsetWorld = parentRot * (ownerLocalPos * scale);
+                    parentTransform.setPosition(physicsWorldPos - ownerOffsetWorld);
                     if (!rotationLocked) {
                         parentTransform.setRotation(physicsWorldRot);
                     }

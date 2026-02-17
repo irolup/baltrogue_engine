@@ -2,6 +2,7 @@
 #include "Rendering/Renderer.h"
 #include "Rendering/TextureManager.h"
 #include "Rendering/AnimationManager.h"
+#include "Rendering/Skeleton.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Scene/SceneNode.h"
@@ -10,6 +11,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <set>
+#include <functional>
 #include <unordered_map>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -64,8 +66,14 @@ void ModelRenderer::render(Renderer& renderer) {
     }
     
     std::vector<glm::mat4> boneTransforms;
-    if (animComp) {
+    if (animComp && animComp->isPlaying()) {
         boneTransforms = animComp->getBoneTransforms();
+    }
+    if (boneTransforms.empty()) {
+        boneTransforms = getBindPoseBoneTransforms();
+    }
+    if (boneTransforms.empty()) {
+        boneTransforms.push_back(glm::mat4(1.0f));
     }
     
     // Render each mesh in the model
@@ -855,6 +863,48 @@ std::string ModelRenderer::getFileExtension(const std::string& filepath) {
         return filepath.substr(dotPos);
     }
     return "";
+}
+
+std::vector<glm::mat4> ModelRenderer::getBindPoseBoneTransforms() const {
+    std::vector<glm::mat4> out;
+    if (!modelData.isLoaded || modelData.modelName.empty()) return out;
+    auto& animManager = AnimationManager::getInstance();
+    std::shared_ptr<Skeleton> skeleton;
+    std::string nameWithExt = modelData.modelName + "_Skeleton_0";
+    std::string nameNoExt = modelData.modelName;
+    size_t dot = nameNoExt.find_last_of('.');
+    if (dot != std::string::npos) nameNoExt = nameNoExt.substr(0, dot);
+    nameNoExt += "_Skeleton_0";
+    std::string baseName = modelData.modelName;
+    if (dot != std::string::npos) baseName = modelData.modelName.substr(0, dot);
+    skeleton = animManager.getSkeleton(nameWithExt);
+    if (!skeleton) skeleton = animManager.getSkeleton(nameNoExt);
+    if (!skeleton) skeleton = animManager.getSkeleton(modelData.modelName);
+    if (!skeleton) {
+        for (const std::string& candidate : animManager.getAvailableSkeletons()) {
+            if (candidate.find(baseName) != std::string::npos) {
+                skeleton = animManager.getSkeleton(candidate);
+                if (skeleton) break;
+            }
+        }
+    }
+    if (!skeleton) return out;
+    const auto& bones = skeleton->getBones();
+    if (bones.empty()) return out;
+    out.resize(bones.size());
+    std::vector<glm::mat4> worldBindPose(bones.size());
+    int rootIndex = skeleton->getRootBoneIndex();
+    if (rootIndex < 0) return out;
+    std::function<void(int, const glm::mat4&)> bindPoseHierarchy = [&](int boneIndex, const glm::mat4& parentWorld) {
+        if (boneIndex < 0 || boneIndex >= static_cast<int>(bones.size())) return;
+        worldBindPose[boneIndex] = parentWorld * bones[boneIndex].bindPose;
+        out[boneIndex] = worldBindPose[boneIndex] * bones[boneIndex].inverseBindPose;
+        for (int childIndex : skeleton->getChildBones(boneIndex)) {
+            bindPoseHierarchy(childIndex, worldBindPose[boneIndex]);
+        }
+    };
+    bindPoseHierarchy(rootIndex, glm::mat4(1.0f));
+    return out;
 }
 
 std::string ModelRenderer::getFileName(const std::string& filepath) {

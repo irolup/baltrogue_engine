@@ -26,7 +26,8 @@ local jumpForce = 8.0
 local jumpCooldown = 0.1
 local lastJumpTime = 0
 local boardHeightCarry = 0.45
-local boardHeightRiding = -0.7
+-- Offset Y skate sous le joueur quand on embarque (éditeur: Player y=-1.445, SnowskateRoot y=-2.38 → -2.38 - (-1.445) = -0.935)
+local boardHeightRiding = -0.935
 local boardGlideDamping = 0.992
 local boardFollowLerp = 1.0
 local boardHeightLerp = 0.2
@@ -36,6 +37,7 @@ local snowskateHUDNodeName = "SnowskateHUD"
 local isRiding = false
 local currentBoardHeightOffset = 0.45
 local embarkCooldown = 0.0
+local debugDrawToggleCooldown = 0.0
 local currentDisplaySpeed = 0.0
 
 function start()
@@ -66,6 +68,7 @@ function start()
             animation.play(playerModelNodeName)
         end
     end
+    print("[Snowskate] Touche 1 = afficher/cacher les collision shapes (action Debug)")
 end
 
 function update(deltaTime)
@@ -81,11 +84,20 @@ function update(deltaTime)
     if embarkCooldown > 0 then
         embarkCooldown = embarkCooldown - deltaTime
     end
+    if debugDrawToggleCooldown > 0 then
+        debugDrawToggleCooldown = debugDrawToggleCooldown - deltaTime
+    end
 
     local embarkPressed = (input.isActionPressed and (input.isActionPressed("Embark") or input.isActionPressed("Interact")))
     if embarkPressed and embarkCooldown <= 0 then
         isRiding = not isRiding
         embarkCooldown = 0.5
+    end
+
+    if debugDrawToggleCooldown <= 0 and setPhysicsDebugDrawEnabled and getPhysicsDebugDrawEnabled and input and input.isActionPressed and input.isActionPressed("Debug") then
+        local newState = not getPhysicsDebugDrawEnabled()
+        setPhysicsDebugDrawEnabled(newState)
+        debugDrawToggleCooldown = 0.3
     end
 
     local moveH = input.getActionAxis("MoveHorizontal")
@@ -200,12 +212,13 @@ function update(deltaTime)
     end
 
     if setNodeRotation then
-        setNodeRotation(snowskateRootName, 0, currentPlayerYaw + 90, 0)
+        setNodeRotation(snowskateRootName, 0, currentPlayerYaw, 0)
     end
 
     if renderer and renderer.setText and snowskateHUDNodeName then
         local mode = isRiding and "BOARD (glide, no jump)" or "ON FOOT (walk, run, jump)"
-        renderer.setText(snowskateHUDNodeName, mode .. "  |  E: embark  |  speed: " .. string.format("%.1f", currentDisplaySpeed))
+        local collisionHint = (getPhysicsDebugDrawEnabled and getPhysicsDebugDrawEnabled() and "  |  Collision shapes ON (Debug)") or ""
+        renderer.setText(snowskateHUDNodeName, mode .. "  |  E: embark  |  speed: " .. string.format("%.1f", currentDisplaySpeed) .. collisionHint)
     end
 
     if px and py and pz then

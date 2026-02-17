@@ -75,6 +75,8 @@ private:
     bool loadBinaryModel(const std::string& modelPath);
     bool saveBinaryModel(const std::string& modelPath);
     
+    std::vector<glm::mat4> getBindPoseBoneTransforms() const;
+    
     static std::string getFileExtension(const std::string& filepath);
     static std::string getFileName(const std::string& filepath);
     

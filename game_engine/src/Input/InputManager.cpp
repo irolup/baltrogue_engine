@@ -187,6 +187,7 @@ void InputManager::updateKeyboardInput() {
         GLFW_KEY_R,
         GLFW_KEY_E,
         GLFW_KEY_M,
+        GLFW_KEY_1,
     };
     
     for (int key : keys) {

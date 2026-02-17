@@ -15,104 +15,6 @@
                 "material": {
                   "blendMode": "Opaque",
                   "color": [
-                    1.0,
-                    0.5,
-                    0.20000000298023224
-                  ],
-                  "metallic": 0.0,
-                  "reflectionStrength": 0.0,
-                  "roughness": 0.5
-                },
-                "meshType": "CUBE",
-                "type": "MeshRenderer"
-              }
-            ],
-            "name": "GroundMesh",
-            "transform": {
-              "position": [
-                0.0,
-                0.0,
-                0.0
-              ],
-              "rotation": [
-                0.0,
-                -0.0,
-                0.0
-              ],
-              "scale": [
-                1.0,
-                1.0,
-                1.0
-              ]
-            },
-            "visible": true
-          },
-          {
-            "active": true,
-            "components": [
-              {
-                "angularDamping": 0.0,
-                "bodyType": "STATIC",
-                "collisionShapeType": "BOX",
-                "friction": 0.5,
-                "linearDamping": 0.0,
-                "mass": 0.0,
-                "restitution": 0.0,
-                "showCollisionShape": false,
-                "type": "PhysicsComponent"
-              }
-            ],
-            "name": "GroundCollision",
-            "transform": {
-              "position": [
-                0.0,
-                0.5,
-                0.0
-              ],
-              "rotation": [
-                0.0,
-                -0.0,
-                0.0
-              ],
-              "scale": [
-                1.0,
-                1.0,
-                1.0
-              ]
-            },
-            "visible": true
-          }
-        ],
-        "name": "GroundRoot",
-        "transform": {
-          "position": [
-            0.0,
-            -3.299999952316284,
-            0.0
-          ],
-          "rotation": [
-            0.0,
-            -0.0,
-            0.0
-          ],
-          "scale": [
-            20.0,
-            1.0,
-            30.0
-          ]
-        },
-        "visible": true
-      },
-      {
-        "active": true,
-        "children": [
-          {
-            "active": true,
-            "components": [
-              {
-                "material": {
-                  "blendMode": "Opaque",
-                  "color": [
                     0.6000000238418579,
                     0.5,
                     0.4000000059604645
@@ -156,6 +58,11 @@
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -275,6 +182,11 @@
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -292,9 +204,9 @@
                 0.0
               ],
               "scale": [
-                0.800000011920929,
+                0.4000000059604645,
                 0.10000000149011612,
-                0.4000000059604645
+                0.800000011920929
               ]
             },
             "visible": true
@@ -355,9 +267,9 @@
                 0.0
               ],
               "scale": [
-                0.800000011920929,
+                0.4000000059604645,
                 0.10000000149011612,
-                0.4000000059604645
+                0.800000011920929
               ]
             },
             "visible": true
@@ -367,7 +279,7 @@
         "transform": {
           "position": [
             0.0,
-            1.0024524927139282,
+            -2.380000114440918,
             6.900000095367432
           ],
           "rotation": [
@@ -399,6 +311,11 @@
                 "linearDamping": 0.0,
                 "mass": 1.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -705,7 +622,7 @@
             "transform": {
               "position": [
                 0.0,
-                0.0,
+                -0.8700000047683716,
                 0.0
               ],
               "rotation": [
@@ -934,6 +851,11 @@
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -973,7 +895,7 @@
           ],
           "scale": [
             20.0,
-            1.5,
+            2.0,
             1.0
           ]
         },
@@ -1032,6 +954,11 @@
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -1071,7 +998,7 @@
           ],
           "scale": [
             20.0,
-            1.5,
+            2.0,
             1.0
           ]
         },
@@ -1130,6 +1057,11 @@
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -1169,7 +1101,7 @@
           ],
           "scale": [
             1.0,
-            1.5,
+            2.0,
             30.0
           ]
         },
@@ -1228,6 +1160,11 @@
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -1267,7 +1204,7 @@
           ],
           "scale": [
             1.0,
-            1.5,
+            2.0,
             30.0
           ]
         },
@@ -1303,6 +1240,109 @@
             1.0,
             1.0,
             1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "CubeMesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "STATIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.5,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "BoxCollision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "GroundRoot",
+        "transform": {
+          "position": [
+            0.0,
+            -3.5,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            20.0,
+            1.0,
+            30.0
           ]
         },
         "visible": true

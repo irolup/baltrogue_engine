@@ -1826,6 +1826,19 @@ void ScriptComponent::bindCommonFunctions() {
     });
     lua_setglobal(luaState, "setNodeGravityEnabled");
     
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        int enabled = lua_toboolean(L, 1);
+        PhysicsManager::getInstance().setDebugDrawEnabled(enabled != 0);
+        return 0;
+    });
+    lua_setglobal(luaState, "setPhysicsDebugDrawEnabled");
+    
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        lua_pushboolean(L, PhysicsManager::getInstance().isDebugDrawEnabled() ? 1 : 0);
+        return 1;
+    });
+    lua_setglobal(luaState, "getPhysicsDebugDrawEnabled");
+    
     // Push node's current world transform to its PhysicsComponent.
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         const char* nodeName = luaL_checkstring(L, 1);

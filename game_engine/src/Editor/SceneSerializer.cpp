@@ -2044,6 +2044,8 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             case CollisionShapeType::PLANE: shapeType = "PLANE"; break;
                         }
                         componentJson["collisionShapeType"] = shapeType;
+                        glm::vec3 dims = physicsComp->getShapeDimensions();
+                        componentJson["shapeDimensions"] = {dims.x, dims.y, dims.z};
                         
                         // Body type
                         std::string bodyType = "STATIC";
@@ -2551,16 +2553,21 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     
                     if (componentJson.contains("collisionShapeType")) {
                         std::string shapeType = componentJson["collisionShapeType"];
+                        glm::vec3 dims(1.0f);
+                        if (componentJson.contains("shapeDimensions") && componentJson["shapeDimensions"].is_array() && componentJson["shapeDimensions"].size() >= 3) {
+                            auto& sd = componentJson["shapeDimensions"];
+                            dims = glm::vec3(sd[0], sd[1], sd[2]);
+                        }
                         if (shapeType == "BOX") {
-                            physicsComp->setCollisionShape(CollisionShapeType::BOX);
+                            physicsComp->setCollisionShape(CollisionShapeType::BOX, dims);
                         } else if (shapeType == "SPHERE") {
-                            physicsComp->setCollisionShape(CollisionShapeType::SPHERE);
+                            physicsComp->setCollisionShape(CollisionShapeType::SPHERE, dims);
                         } else if (shapeType == "CAPSULE") {
-                            physicsComp->setCollisionShape(CollisionShapeType::CAPSULE);
+                            physicsComp->setCollisionShape(CollisionShapeType::CAPSULE, dims);
                         } else if (shapeType == "CYLINDER") {
-                            physicsComp->setCollisionShape(CollisionShapeType::CYLINDER);
+                            physicsComp->setCollisionShape(CollisionShapeType::CYLINDER, dims);
                         } else if (shapeType == "PLANE") {
-                            physicsComp->setCollisionShape(CollisionShapeType::PLANE);
+                            physicsComp->setCollisionShape(CollisionShapeType::PLANE, dims);
                         }
                     }
                     
