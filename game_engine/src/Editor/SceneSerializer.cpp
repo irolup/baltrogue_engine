@@ -13,6 +13,7 @@
 #include "Components/AnimationComponent.h"
 #include "Components/SoundComponent.h"
 #include "Components/SkyboxComponent.h"
+#include "Components/JointComponent.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Rendering/Shader.h"
@@ -2052,6 +2053,11 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             case PhysicsBodyType::KINEMATIC: bodyType = "KINEMATIC"; break;
                         }
                         componentJson["bodyType"] = bodyType;
+                        
+                        if (physicsComp->getCollisionFilterGroup() != -1)
+                            componentJson["collisionGroup"] = physicsComp->getCollisionFilterGroup();
+                        if (physicsComp->getCollisionFilterMask() != -1)
+                            componentJson["collisionMask"] = physicsComp->getCollisionFilterMask();
                     }
                 } else if (component->getTypeName() == "TextComponent") {
                     auto textComp = node->getComponent<TextComponent>();
@@ -2165,6 +2171,18 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             componentJson["frontTexture"] = texturePaths[4];
                             componentJson["backTexture"] = texturePaths[5];
                         }
+                    }
+                } else if (component->getTypeName() == "JointComponent") {
+                    auto jointComp = node->getComponent<JointComponent>();
+                    if (jointComp) {
+                        componentJson["bodyA"] = jointComp->getBodyA();
+                        componentJson["bodyB"] = jointComp->getBodyB();
+                        componentJson["jointType"] = "FIXED";
+                        glm::vec3 pa = jointComp->getPivotA();
+                        componentJson["pivotA"] = json::array({ pa.x, pa.y, pa.z });
+                        glm::vec3 pb = jointComp->getPivotB();
+                        componentJson["pivotB"] = json::array({ pb.x, pb.y, pb.z });
+                        componentJson["enabled"] = jointComp->isEnabled();
                     }
                 }
                 
@@ -2581,6 +2599,13 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         physicsComp->setShowCollisionShape(componentJson["showCollisionShape"]);
                     }
                     
+                    if (componentJson.contains("collisionGroup")) {
+                        physicsComp->setCollisionFilterGroup(componentJson["collisionGroup"]);
+                    }
+                    if (componentJson.contains("collisionMask")) {
+                        physicsComp->setCollisionFilterMask(componentJson["collisionMask"]);
+                    }
+                    
                 } else if (type == "TextComponent") {
                     auto textComp = node->addComponent<TextComponent>();
                     
@@ -2793,6 +2818,25 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     
                     if (componentJson.contains("autoPlay") && componentJson["autoPlay"]) {
                         animComp->play();
+                    }
+                } else if (type == "JointComponent") {
+                    auto jointComp = node->addComponent<JointComponent>();
+                    if (componentJson.contains("bodyA")) {
+                        jointComp->setBodyA(componentJson["bodyA"]);
+                    }
+                    if (componentJson.contains("bodyB")) {
+                        jointComp->setBodyB(componentJson["bodyB"]);
+                    }
+                    if (componentJson.contains("pivotA") && componentJson["pivotA"].is_array() && componentJson["pivotA"].size() >= 3) {
+                        auto& pa = componentJson["pivotA"];
+                        jointComp->setPivotA(glm::vec3(pa[0], pa[1], pa[2]));
+                    }
+                    if (componentJson.contains("pivotB") && componentJson["pivotB"].is_array() && componentJson["pivotB"].size() >= 3) {
+                        auto& pb = componentJson["pivotB"];
+                        jointComp->setPivotB(glm::vec3(pb[0], pb[1], pb[2]));
+                    }
+                    if (componentJson.contains("enabled")) {
+                        jointComp->setEnabled(componentJson["enabled"]);
                     }
                 }
             }

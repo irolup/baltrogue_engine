@@ -204,9 +204,27 @@ void PhysicsManager::addRigidBody(btRigidBody* body) {
     }
 }
 
+void PhysicsManager::addRigidBody(btRigidBody* body, int collisionFilterGroup, int collisionFilterMask) {
+    if (dynamicsWorld && body) {
+        dynamicsWorld->addRigidBody(body, collisionFilterGroup, collisionFilterMask);
+    }
+}
+
 void PhysicsManager::removeRigidBody(btRigidBody* body) {
     if (dynamicsWorld && body) {
         dynamicsWorld->removeRigidBody(body);
+    }
+}
+
+void PhysicsManager::addConstraint(btTypedConstraint* constraint, bool disableCollisionsBetweenLinkedBodies) {
+    if (dynamicsWorld && constraint) {
+        dynamicsWorld->addConstraint(constraint, disableCollisionsBetweenLinkedBodies);
+    }
+}
+
+void PhysicsManager::removeConstraint(btTypedConstraint* constraint) {
+    if (dynamicsWorld && constraint) {
+        dynamicsWorld->removeConstraint(constraint);
     }
 }
 

@@ -8,6 +8,7 @@
 #include "Components/AnimationComponent.h"
 #include "Components/SoundComponent.h"
 #include "Components/SkyboxComponent.h"
+#include "Components/JointComponent.h"
 #include "Components/BeamRenderer.h"
 #include "Components/MeshRenderer.h"
 #include "Rendering/Material.h"
@@ -2355,6 +2356,35 @@ void ScriptComponent::bindCommonFunctions() {
         return 0;
     });
     lua_setglobal(luaState, "setNodeVisible");
+    
+    // setJointEnabled(jointNodeName, enabled) - enable/disable JointComponent on a node (e.g. PlayerJoint)
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        bool enabled = lua_toboolean(L, 2) != 0;
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto jointComp = node->getComponent<JointComponent>();
+                    if (jointComp) {
+                        jointComp->setEnabled(enabled);
+                        lua_pushboolean(L, true);
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {}
+#endif
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_setglobal(luaState, "setJointEnabled");
     
     // setBeamEndpoints(nodeName, startX, startY, startZ, endX, endY, endZ) - for BeamRenderer (Garry's Mod-style beam)
     lua_pushcfunction(luaState, [](lua_State* L) -> int {

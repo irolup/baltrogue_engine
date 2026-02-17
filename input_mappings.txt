@@ -68,3 +68,5 @@ action:PhysicsGrab,VITA,1,256,1,0.1,1,-1,0
 action:PhysicsRotate,PC,0,82,1,0.1,1,-1,0
 action:PhysicsRotate,VITA,1,512,1,0.1,1,-1,0
 action:RespawnBall,PC,0,77,0,0.1,1,-1,0
+action:Embark,PC,0,69,0,0.1,1,-1,0
+action:Embark,VITA,1,2048,0,0.1,1,-1,0

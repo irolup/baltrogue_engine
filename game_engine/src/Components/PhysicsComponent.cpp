@@ -19,6 +19,7 @@
 // Bullet includes
 #include <btBulletDynamicsCommon.h>
 #include <btBulletCollisionCommon.h>
+#include <BulletCollision/BroadphaseCollision/btBroadphaseProxy.h>
 
 // ImGui for editor
 #ifdef EDITOR_BUILD
@@ -42,6 +43,8 @@ PhysicsComponent::PhysicsComponent()
     , motionState(nullptr)
     , isCollidingFlag(false)
     , showCollisionShape(true)  // Enable collision shape visualization by default
+    , collisionFilterGroup(-1)  // -1 = DefaultFilter/AllFilter, collide with everything
+    , collisionFilterMask(-1)
     , lastWorldTransform(1.0f)
     , destroyed(false)
 {
@@ -340,22 +343,6 @@ void PhysicsComponent::syncTransformFromPhysics() {
         glm::vec3 physicsWorldPos = glm::vec3(pos.x(), pos.y(), pos.z());
         glm::quat physicsWorldRot = glm::quat(rot.w(), rot.x(), rot.y(), rot.z());
         
-        static int syncDebugCounter = 0;
-        syncDebugCounter++;
-        
-        if (syncDebugCounter % 60 == 0) {
-            glm::mat4 currentWorldTransform = owner->getWorldMatrix();
-            glm::vec3 currentWorldPos = glm::vec3(currentWorldTransform[3]);
-            glm::quat currentWorldRot = glm::quat_cast(currentWorldTransform);
-            
-            float positionDifference = glm::length(physicsWorldPos - currentWorldPos);
-            float rotationDifference = glm::length(glm::vec4(physicsWorldRot.x, physicsWorldRot.y, physicsWorldRot.z, physicsWorldRot.w) - 
-                                                 glm::vec4(currentWorldRot.x, currentWorldRot.y, currentWorldRot.z, currentWorldRot.w));
-            
-            if (positionDifference > 0.01f || rotationDifference > 0.01f) {
-            }
-        }
-        
         if (bodyType == PhysicsBodyType::DYNAMIC || bodyType == PhysicsBodyType::KINEMATIC) {
             bool rotationLocked = false;
             if (rigidBody) {
@@ -479,6 +466,14 @@ void PhysicsComponent::setShowCollisionShape(bool show) {
     showCollisionShape = show;
 }
 
+void PhysicsComponent::setCollisionFilterGroup(int group) {
+    collisionFilterGroup = group;
+}
+
+void PhysicsComponent::setCollisionFilterMask(int mask) {
+    collisionFilterMask = mask;
+}
+
 void PhysicsComponent::createRigidBody() {
     if (!owner) return;
     
@@ -600,7 +595,9 @@ void PhysicsComponent::createRigidBody() {
     rigidBody->setActivationState(ACTIVE_TAG);
 #endif
     
-    PhysicsManager::getInstance().addRigidBody(rigidBody);
+    int group = (collisionFilterGroup != -1) ? collisionFilterGroup : (int)btBroadphaseProxy::DefaultFilter;
+    int mask  = (collisionFilterMask != -1)  ? collisionFilterMask  : (int)btBroadphaseProxy::AllFilter;
+    PhysicsManager::getInstance().addRigidBody(rigidBody, group, mask);
 }
 
 void PhysicsComponent::destroyRigidBody() {
@@ -680,7 +677,9 @@ void PhysicsComponent::updateCollisionShape() {
             rigidBody->getMotionState()->setWorldTransform(transform);
         }
         
-        PhysicsManager::getInstance().addRigidBody(rigidBody);
+        int group = (collisionFilterGroup != -1) ? collisionFilterGroup : (int)btBroadphaseProxy::DefaultFilter;
+        int mask  = (collisionFilterMask != -1)  ? collisionFilterMask  : (int)btBroadphaseProxy::AllFilter;
+        PhysicsManager::getInstance().addRigidBody(rigidBody, group, mask);
     }
 }
 

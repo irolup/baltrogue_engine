@@ -95,6 +95,11 @@ public:
     void setShowCollisionShape(bool show);
     bool getShowCollisionShape() const { return showCollisionShape; }
     
+    void setCollisionFilterGroup(int group);
+    int getCollisionFilterGroup() const { return collisionFilterGroup; }
+    void setCollisionFilterMask(int mask);
+    int getCollisionFilterMask() const { return collisionFilterMask; }
+    
     virtual void drawInspector() override;
     
     virtual void drawCollisionShape() const;
@@ -127,6 +132,9 @@ private:
     std::function<void(PhysicsComponent*)> collisionCallback;
     
     bool showCollisionShape;
+    
+    int collisionFilterGroup;
+    int collisionFilterMask;
     
     glm::mat4 lastWorldTransform;
     

@@ -12,6 +12,7 @@ class btCollisionDispatcher;
 class btBroadphaseInterface;
 class btConstraintSolver;
 class btRigidBody;
+class btTypedConstraint;
 class btCollisionShape;
 class btMotionState;
 class btGhostPairCallback;
@@ -41,9 +42,12 @@ public:
     // Physics world management
     btDiscreteDynamicsWorld* getDynamicsWorld() const { return dynamicsWorld; }
     
-    // Rigid body management
     void addRigidBody(btRigidBody* body);
+    void addRigidBody(btRigidBody* body, int collisionFilterGroup, int collisionFilterMask);
     void removeRigidBody(btRigidBody* body);
+
+    void addConstraint(btTypedConstraint* constraint, bool disableCollisionsBetweenLinkedBodies = true);
+    void removeConstraint(btTypedConstraint* constraint);
     
     // Physics properties
     void setGravity(const glm::vec3& gravity);

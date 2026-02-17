@@ -1,0 +1,1332 @@
+{
+  "activeCamera": "PlayerCamera",
+  "activeSkybox": "Skybox",
+  "name": "Snowskate Demo",
+  "rootNode": {
+    "active": true,
+    "children": [
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "GroundMesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "STATIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.5,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "showCollisionShape": false,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "GroundCollision",
+            "transform": {
+              "position": [
+                0.0,
+                0.5,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "GroundRoot",
+        "transform": {
+          "position": [
+            0.0,
+            -3.299999952316284,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            20.0,
+            1.0,
+            30.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    0.6000000238418579,
+                    0.5,
+                    0.4000000059604645
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.6000000238418579
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "SlopeMesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "STATIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.25,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "SlopeCollision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "SlopeRamp",
+        "transform": {
+          "position": [
+            0.0,
+            -1.7999999523162842,
+            -4.0
+          ],
+          "rotation": [
+            -30.000001907348633,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            8.0,
+            0.20000000298023224,
+            4.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "pauseExempt": false,
+            "scriptPath": "scripts/snowskate_controller.lua",
+            "type": "ScriptComponent"
+          }
+        ],
+        "name": "Snowskate_Controller",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            -4.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "pauseExempt": true,
+            "scriptPath": "scripts/pause_menu.lua",
+            "type": "ScriptComponent"
+          }
+        ],
+        "name": "Pause_Menu_Controller",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "KINEMATIC",
+                "collisionGroup": 2,
+                "collisionMask": -2,
+                "collisionShapeType": "BOX",
+                "friction": 0.20000000298023224,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "SnowskateCollision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                0.800000011920929,
+                0.10000000149011612,
+                0.4000000059604645
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "material": {
+                      "blendMode": "Opaque",
+                      "color": [
+                        0.30000001192092896,
+                        0.30000001192092896,
+                        0.5
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
+                    },
+                    "meshType": "CUBE",
+                    "type": "MeshRenderer"
+                  }
+                ],
+                "name": "SnowskateMesh",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "name": "SnowskateVisual",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                0.800000011920929,
+                0.10000000149011612,
+                0.4000000059604645
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "SnowskateRoot",
+        "transform": {
+          "position": [
+            0.0,
+            1.0024524927139282,
+            6.900000095367432
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "DYNAMIC",
+                "collisionGroup": 1,
+                "collisionMask": -3,
+                "collisionShapeType": "CAPSULE",
+                "friction": 0.5,
+                "linearDamping": 0.0,
+                "mass": 1.0,
+                "restitution": 0.0,
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "PlayerCollision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "alignment": "CENTER",
+                    "color": [
+                      1.0,
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "fontPath": "assets/fonts/DroidSans.ttf",
+                    "fontSize": 48.0,
+                    "lineSpacing": 1.2000000476837158,
+                    "renderMode": "SCREEN_SPACE",
+                    "scale": 1.0,
+                    "text": "Resume",
+                    "type": "TextComponent"
+                  }
+                ],
+                "name": "PauseMenuResume",
+                "transform": {
+                  "position": [
+                    0.0,
+                    2.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": false
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "alignment": "CENTER",
+                    "color": [
+                      1.0,
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "fontPath": "assets/fonts/DroidSans.ttf",
+                    "fontSize": 48.0,
+                    "lineSpacing": 1.2000000476837158,
+                    "renderMode": "SCREEN_SPACE",
+                    "scale": 1.0,
+                    "text": "Options",
+                    "type": "TextComponent"
+                  }
+                ],
+                "name": "PauseMenuOptions",
+                "transform": {
+                  "position": [
+                    0.0,
+                    -2.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": false
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "alignment": "CENTER",
+                    "color": [
+                      1.0,
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "fontPath": "assets/fonts/DroidSans.ttf",
+                    "fontSize": 48.0,
+                    "lineSpacing": 1.2000000476837158,
+                    "renderMode": "SCREEN_SPACE",
+                    "scale": 0.699999988079071,
+                    "text": "Return to Menu",
+                    "type": "TextComponent"
+                  }
+                ],
+                "name": "PauseMenuReturn",
+                "transform": {
+                  "position": [
+                    0.0,
+                    -4.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": false
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "alignment": "CENTER",
+                    "color": [
+                      1.0,
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "fontPath": "assets/fonts/DroidSans.ttf",
+                    "fontSize": 32.0,
+                    "lineSpacing": 1.2000000476837158,
+                    "renderMode": "SCREEN_SPACE",
+                    "scale": 1.0,
+                    "text": "=>",
+                    "type": "TextComponent"
+                  }
+                ],
+                "name": "PauseMenuSelector",
+                "transform": {
+                  "position": [
+                    -10.0,
+                    2.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": false
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "alignment": "LEFT",
+                    "color": [
+                      1.0,
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "fontPath": "assets/fonts/DroidSans.ttf",
+                    "fontSize": 12.0,
+                    "lineSpacing": 1.0,
+                    "renderMode": "SCREEN_SPACE",
+                    "scale": 1.0,
+                    "text": "Snowskate HUD",
+                    "type": "TextComponent"
+                  }
+                ],
+                "name": "SnowskateHUD",
+                "transform": {
+                  "position": [
+                    -9.0,
+                    7.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "components": [
+              {
+                "active": true,
+                "farPlane": 100.0999984741211,
+                "fov": 45.0,
+                "nearPlane": 0.10000000149011612,
+                "type": "CameraComponent"
+              }
+            ],
+            "name": "PlayerCamera",
+            "transform": {
+              "position": [
+                0.0,
+                3.0999999046325684,
+                3.75
+              ],
+              "rotation": [
+                -24.999998092651367,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "castShadows": true,
+                    "isLoaded": true,
+                    "modelName": "Player.glb",
+                    "modelPath": "assets/models/Player.glb",
+                    "receiveShadows": true,
+                    "type": "ModelRenderer"
+                  },
+                  {
+                    "animationClipName": "Idle",
+                    "autoPlay": false,
+                    "enableRootMotion": false,
+                    "loop": true,
+                    "skeletonName": "Player",
+                    "speed": 1.0,
+                    "type": "AnimationComponent"
+                  }
+                ],
+                "name": "PlayerModel",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "name": "PlayerMesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "loop": true,
+                "soundFile": "assets/audios/walk_sound.wav",
+                "type": "SoundComponent",
+                "volume": 1.0
+              }
+            ],
+            "name": "Walk_Sound",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "Player",
+        "transform": {
+          "position": [
+            0.0,
+            -1.4450000524520874,
+            6.900000095367432
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "bodyA": "PlayerCollision",
+            "bodyB": "SnowskateCollision",
+            "enabled": false,
+            "jointType": "FIXED",
+            "pivotA": [
+              0.0,
+              -0.699999988079071,
+              0.0
+            ],
+            "pivotB": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "type": "JointComponent"
+          }
+        ],
+        "name": "PlayerJoint",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "name": "animation_script",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "constant": 1.0,
+            "cutOff": 0.2199999988079071,
+            "direction": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "intensity": 6.340000152587891,
+            "lightType": "POINT",
+            "linear": 0.09000000357627869,
+            "outerCutOff": 0.3100000023841858,
+            "quadratic": 0.03200000151991844,
+            "range": 21.3700008392334,
+            "showGizmo": true,
+            "type": "LightComponent"
+          }
+        ],
+        "name": "Light_0",
+        "transform": {
+          "position": [
+            -1.0,
+            4.699999809265137,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "Wall_1_Mesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "STATIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.5,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "Wall_1_Collision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "Wall_1",
+        "transform": {
+          "position": [
+            0.0,
+            -2.0,
+            -15.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            20.0,
+            1.5,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "Wall_2_Mesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "STATIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.5,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "Wall_2_Collision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "Wall_2",
+        "transform": {
+          "position": [
+            0.0,
+            -2.0,
+            15.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            20.0,
+            1.5,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "Wall_3_Mesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "STATIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.5,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "Wall_3_Collision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "Wall_3",
+        "transform": {
+          "position": [
+            -10.0,
+            -2.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.5,
+            30.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "Wall_4_Mesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "STATIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.5,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "Wall_4_Collision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "Wall_4",
+        "transform": {
+          "position": [
+            10.0,
+            -2.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.5,
+            30.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "active": true,
+            "backTexture": "assets/textures/skyboxes/skybox_1/back.jpg",
+            "bottomTexture": "assets/textures/skyboxes/skybox_1/bottom.jpg",
+            "frontTexture": "assets/textures/skyboxes/skybox_1/front.jpg",
+            "leftTexture": "assets/textures/skyboxes/skybox_1/left.jpg",
+            "rightTexture": "assets/textures/skyboxes/skybox_1/right.jpg",
+            "topTexture": "assets/textures/skyboxes/skybox_1/top.jpg",
+            "type": "SkyboxComponent"
+          }
+        ],
+        "name": "Skybox",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      }
+    ],
+    "name": "Root",
+    "transform": {
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "visible": true
+  },
+  "version": "1.0"
+}
