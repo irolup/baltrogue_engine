@@ -97,6 +97,25 @@ For Linux development:
 make install-deps          # Install basic dependencies
 make install-editor-deps   # Install editor dependencies (includes ImGui)
 ```
+### PS Vita Development
+
+> PS Vita builds require VitaSDK to be installed and configured.
+
+Building for PS Vita requires the official homebrew toolchain:
+
+- VitaSDK: https://vitasdk.org/
+
+#### Install VitaSDK
+
+Follow the official installation guide:
+https://vitasdk.org/#get-started
+
+After installation, set the environment variables:
+
+```bash
+export VITASDK=/usr/local/vitasdk
+export PATH=$VITASDK/bin:$PATH
+```
 
 ### Dependencies Setup
 
