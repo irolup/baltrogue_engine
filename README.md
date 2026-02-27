@@ -1,6 +1,6 @@
 # Game Engine
 
-This project is a cross-platform Game Engine that supports both PS Vita and Linux builds, with a complete editor interface for Linux.
+Cross-platform game engine for **PS Vita** and **Linux**, with a visual editor on Linux.
 
 ## Features
 
@@ -35,25 +35,18 @@ This project is a cross-platform Game Engine that supports both PS Vita and Linu
 
 ## Architecture
 
-The game engine follows a modern architecture with:
-- **Scene Graph System**: Hierarchical scene organization with transform inheritance
-- **Component System**: Modular, composable entity components
-- **Cross-Platform Support**: Shared codebase for PS Vita and Linux
-- **Editor Interface**: Visual scene editing tools (Linux only)
+- **Scene Graph**: hierarchy and transform inheritance
+- **Component System**: modular entity components
+- **Cross-Platform**: shared codebase for Vita and Linux
+- **Editor**: scene editing on Linux only
 
 ## Visual References
 
-The `docs/references/` folder contains visual references to help understand the engine:
-
-### Editor Screenshot
-
-**`screenshot_first_demo.png`**: A screenshot showing the editor interface in action. This demonstrates the editor's layout including the scene graph panel, viewport, and properties panel while working with the first game demo scene.
+Editor layout (scene graph, viewport, properties):
 
 ![Editor Screenshot](docs/references/screenshot_first_demo.png)
 
-### First Demo Scene Animation
-
-**`demo.gif`**: An animated demonstration of the `first_game_demo` scene running in the game engine. This GIF showcases the gameplay, physics interactions, and visual features of the demo scene, including player movement, physics-based ball interactions, and the overall scene dynamics.
+First demo scene (physics, player, camera):
 
 ![First Demo Scene](docs/references/demo.gif)
 
@@ -61,196 +54,82 @@ The `docs/references/` folder contains visual references to help understand the 
 
 ```
 first_game/
-├── game_engine/           # Core game engine
-│   ├── include/          # Engine headers
-│   │   ├── Core/         # Core systems (Engine, Transform, Time)
-│   │   ├── Scene/        # Scene management (SceneNode, SceneManager)
-│   │   ├── Components/   # Entity components (Camera, MeshRenderer, Lights...)
-│   │   ├── Rendering/    # Rendering system (Renderer, Mesh, Material...)
-│   │   ├── Input/        # Input management
-│   │   └── Editor/       # Editor system (Linux only)
-│   └── src/              # Engine implementation
-├── src/                  # Your original game code
-├── include/              # Your original game headers
-├── assets/               # Game assets (models, shaders, textures)
-│   └── scenes/          # Demo scenes (see Demo Scenes section below)
+├── game_engine/           # Core engine
+│   ├── include/          # Headers (Core, Scene, Components, Rendering, Input, Editor)
+│   └── src/              # Implementation
+├── src/                  # Game entry points (vita_main, game_main, Platform)
+├── include/              # Game headers
+├── assets/               # Scenes, shaders, textures, models
 ├── editor_main.cpp       # Editor entry point
-└── Makefile             # Updated build system
+└── Makefile
 ```
 
 ## Demo Scenes
 
-The `assets/scenes/` folder contains several demo scenes that showcase different features of the engine:
+In `assets/scenes/`:
 
-- **`first_game_demo.json`**: A comprehensive demo scene featuring player movement, physics interactions (kinematic player pushing dynamic objects), static collision walls, and camera controls. This scene demonstrates the physics system, input handling, and scene composition.
-
-- **`drop_ball_scene.json`**: A physics demonstration scene showing dynamic objects interacting with static collision surfaces.
-
-- **`main_menu.json`**: A menu scene demonstrating UI elements and scene transitions.
+- **first_game_demo.json** — player, physics, collisions, camera
+- **drop_ball_scene.json** — physics demo
+- **main_menu.json** — menu and scene transitions
 
 ## Building
 
-### Prerequisites
-
-For Linux development:
-```bash
-make install-deps          # Install basic dependencies
-make install-editor-deps   # Install editor dependencies (includes ImGui)
-```
-### PS Vita Development
-
-> PS Vita builds require VitaSDK to be installed and configured.
-
-Building for PS Vita requires the official homebrew toolchain:
-
-- VitaSDK: https://vitasdk.org/
-
-#### Install VitaSDK
-
-Follow the official installation guide:
-https://vitasdk.org/#get-started
-
-After installation, set the environment variables:
+### Linux
 
 ```bash
-export VITASDK=/usr/local/vitasdk
-export PATH=$VITASDK/bin:$PATH
-```
-Make sure `vitaGL` is available in your VitaSDK installation.  
-If it is missing, you can build and install it following the instructions on the official vitaGL repository:
-
-https://github.com/Rinnegatamante/vitaGL
-
-
-### Dependencies Setup
-
-Some vendor dependencies need to be set up manually:
-
-#### Lua (Required for Vita builds)
-```bash
-./setup.sh lua  # Setup Lua submodule and build for Vita
+make install-deps          # dependencies (libglfw, glew, lua5.3, etc.)
+make install-editor-deps  # editor deps (ImGui is in vendor/)
+make linux                 # build game
+make editor                # build editor
+make run                   # run game
+make run-editor            # run editor
 ```
 
-#### ImGui (Required for editor)
-```bash
-./setup.sh imgui /path/to/imgui/source  # Copy ImGui files to vendor folder
-```
+### PS Vita
 
-#### All Dependencies
-```bash
-./setup.sh all /path/to/imgui/source  # Setup both Lua and ImGui
-```
+Requires [VitaSDK](https://vitasdk.org/) and vitaGL. Set up Lua:
 
-#### Other Dependencies
-- **JSON**: nlohmann/json (header-only, already included)
-- **STB**: stb libraries (header-only, already included)  
-- **Bullet Physics**: Already included with Vita builds
-- **TinyGLTF**: Already included
-
-**Note**: JSON, STB, and Lua are managed as Git submodules. When cloning the repository, use:
-```bash
-git clone --recursive <repository-url>
-```
-Or if already cloned:
 ```bash
 git submodule update --init --recursive
+./setup.sh lua
 ```
 
-### Build Targets
+Then:
 
 ```bash
-# Build for PS Vita (original game)
 make vita
-
-# Build game for Linux
-make linux
-
-# Build editor for Linux
-make editor
-
-# Run Linux game
-make run
-
-# Run editor
-make run-editor
-
-# Debug builds
-make debug-linux
-make debug-editor
-
-# Clean all builds
-make clean
 ```
 
-## Editor Usage
+Output: `build/first_game.vpk`.
 
-The editor provides a complete scene editing environment:
+### Dependencies
 
-### Layout
-- **Scene Graph (Left)**: Hierarchical view of scene objects
-- **Viewport (Center)**: Real-time scene preview and manipulation
-- **Properties (Right)**: Object transform and component properties
-- **File Explorer (Bottom)**: Asset browser (planned feature)
+- **Lua**: submodule, build for Vita with `./setup.sh lua`
+- **ImGui**: `./setup.sh imgui /path/to/imgui` for editor
+- **All**: `./setup.sh all /path/to/imgui`
+- JSON, STB, Bullet, TinyGLTF: included or submodules
 
-### Editor Controls
-1. **Scene Graph Panel**:
-   - Click nodes to select them
-   - Right-click for context menu (create child, delete, etc.)
-   - Hierarchical scene organization
+### Build targets
 
-2. **Properties Panel**:
-   - Edit transform properties (position, rotation, scale)
-   - Component-specific properties
-   - Real-time value updates
+| Target | Description |
+|--------|--------------|
+| `make vita` | PS Vita build |
+| `make linux` | Linux game |
+| `make editor` | Linux editor |
+| `make run` | Run Linux game |
+| `make run-editor` | Run editor |
+| `make debug-linux` / `make debug-editor` | Debug builds |
+| `make clean` | Clean all |
 
-3. **Menu Bar**:
-   - File operations (New Scene, Open, Save)
-   - View toggles for panels
-   - Object creation tools
+## Editor
 
-### Creating Objects
-- Use `Create` menu to add new objects:
-  - Empty Node: Basic transform node
-  - Camera: Camera object with CameraComponent
-  - Cube: Mesh object with MeshRenderer
-  - Lights: Directional light, Point light and Spot light
-
-## Engine Features
-
-### Scene System
-- **SceneNode**: Base scene object with transform and components
-- **Transform**: Position, rotation (quaternion), and scale
-- **Components**: Modular functionality (Camera, MeshRenderer, etc.)
-- **Scene Management**: Load/save scenes, multiple scene support
-
-### Rendering System (Planned)
-- **Mesh**: Vertex data management
-- **Material**: Shader and property management
-- **Renderer**: Scene rendering with camera support
-- **Cross-platform**: Same rendering code for Vita and Linux
-
-### Input System
-- **Unified Input**: Same input code for both platforms
-- **Editor/Game Modes**: Different input handling for editor vs game
-
-## Development Workflow
-
-### For Game Development:
-1. Use `make run-editor` to design your scenes visually
-2. Save scenes and load them in your game code
-3. Test on Linux with `make run`
-4. Build for PS Vita with `make vita`
-
-### For Engine Development:
-1. Add new components in `game_engine/include/Components/`
-2. Implement in `game_engine/src/Components/`
-3. Update editor UI for new component properties
-4. Test in both editor and game modes
+- **Scene Graph (left)**: select nodes, right-click for context menu
+- **Viewport (center)**: preview and manipulation
+- **Properties (right)**: transform and component props
+- **Create menu**: empty node, camera, cube, lights...
 
 ## Documentation
 
-Complete documentation is available in the `docs/` folder:
-- [Full Documentation](docs/DOCUMENTATION.md) - Complete guide covering all engine features
-- [Component API](docs/TEXT_COMPONENT_API.md) - TextComponent API reference
-- [ModelRenderer Guide](docs/README_ModelRenderer.md) - ModelRenderer component guide
-
+- [Full Documentation](docs/DOCUMENTATION.md)
+- [TextComponent API](docs/TEXT_COMPONENT_API.md)
+- [ModelRenderer Guide](docs/README_ModelRenderer.md)
