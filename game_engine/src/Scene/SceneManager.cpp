@@ -70,6 +70,18 @@ void SceneManager::update(float deltaTime) {
     }
 }
 
+void SceneManager::fixedUpdate(float deltaTime) {
+    if (currentScene) {
+        currentScene->fixedUpdate(deltaTime);
+    }
+}
+
+void SceneManager::lateUpdate(float deltaTime) {
+    if (currentScene) {
+        currentScene->lateUpdate(deltaTime);
+    }
+}
+
 void SceneManager::render() {
     if (currentScene) {
         auto& renderer = GetEngine().getRenderer();

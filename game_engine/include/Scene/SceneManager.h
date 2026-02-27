@@ -23,6 +23,8 @@ public:
     bool hasScene(const std::string& name) const;
     
     void update(float deltaTime);
+    void fixedUpdate(float deltaTime);
+    void lateUpdate(float deltaTime);
     void render();
     
     std::vector<std::string> getSceneNames() const;

@@ -44,6 +44,8 @@ public:
     static std::string convertToVitaPath(const std::string& path);
     static std::string convertToLinuxPath(const std::string& path);
 
+    static std::shared_ptr<SceneNode> duplicateNodeSubtree(std::shared_ptr<SceneNode> node);
+
 private:
     static std::vector<std::shared_ptr<SceneNode>> getAllSceneNodesFromScene(std::shared_ptr<Scene> scene);
     static void collectAllNodesRecursive(std::shared_ptr<SceneNode> node, std::vector<std::shared_ptr<SceneNode>>& allNodes);

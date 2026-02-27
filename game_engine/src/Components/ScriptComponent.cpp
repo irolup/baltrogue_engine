@@ -11,9 +11,13 @@
 #include "Components/JointComponent.h"
 #include "Components/BeamRenderer.h"
 #include "Components/MeshRenderer.h"
+#include "Components/RaycastComponent.h"
 #include "Rendering/Material.h"
+#include "Rendering/Shader.h"
 #include "Rendering/AnimationManager.h"
 #include "Scene/SceneNode.h"
+#include "Scene/Scene.h"
+#include "Rendering/Mesh.h"
 #include "Input/InputManager.h"
 #include "Physics/PhysicsManager.h"
 #include "Rendering/Renderer.h"
@@ -146,6 +150,32 @@ void ScriptComponent::update(float deltaTime) {
     
     if (hasScriptFunction("update")) {
         callScriptFunction("update", deltaTime);
+    }
+}
+
+void ScriptComponent::fixedUpdate(float deltaTime) {
+    if (!scriptLoaded || !luaState || !scriptStarted) {
+        return;
+    }
+    bool paused = MenuManager::getInstance().isGamePaused();
+    if (paused && !pauseExempt) {
+        return;
+    }
+    if (hasScriptFunction("fixedUpdate")) {
+        callScriptFunction("fixedUpdate", deltaTime);
+    }
+}
+
+void ScriptComponent::lateUpdate(float deltaTime) {
+    if (!scriptLoaded || !luaState || !scriptStarted) {
+        return;
+    }
+    bool paused = MenuManager::getInstance().isGamePaused();
+    if (paused && !pauseExempt) {
+        return;
+    }
+    if (hasScriptFunction("lateUpdate")) {
+        callScriptFunction("lateUpdate", deltaTime);
     }
 }
 
@@ -1238,6 +1268,19 @@ void ScriptComponent::bindCommonFunctions() {
     });
     lua_setglobal(luaState, "getTime");
     
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        float fps = GetEngine().getTime().getFPS();
+        lua_pushnumber(L, fps);
+        return 1;
+    });
+    lua_setglobal(luaState, "getFPS");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        float dt = GetEngine().getTime().getDeltaTime();
+        lua_pushnumber(L, dt);
+        return 1;
+    });
+    lua_setglobal(luaState, "getDeltaTime");
+    
     // Shared game pause state functions (accessible from all scripts)
     // Use a static variable that's shared across all Lua states
     // This allows scripts to check pause state without stopping scene updates
@@ -1761,8 +1804,168 @@ void ScriptComponent::bindCommonFunctions() {
         return 1;
     });
     lua_setglobal(luaState, "physicsRaycastObstacle");
-    
-    // Set angular velocity on a node's PhysicsComponent (for dynamic bodies)
+
+    // Raycast against all bodies (static + dynamic). Returns hitX, hitY, hitZ, normalX, normalY, normalZ, hitDistance
+    lua_pushcfunction(luaState, ([](lua_State* L) -> int {
+        float ox = luaL_checknumber(L, 1);
+        float oy = luaL_checknumber(L, 2);
+        float oz = luaL_checknumber(L, 3);
+        float dx = luaL_checknumber(L, 4);
+        float dy = luaL_checknumber(L, 5);
+        float dz = luaL_checknumber(L, 6);
+        float maxDist = luaL_checknumber(L, 7);
+        const char* excludeName = lua_tostring(L, 8);
+        const char* excludeName2 = lua_tostring(L, 9);
+        std::string excludeNodeName = excludeName ? excludeName : "";
+        std::string excludeNodeName2 = excludeName2 ? excludeName2 : "";
+#ifndef VITA_BUILD
+        try {
+#endif
+            glm::vec3 hitPoint, hitNormal;
+            float hitDistance;
+            bool hit = PhysicsManager::getInstance().raycastGround(
+                glm::vec3(ox, oy, oz), glm::vec3(dx, dy, dz), maxDist, excludeNodeName, excludeNodeName2,
+                hitPoint, hitNormal, hitDistance);
+            if (!hit) {
+                lua_pushnil(L);
+                return 1;
+            }
+            lua_pushnumber(L, hitPoint.x);
+            lua_pushnumber(L, hitPoint.y);
+            lua_pushnumber(L, hitPoint.z);
+            lua_pushnumber(L, hitNormal.x);
+            lua_pushnumber(L, hitNormal.y);
+            lua_pushnumber(L, hitNormal.z);
+            lua_pushnumber(L, hitDistance);
+            return 7;
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushnil(L);
+        return 1;
+    }));
+    lua_setglobal(luaState, "physicsRaycastGround");
+
+    // Raycast using a node's RaycastComponent. Returns hitNodeName, hitX, hitY, hitZ, normalX, normalY, normalZ, hitDistance or nil.
+    lua_pushcfunction(luaState, ([](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        auto& engine = GetEngine();
+        auto activeScene = engine.getSceneManager().getCurrentScene();
+        if (!activeScene) {
+            lua_pushnil(L);
+            return 1;
+        }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) {
+            lua_pushnil(L);
+            return 1;
+        }
+        auto* raycastComp = node->getComponent<RaycastComponent>();
+        if (!raycastComp) {
+            lua_pushnil(L);
+            return 1;
+        }
+        bool hit = false;
+        std::string hitNodeName;
+        glm::vec3 hitPoint, hitNormal;
+        float hitDistance;
+        bool ok = raycastComp->performRaycast(hit, hitNodeName, hitPoint, hitNormal, hitDistance);
+        if (!ok || !hit) {
+            lua_pushnil(L);
+            return 1;
+        }
+        lua_pushstring(L, hitNodeName.c_str());
+        lua_pushnumber(L, hitPoint.x);
+        lua_pushnumber(L, hitPoint.y);
+        lua_pushnumber(L, hitPoint.z);
+        lua_pushnumber(L, hitNormal.x);
+        lua_pushnumber(L, hitNormal.y);
+        lua_pushnumber(L, hitNormal.z);
+        lua_pushnumber(L, hitDistance);
+        return 8;
+    }));
+    lua_setglobal(luaState, "raycastFromNode");
+
+    // Get world-space ray from/to for a node with RaycastComponent. Returns fromX, fromY, fromZ, toX, toY, toZ.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        auto& engine = GetEngine();
+        auto activeScene = engine.getSceneManager().getCurrentScene();
+        if (!activeScene || !nodeName) {
+            lua_pushnil(L);
+            return 1;
+        }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) {
+            lua_pushnil(L);
+            return 1;
+        }
+        auto* raycastComp = node->getComponent<RaycastComponent>();
+        if (!raycastComp) {
+            lua_pushnil(L);
+            return 1;
+        }
+        glm::vec3 wFrom = raycastComp->getWorldFrom();
+        glm::vec3 wTo = raycastComp->getWorldTo();
+        lua_pushnumber(L, wFrom.x);
+        lua_pushnumber(L, wFrom.y);
+        lua_pushnumber(L, wFrom.z);
+        lua_pushnumber(L, wTo.x);
+        lua_pushnumber(L, wTo.y);
+        lua_pushnumber(L, wTo.z);
+        return 6;
+    });
+    lua_setglobal(luaState, "getRaycastWorldRay");
+
+    // Raycast in world space from (fromX,fromY,fromZ) to (toX,toY,toZ).
+    // Returns hitNodeName, hitX, hitY, hitZ, normalX, normalY, normalZ, hitDistance.
+    lua_pushcfunction(luaState, ([](lua_State* L) -> int {
+        float fromX = luaL_checknumber(L, 1);
+        float fromY = luaL_checknumber(L, 2);
+        float fromZ = luaL_checknumber(L, 3);
+        float toX = luaL_checknumber(L, 4);
+        float toY = luaL_checknumber(L, 5);
+        float toZ = luaL_checknumber(L, 6);
+        glm::vec3 from(fromX, fromY, fromZ);
+        glm::vec3 to(toX, toY, toZ);
+        bool hit = false;
+        std::string hitNodeName;
+        glm::vec3 hitPoint, hitNormal;
+        float hitDistance;
+        bool ok = PhysicsManager::getInstance().raycastFromTo(from, to, -1, hit, hitNodeName, hitPoint, hitNormal, hitDistance);
+        if (!ok || !hit) {
+            lua_pushnil(L);
+            return 1;
+        }
+        lua_pushstring(L, hitNodeName.c_str());
+        lua_pushnumber(L, hitPoint.x);
+        lua_pushnumber(L, hitPoint.y);
+        lua_pushnumber(L, hitPoint.z);
+        lua_pushnumber(L, hitNormal.x);
+        lua_pushnumber(L, hitNormal.y);
+        lua_pushnumber(L, hitNormal.z);
+        lua_pushnumber(L, hitDistance);
+        return 8;
+    }));
+    lua_setglobal(luaState, "raycastFromToWorld");
+
+    // Set the debug ray drawn when physics debug draw is enabled.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        float fromX = luaL_checknumber(L, 1);
+        float fromY = luaL_checknumber(L, 2);
+        float fromZ = luaL_checknumber(L, 3);
+        float toX = luaL_checknumber(L, 4);
+        float toY = luaL_checknumber(L, 5);
+        float toZ = luaL_checknumber(L, 6);
+        glm::vec3 from(fromX, fromY, fromZ);
+        glm::vec3 to(toX, toY, toZ);
+        PhysicsManager::getInstance().setDebugRay(from, to);
+        return 0;
+    });
+    lua_setglobal(luaState, "setDebugRayFromTo");
+
+    // Set angular velocity on a node's PhysicsComponent.
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         const char* nodeName = luaL_checkstring(L, 1);
         float x = luaL_checknumber(L, 2);
@@ -2622,6 +2825,8 @@ void ScriptComponent::drawInspector() {
             ImGui::Text("Available Functions:");
             if (hasScriptFunction("start")) ImGui::BulletText("start()");
             if (hasScriptFunction("update")) ImGui::BulletText("update(deltaTime)");
+            if (hasScriptFunction("fixedUpdate")) ImGui::BulletText("fixedUpdate(deltaTime) [60 Hz, before physics step]");
+            if (hasScriptFunction("lateUpdate")) ImGui::BulletText("lateUpdate(deltaTime) [after physics]");
             if (hasScriptFunction("render")) ImGui::BulletText("render()");
             if (hasScriptFunction("destroy")) ImGui::BulletText("destroy()");
         }
@@ -3444,7 +3649,169 @@ void ScriptComponent::bindSceneToLua() {
     }, 0);
     lua_settable(luaState, -3);
     
+    // Create a node and attach to parent (empty = root).
+    lua_pushstring(luaState, "createNode");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        const char* parentName = luaL_optstring(L, 2, nullptr);
+        if (!nodeName) { lua_pushnil(L); return 1; }
+        auto& engine = GetEngine();
+        auto& sceneManager = engine.getSceneManager();
+        auto activeScene = sceneManager.getCurrentScene();
+        if (!activeScene) { lua_pushnil(L); return 1; }
+        std::shared_ptr<SceneNode> node = activeScene->createNode(nodeName);
+        if (!node) { lua_pushnil(L); return 1; }
+        if (parentName && parentName[0] != '\0') {
+            std::shared_ptr<SceneNode> parent = activeScene->findNode(parentName);
+            if (parent) {
+                parent->addChild(node);
+            } else {
+                activeScene->addNode(node);
+            }
+        } else {
+            activeScene->addNode(node);
+        }
+        lua_pushstring(L, node->getName().c_str());
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Add a mesh to an existing node
+    lua_pushstring(luaState, "addMeshToNode");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        const char* meshShape = luaL_checkstring(L, 2);
+        if (!nodeName || !meshShape) { lua_pushboolean(L, false); return 1; }
+        auto& engine = GetEngine();
+        auto activeScene = engine.getSceneManager().getCurrentScene();
+        if (!activeScene) { lua_pushboolean(L, false); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushboolean(L, false); return 1; }
+        if (node->getComponent<MeshRenderer>()) { lua_pushboolean(L, false); return 1; }
+        std::shared_ptr<Mesh> mesh;
+        std::string shape(meshShape);
+        if (shape == "sphere") {
+            float radius = luaL_optnumber(L, 3, 0.5f);
+            mesh = Mesh::createSphere(16, 16, radius);
+        } else if (shape == "cube") {
+            mesh = Mesh::createCube();
+        } else if (shape == "capsule") {
+            float radius = luaL_optnumber(L, 3, 0.5f);
+            float halfHeight = luaL_optnumber(L, 4, 0.5f);
+            mesh = Mesh::createCapsule(radius, halfHeight, 16, 8);
+        } else if (shape == "cylinder") {
+            float radius = luaL_optnumber(L, 3, 0.5f);
+            float halfHeight = luaL_optnumber(L, 4, 0.5f);
+            mesh = Mesh::createCylinder(radius, halfHeight, 16);
+        } else if (shape == "plane") {
+            float w = luaL_optnumber(L, 3, 1.0f);
+            float h = luaL_optnumber(L, 4, 1.0f);
+            mesh = Mesh::createPlane(w, h, 1);
+        } else if (shape == "quad") {
+            mesh = Mesh::createQuad();
+        } else {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+        if (!mesh) { lua_pushboolean(L, false); return 1; }
+        auto lightingShader = Shader::getLightingShader();
+        if (!lightingShader || !lightingShader->isValid()) { lua_pushboolean(L, false); return 1; }
+        auto mat = std::make_shared<Material>();
+        mat->setShader(lightingShader);
+        mat->setColor(glm::vec3(0.85f, 0.2f, 0.2f)); // reddish so the ball is visible
+        auto* mr = node->addComponent<MeshRenderer>();
+        if (!mr) { lua_pushboolean(L, false); return 1; }
+        mr->setMesh(mesh);
+        mr->setMaterial(mat);
+        lua_pushboolean(L, true);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Add physics to an existing node
+    lua_pushstring(luaState, "addPhysicsToNode");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        const char* bodyTypeStr = luaL_checkstring(L, 2);
+        const char* shapeTypeStr = luaL_checkstring(L, 3);
+        if (!nodeName || !bodyTypeStr || !shapeTypeStr) { lua_pushboolean(L, false); return 1; }
+        auto& engine = GetEngine();
+        auto activeScene = engine.getSceneManager().getCurrentScene();
+        if (!activeScene) { lua_pushboolean(L, false); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushboolean(L, false); return 1; }
+        if (node->getComponent<PhysicsComponent>()) { lua_pushboolean(L, false); return 1; }
+        PhysicsBodyType bodyType = PhysicsBodyType::STATIC;
+        std::string bt(bodyTypeStr);
+        if (bt == "dynamic") bodyType = PhysicsBodyType::DYNAMIC;
+        else if (bt == "kinematic") bodyType = PhysicsBodyType::KINEMATIC;
+        CollisionShapeType shapeType = CollisionShapeType::BOX;
+        glm::vec3 dims(1.0f);
+        int massArg = 7;
+        std::string st(shapeTypeStr);
+        if (st == "box") {
+            shapeType = CollisionShapeType::BOX;
+            dims.x = luaL_optnumber(L, 4, 1.0f);
+            dims.y = luaL_optnumber(L, 5, 1.0f);
+            dims.z = luaL_optnumber(L, 6, 1.0f);
+            massArg = 7;
+        } else if (st == "sphere") {
+            shapeType = CollisionShapeType::SPHERE;
+            float r = luaL_optnumber(L, 4, 0.5f);
+            dims = glm::vec3(r * 2.0f, r * 2.0f, r * 2.0f);
+            massArg = 5;
+        } else if (st == "capsule") {
+            shapeType = CollisionShapeType::CAPSULE;
+            float r = luaL_optnumber(L, 4, 0.5f);
+            float h = luaL_optnumber(L, 5, 1.0f);
+            dims = glm::vec3(r * 2.0f, h, r * 2.0f);
+            massArg = 6;
+        } else if (st == "cylinder") {
+            shapeType = CollisionShapeType::CYLINDER;
+            float r = luaL_optnumber(L, 4, 0.5f);
+            float halfH = luaL_optnumber(L, 5, 0.5f);
+            dims = glm::vec3(r * 2.0f, halfH * 2.0f, r * 2.0f);
+            massArg = 6;
+        } else if (st == "plane") {
+            shapeType = CollisionShapeType::PLANE;
+            dims.x = luaL_optnumber(L, 4, 10.0f);
+            dims.z = luaL_optnumber(L, 5, 10.0f);
+            massArg = 6;
+        }
+        auto* phys = node->addComponent<PhysicsComponent>();
+        if (!phys) { lua_pushboolean(L, false); return 1; }
+        phys->setCollisionShape(shapeType, dims);
+        phys->setBodyType(bodyType);
+        if (bodyType == PhysicsBodyType::DYNAMIC) {
+            phys->setMass(luaL_optnumber(L, massArg, 1.0f));
+        }
+        phys->start();
+        lua_pushboolean(L, true);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+    
+    // Queue node for removal at start of next update
+    lua_pushstring(luaState, "destroyNode");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        if (!nodeName) return 0;
+        auto& engine = GetEngine();
+        auto activeScene = engine.getSceneManager().getCurrentScene();
+        if (activeScene) {
+            activeScene->queueRemoveNode(nodeName);
+        }
+        return 0;
+    });
+    lua_settable(luaState, -3);
+    
     lua_setglobal(luaState, "scene");
+    
+    // Global destroyNode for convenience
+    lua_getglobal(luaState, "scene");
+    lua_getfield(luaState, -1, "destroyNode");
+    lua_setglobal(luaState, "destroyNode");
+    lua_pop(luaState, 1);
 }
 
 void ScriptComponent::bindAnimationToLua() {

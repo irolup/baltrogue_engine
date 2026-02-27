@@ -27,6 +27,10 @@ local hitOffsetLocalX, hitOffsetLocalY, hitOffsetLocalZ = 0, 0, 0
 local currentGrabDistance = 5.0
 local rotationDiffX, rotationDiffY, rotationDiffZ = 0, 0, 0
 local rotationInputX, rotationInputY = 0, 0
+-- Beam length to use in lateUpdate (so beam follows camera with no 1-frame lag)
+local lastBeamLength = maxGrabDistance
+local lastGrabHeld = false
+local lastFirstPerson = true
 
 local fixedDeltaTime = 1.0 / 60.0
 
@@ -112,8 +116,11 @@ function update(deltaTime)
             heldNodeName = nil
         end
         rotationInputX, rotationInputY = 0, 0
+        lastGrabHeld = false
+        lastFirstPerson = false
         return
     end
+    lastFirstPerson = true
 
     local grabHeld = input.isActionPressed("PhysicsGrab") or (input.getActionAxis and input.getActionAxis("PhysicsGrab") > 0.5)
 
@@ -260,19 +267,11 @@ function update(deltaTime)
         setNodeVisible(gunLaserNodeName, grabHeld)
     end
 
-    
-    if grabHeld and setBeamEndpoints and gunLaserNodeName then
-        local startX = rayOriginX
-        local startY = rayOriginY
-        local startZ = rayOriginZ
-        if localToWorldOffset then
-            local wx, wy, wz = localToWorldOffset(cameraName, beamOffsetRight, beamOffsetDown, beamOffsetForward)
-            startX = rayOriginX + wx
-            startY = rayOriginY + wy
-            startZ = rayOriginZ + wz
-        end
-        local endX, endY, endZ
-        local beamLength = maxGrabDistance
+    -- Store for lateUpdate: beam is set there so it uses current-frame camera (no latency)
+    lastGrabHeld = grabHeld
+    lastFirstPerson = (firstPerson == true)
+    if grabHeld then
+        lastBeamLength = maxGrabDistance
         if heldNodeName then
             local effectiveGrabDistance = currentGrabDistance
             if physicsRaycastObstacle then
@@ -282,18 +281,46 @@ function update(deltaTime)
                     effectiveGrabDistance = math.min(currentGrabDistance, math.max(0.5, obstacleDist - margin))
                 end
             end
-            beamLength = effectiveGrabDistance
+            lastBeamLength = effectiveGrabDistance
         else
             if physicsRaycastObstacle then
                 local obstacleDist = physicsRaycastObstacle(rayOriginX, rayOriginY, rayOriginZ, rayDirX, rayDirY, rayDirZ, maxGrabDistance, "")
                 if obstacleDist and obstacleDist > 0 then
-                    beamLength = obstacleDist
+                    lastBeamLength = obstacleDist
                 end
             end
         end
-        endX = rayOriginX + rayDirX * beamLength
-        endY = rayOriginY + rayDirY * beamLength
-        endZ = rayOriginZ + rayDirZ * beamLength
-        setBeamEndpoints(gunLaserNodeName, startX, startY, startZ, endX, endY, endZ)
     end
+end
+
+function lateUpdate(deltaTime)
+    if isGamePaused and isGamePaused() then
+        return
+    end
+    -- Update beam after camera has been updated (no 1-frame latency)
+    if not lastGrabHeld or not lastFirstPerson or not setBeamEndpoints or not gunLaserNodeName then
+        return
+    end
+    local camX, camY, camZ = getActiveCameraPosition()
+    if not camX then
+        camX, camY, camZ = getNodePosition(cameraName)
+    end
+    local fx, fy, fz = getNodeForward(cameraName)
+    local len = math.sqrt(fx*fx + fy*fy + fz*fz)
+    if len < 0.0001 then
+        fx, fy, fz = 0, 0, -1
+    else
+        fx, fy, fz = fx/len, fy/len, fz/len
+    end
+    local startX, startY, startZ = camX, camY, camZ
+    if localToWorldOffset then
+        local wx, wy, wz = localToWorldOffset(cameraName, beamOffsetRight, beamOffsetDown, beamOffsetForward)
+        startX = camX + wx
+        startY = camY + wy
+        startZ = camZ + wz
+    end
+    local endX = camX + fx * lastBeamLength
+    local endY = camY + fy * lastBeamLength
+    local endZ = camZ + fz * lastBeamLength
+    setBeamEndpoints(gunLaserNodeName, startX, startY, startZ, endX, endY, endZ)
 end

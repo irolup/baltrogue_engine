@@ -83,6 +83,10 @@ void Renderer::renderScene(Scene& scene) {
     
     renderSkybox(scene);
     processRenderQueue();
+
+    if (scene.getRootNode()) {
+        renderTextNodes(*scene.getRootNode(), glm::mat4(1.0f));
+    }
     
     // In-game collision shape debug draw with lua
     if (PhysicsManager::getInstance().isDebugDrawEnabled() && activeCamera) {
@@ -159,17 +163,25 @@ void Renderer::renderNode(SceneNode& node, const glm::mat4& parentTransform) {
         beamRenderer->render(*this);
     }
     
-    auto textComponent = node.getComponent<TextComponent>();
-    if (textComponent) {
-        if (textComponent->isEnabled()) {
-            textComponent->render(*this, worldTransform);
-        }
-    }
-    
     for (size_t i = 0; i < node.getChildCount(); ++i) {
         auto child = node.getChild(i);
         if (child) {
             renderNode(*child, worldTransform);
+        }
+    }
+}
+
+void Renderer::renderTextNodes(SceneNode& node, const glm::mat4& parentTransform) {
+    if (!node.isVisible() || !node.isActive()) return;
+    glm::mat4 worldTransform = parentTransform * node.getLocalMatrix();
+    auto textComponent = node.getComponent<TextComponent>();
+    if (textComponent && textComponent->isEnabled()) {
+        textComponent->render(*this, worldTransform);
+    }
+    for (size_t i = 0; i < node.getChildCount(); ++i) {
+        auto child = node.getChild(i);
+        if (child) {
+            renderTextNodes(*child, worldTransform);
         }
     }
 }
@@ -297,6 +309,7 @@ void Renderer::processRenderQueue() {
         if (!material) {
             material = Material::getDefaultMaterial();
         }
+        if (!material) continue;
         
         bool shouldDisableCulling = command.disableCulling;
         

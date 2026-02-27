@@ -23,12 +23,15 @@ public:
     void addNode(std::shared_ptr<SceneNode> node);
     void removeNode(std::shared_ptr<SceneNode> node);
     void removeNode(const std::string& name);
+    void queueRemoveNode(const std::string& name);
     
     std::shared_ptr<SceneNode> findNode(const std::string& name);
     std::vector<std::shared_ptr<SceneNode>> findNodesByTag(const std::string& tag);
     
     void start();
     void update(float deltaTime);
+    void fixedUpdate(float deltaTime);
+    void lateUpdate(float deltaTime);
     void render(Renderer& renderer);
     void destroy();
     
@@ -59,9 +62,11 @@ private:
     std::weak_ptr<SceneNode> selectedNode;
     
     size_t nodeCounter;
+    std::vector<std::string> pendingNodeRemovals;
     
     std::string generateUniqueName(const std::string& baseName);
     size_t countNodes(const std::shared_ptr<SceneNode>& node) const;
+    void processPendingRemovals();
 };
 
 } // namespace GameEngine

@@ -8,8 +8,10 @@
 #include "Components/LightComponent.h"
 #include "Components/PhysicsComponent.h"
 #include "Components/TextComponent.h"
+#include "Physics/PhysicsManager.h"
 #include "Components/ScriptComponent.h"
 #include "Components/Area3DComponent.h"
+#include "Components/RaycastComponent.h"
 #include "Components/AnimationComponent.h"
 #include "Components/SoundComponent.h"
 #include "Components/SkyboxComponent.h"
@@ -1730,6 +1732,10 @@ std::string SceneSerializer::serializeSceneToJson(std::shared_ptr<Scene> scene) 
     sceneJson["name"] = scene->getName();
     sceneJson["version"] = "1.0";
     
+    // Serialize physics world gravity
+    glm::vec3 gravity = PhysicsManager::getInstance().getGravity();
+    sceneJson["physics"]["gravity"] = { gravity.x, gravity.y, gravity.z };
+    
     // Serialize root node
     auto rootNode = scene->getRootNode();
     if (rootNode) {
@@ -1763,8 +1769,16 @@ std::shared_ptr<Scene> SceneSerializer::deserializeSceneFromJson(const std::stri
         std::string sceneName = sceneJson.value("name", "Loaded Scene");
         auto scene = std::make_shared<Scene>(sceneName);
         
-        // Clear the default root node's children
         scene->getRootNode()->removeAllChildren();
+        
+        if (sceneJson.contains("physics") && sceneJson["physics"].is_object() && sceneJson["physics"].contains("gravity") && sceneJson["physics"]["gravity"].is_array() && sceneJson["physics"]["gravity"].size() >= 3) {
+            glm::vec3 gravity(
+                sceneJson["physics"]["gravity"][0],
+                sceneJson["physics"]["gravity"][1],
+                sceneJson["physics"]["gravity"][2]
+            );
+            PhysicsManager::getInstance().setGravity(gravity);
+        }
         
         // Deserialize root node
         if (sceneJson.contains("rootNode")) {
@@ -2056,6 +2070,8 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                         }
                         componentJson["bodyType"] = bodyType;
                         
+                        componentJson["gravityEnabled"] = physicsComp->isGravityEnabled();
+                        
                         if (physicsComp->getCollisionFilterGroup() != -1)
                             componentJson["collisionGroup"] = physicsComp->getCollisionFilterGroup();
                         if (physicsComp->getCollisionFilterMask() != -1)
@@ -2134,6 +2150,16 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                         
                         // Debug
                         componentJson["showDebugShape"] = area3DComp->getShowDebugShape();
+                    }
+                } else if (component->getTypeName() == "RaycastComponent") {
+                    auto raycastComp = node->getComponent<RaycastComponent>();
+                    if (raycastComp) {
+                        glm::vec3 from = raycastComp->getFrom();
+                        glm::vec3 to = raycastComp->getTo();
+                        componentJson["from"] = {from.x, from.y, from.z};
+                        componentJson["to"] = {to.x, to.y, to.z};
+                        componentJson["collisionMask"] = raycastComp->getCollisionMask();
+                        componentJson["showDebugLine"] = raycastComp->getShowDebugLine();
                     }
                 } else if (component->getTypeName() == "AnimationComponent") {
                     auto animComp = node->getComponent<AnimationComponent>();
@@ -2606,6 +2632,10 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         physicsComp->setShowCollisionShape(componentJson["showCollisionShape"]);
                     }
                     
+                    if (componentJson.contains("gravityEnabled")) {
+                        physicsComp->setGravityEnabled(componentJson["gravityEnabled"]);
+                    }
+                    
                     if (componentJson.contains("collisionGroup")) {
                         physicsComp->setCollisionFilterGroup(componentJson["collisionGroup"]);
                     }
@@ -2798,6 +2828,22 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     }
                     
                     area3DComp->start(); // Initialize the area3D component
+                } else if (type == "RaycastComponent") {
+                    auto raycastComp = node->addComponent<RaycastComponent>();
+                    if (componentJson.contains("from") && componentJson["from"].is_array() && componentJson["from"].size() >= 3) {
+                        auto& f = componentJson["from"];
+                        raycastComp->setFrom(glm::vec3(f[0], f[1], f[2]));
+                    }
+                    if (componentJson.contains("to") && componentJson["to"].is_array() && componentJson["to"].size() >= 3) {
+                        auto& t = componentJson["to"];
+                        raycastComp->setTo(glm::vec3(t[0], t[1], t[2]));
+                    }
+                    if (componentJson.contains("collisionMask")) {
+                        raycastComp->setCollisionMask(componentJson["collisionMask"]);
+                    }
+                    if (componentJson.contains("showDebugLine")) {
+                        raycastComp->setShowDebugLine(componentJson["showDebugLine"]);
+                    }
                 } else if (type == "AnimationComponent") {
                     auto animComp = node->addComponent<AnimationComponent>();
                     
@@ -2870,6 +2916,12 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
         return nullptr;
     }
 #endif
+}
+
+std::shared_ptr<SceneNode> SceneSerializer::duplicateNodeSubtree(std::shared_ptr<SceneNode> node) {
+    if (!node) return nullptr;
+    nlohmann::json nodeJson = serializeNodeToJson(node);
+    return deserializeNodeFromJson(nodeJson);
 }
 
 #ifdef LINUX_BUILD

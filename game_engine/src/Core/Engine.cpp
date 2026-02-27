@@ -23,6 +23,7 @@ static Engine* s_engineInstance = nullptr;
 Engine::Engine()
     : running(false)
     , mode(EngineMode::GAME)
+    , physicsAccumulator(0.0f)
     , sceneManager(nullptr)
     , renderer(nullptr)
     , inputManager(nullptr)
@@ -207,13 +208,27 @@ void Engine::update() {
 #endif
     
     MenuManager::getInstance().update(timeSystem->getDeltaTime());
-    
-    if (sceneManager->getCurrentScene()) {
-        sceneManager->update(timeSystem->getDeltaTime());
-    }
-    
+
+    float dt = timeSystem->getDeltaTime();
     if (!MenuManager::getInstance().isGamePaused()) {
-        PhysicsManager::getInstance().update(timeSystem->getDeltaTime());
+        const float fixedDt = PhysicsManager::FIXED_TIME_STEP;
+        const int maxPhysicsSteps = 5;
+        physicsAccumulator += dt;
+        int steps = 0;
+        while (physicsAccumulator >= fixedDt && steps < maxPhysicsSteps) {
+            if (sceneManager->getCurrentScene()) {
+                sceneManager->fixedUpdate(fixedDt);
+            }
+            PhysicsManager::getInstance().stepSingleStep(fixedDt);
+            physicsAccumulator -= fixedDt;
+            ++steps;
+        }
+        if (sceneManager->getCurrentScene()) {
+            sceneManager->update(dt);
+            sceneManager->lateUpdate(dt);
+        }
+    } else if (sceneManager->getCurrentScene()) {
+        sceneManager->update(dt);
     }
     
     if (renderer) {

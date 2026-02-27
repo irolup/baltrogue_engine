@@ -1,7 +1,14 @@
 {
   "activeCamera": "PlayerCamera",
   "activeSkybox": "Skybox",
-  "name": "Snowskate Demo",
+  "name": "Playground",
+  "physics": {
+    "gravity": [
+      0.0,
+      -9.8100004196167,
+      0.0
+    ]
+  },
   "rootNode": {
     "active": true,
     "children": [
@@ -13,21 +20,24 @@
             "components": [
               {
                 "material": {
+                  "armTexture": "assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_arm_1k.png",
                   "blendMode": "Opaque",
                   "color": [
-                    0.6000000238418579,
+                    1.0,
                     0.5,
-                    0.4000000059604645
+                    0.20000000298023224
                   ],
+                  "diffuseTexture": "assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_diff_1k.png",
                   "metallic": 0.0,
+                  "normalTexture": "assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_nor_gl_1k.png",
                   "reflectionStrength": 0.0,
-                  "roughness": 0.6000000238418579
+                  "roughness": 0.5
                 },
                 "meshType": "CUBE",
                 "type": "MeshRenderer"
               }
             ],
-            "name": "SlopeMesh",
+            "name": "Game Cube 0",
             "transform": {
               "position": [
                 0.0,
@@ -52,9 +62,10 @@
             "components": [
               {
                 "angularDamping": 0.0,
-                "bodyType": "STATIC",
+                "bodyType": "KINEMATIC",
                 "collisionShapeType": "BOX",
-                "friction": 0.25,
+                "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
@@ -67,7 +78,7 @@
                 "type": "PhysicsComponent"
               }
             ],
-            "name": "SlopeCollision",
+            "name": "BoxCollision",
             "transform": {
               "position": [
                 0.0,
@@ -88,41 +99,12 @@
             "visible": true
           }
         ],
-        "name": "SlopeRamp",
+        "name": "GroundRoot",
         "transform": {
           "position": [
             0.0,
-            -1.7999999523162842,
-            -4.0
-          ],
-          "rotation": [
-            -30.000001907348633,
-            0.0,
+            -3.299999952316284,
             0.0
-          ],
-          "scale": [
-            8.0,
-            0.20000000298023224,
-            4.0
-          ]
-        },
-        "visible": true
-      },
-      {
-        "active": true,
-        "components": [
-          {
-            "pauseExempt": false,
-            "scriptPath": "scripts/snowskate_controller.lua",
-            "type": "ScriptComponent"
-          }
-        ],
-        "name": "Snowskate_Controller",
-        "transform": {
-          "position": [
-            0.0,
-            0.0,
-            -4.0
           ],
           "rotation": [
             0.0,
@@ -130,9 +112,9 @@
             0.0
           ],
           "scale": [
+            50.0,
             1.0,
-            1.0,
-            1.0
+            50.0
           ]
         },
         "visible": true
@@ -168,122 +150,68 @@
       },
       {
         "active": true,
-        "children": [
+        "components": [
           {
-            "active": true,
-            "components": [
-              {
-                "angularDamping": 0.0,
-                "bodyType": "KINEMATIC",
-                "collisionGroup": 2,
-                "collisionMask": -2,
-                "collisionShapeType": "BOX",
-                "friction": 0.20000000298023224,
-                "linearDamping": 0.0,
-                "mass": 0.0,
-                "restitution": 0.0,
-                "shapeDimensions": [
-                  1.0,
-                  1.0,
-                  1.0
-                ],
-                "showCollisionShape": true,
-                "type": "PhysicsComponent"
-              }
-            ],
-            "name": "SnowskateCollision",
-            "transform": {
-              "position": [
-                0.0,
-                0.0,
-                0.0
-              ],
-              "rotation": [
-                0.0,
-                -0.0,
-                0.0
-              ],
-              "scale": [
-                0.4000000059604645,
-                0.10000000149011612,
-                0.800000011920929
-              ]
-            },
-            "visible": true
-          },
-          {
-            "active": true,
-            "children": [
-              {
-                "active": true,
-                "components": [
-                  {
-                    "material": {
-                      "blendMode": "Opaque",
-                      "color": [
-                        0.30000001192092896,
-                        0.30000001192092896,
-                        0.5
-                      ],
-                      "metallic": 0.0,
-                      "reflectionStrength": 0.0,
-                      "roughness": 0.5
-                    },
-                    "meshType": "CUBE",
-                    "type": "MeshRenderer"
-                  }
-                ],
-                "name": "SnowskateMesh",
-                "transform": {
-                  "position": [
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "rotation": [
-                    0.0,
-                    -0.0,
-                    0.0
-                  ],
-                  "scale": [
-                    1.0,
-                    1.0,
-                    1.0
-                  ]
-                },
-                "visible": true
-              }
-            ],
-            "name": "SnowskateVisual",
-            "transform": {
-              "position": [
-                0.0,
-                0.0,
-                0.0
-              ],
-              "rotation": [
-                0.0,
-                -0.0,
-                0.0
-              ],
-              "scale": [
-                0.4000000059604645,
-                0.10000000149011612,
-                0.800000011920929
-              ]
-            },
-            "visible": true
+            "pauseExempt": true,
+            "scriptPath": "scripts/physics_gun.lua",
+            "type": "ScriptComponent"
           }
         ],
-        "name": "SnowskateRoot",
+        "name": "Physics_Gun_Controller",
         "transform": {
           "position": [
             0.0,
-            -2.380000114440918,
-            6.900000095367432
+            0.0,
+            0.0
           ],
           "rotation": [
             0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "constant": 1.0,
+            "cutOff": 0.21816615760326385,
+            "direction": [
+              0.0,
+              -0.9659258127212524,
+              -0.2588191330432892
+            ],
+            "intensity": 1.5750000476837158,
+            "lightType": "DIRECTIONAL",
+            "linear": 0.0,
+            "outerCutOff": 0.30543261766433716,
+            "quadratic": 0.0,
+            "range": 1000.0,
+            "showGizmo": true,
+            "type": "LightComponent"
+          }
+        ],
+        "name": "Light_0",
+        "transform": {
+          "position": [
+            -1.0,
+            18.665189743041992,
+            0.0
+          ],
+          "rotation": [
+            15.000005722045898,
             -0.0,
             0.0
           ],
@@ -304,10 +232,9 @@
               {
                 "angularDamping": 0.0,
                 "bodyType": "DYNAMIC",
-                "collisionGroup": 1,
-                "collisionMask": -3,
                 "collisionShapeType": "CAPSULE",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
                 "mass": 1.0,
                 "restitution": 0.0,
@@ -326,6 +253,38 @@
                 0.0,
                 0.0,
                 0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "height": 1.0,
+                "monitorMode": true,
+                "radius": 0.5,
+                "shapeType": "CAPSULE",
+                "showDebugShape": true,
+                "type": "Area3DComponent"
+              }
+            ],
+            "name": "PlayerArea3D",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                -1.0
               ],
               "rotation": [
                 0.0,
@@ -505,30 +464,213 @@
               },
               {
                 "active": true,
-                "components": [
+                "children": [
                   {
-                    "alignment": "LEFT",
-                    "color": [
-                      1.0,
-                      1.0,
-                      1.0,
-                      1.0
+                    "active": true,
+                    "components": [
+                      {
+                        "alignment": "CENTER",
+                        "color": [
+                          1.0,
+                          1.0,
+                          1.0,
+                          1.0
+                        ],
+                        "fontPath": "assets/fonts/DroidSans.ttf",
+                        "fontSize": 20.0,
+                        "lineSpacing": 1.0,
+                        "renderMode": "SCREEN_SPACE",
+                        "scale": 1.0,
+                        "text": "Score : 0",
+                        "type": "TextComponent"
+                      }
                     ],
-                    "fontPath": "assets/fonts/DroidSans.ttf",
-                    "fontSize": 12.0,
-                    "lineSpacing": 1.0,
-                    "renderMode": "SCREEN_SPACE",
-                    "scale": 1.0,
-                    "text": "Snowskate HUD",
-                    "type": "TextComponent"
+                    "name": "Score",
+                    "transform": {
+                      "position": [
+                        -8.199999809265137,
+                        7.400000095367432,
+                        0.0
+                      ],
+                      "rotation": [
+                        0.0,
+                        -0.0,
+                        0.0
+                      ],
+                      "scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                      ]
+                    },
+                    "visible": true
                   }
                 ],
-                "name": "SnowskateHUD",
+                "name": "UI",
                 "transform": {
                   "position": [
-                    -9.0,
-                    7.0,
+                    0.0,
+                    0.0,
                     0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "beamWidth": 0.5,
+                    "material": {
+                      "blendMode": "Additive",
+                      "color": [
+                        0.0,
+                        0.8999999761581421,
+                        1.0
+                      ],
+                      "customTextureUniforms": [
+                        {
+                          "name": "u_NoiseTexture_1",
+                          "path": "assets/textures/noise/Perlin.png"
+                        }
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5,
+                      "shaderFragmentPathLinux": "assets/linux_shaders/beam.frag",
+                      "shaderFragmentPathVita": "assets/shaders/beam.frag",
+                      "shaderVertexPathLinux": "assets/linux_shaders/beam.vert",
+                      "shaderVertexPathVita": "assets/shaders/beam.vert"
+                    },
+                    "type": "BeamRenderer"
+                  }
+                ],
+                "name": "GunLaser",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "castShadows": true,
+                    "isLoaded": true,
+                    "modelName": "Pistol.glb",
+                    "modelPath": "assets/models/Pistol.glb",
+                    "receiveShadows": true,
+                    "type": "ModelRenderer"
+                  }
+                ],
+                "name": "GunMesh",
+                "transform": {
+                  "position": [
+                    0.5331722497940063,
+                    -0.1847386360168457,
+                    -1.2546043395996094
+                  ],
+                  "rotation": [
+                    -0.0001190377734019421,
+                    -0.647803008556366,
+                    8.624673500889912e-05
+                  ],
+                  "scale": [
+                    0.2000000923871994,
+                    0.20000006258487701,
+                    0.2000000923871994
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "collisionMask": -1,
+                    "from": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "showDebugLine": true,
+                    "to": [
+                      0.0,
+                      0.0,
+                      -1.0
+                    ],
+                    "type": "RaycastComponent"
+                  }
+                ],
+                "name": "Raycast1",
+                "transform": {
+                  "position": [
+                    -0.36281824111938477,
+                    -0.24053335189819336,
+                    -1.4410309791564941
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "collisionMask": -1,
+                    "from": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "showDebugLine": true,
+                    "to": [
+                      0.0,
+                      0.0,
+                      -1.0
+                    ],
+                    "type": "RaycastComponent"
+                  }
+                ],
+                "name": "Raycast2",
+                "transform": {
+                  "position": [
+                    0.20043611526489258,
+                    -0.12481212615966797,
+                    -0.6251993179321289
                   ],
                   "rotation": [
                     0.0,
@@ -557,72 +699,7 @@
             "transform": {
               "position": [
                 0.0,
-                3.0999999046325684,
-                3.75
-              ],
-              "rotation": [
-                -24.999998092651367,
-                0.0,
-                0.0
-              ],
-              "scale": [
-                1.0,
-                1.0,
-                1.0
-              ]
-            },
-            "visible": true
-          },
-          {
-            "active": true,
-            "children": [
-              {
-                "active": true,
-                "components": [
-                  {
-                    "castShadows": true,
-                    "isLoaded": true,
-                    "modelName": "Player.glb",
-                    "modelPath": "assets/models/Player.glb",
-                    "receiveShadows": true,
-                    "type": "ModelRenderer"
-                  },
-                  {
-                    "animationClipName": "Idle",
-                    "autoPlay": false,
-                    "enableRootMotion": false,
-                    "loop": true,
-                    "skeletonName": "Player",
-                    "speed": 1.0,
-                    "type": "AnimationComponent"
-                  }
-                ],
-                "name": "PlayerModel",
-                "transform": {
-                  "position": [
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "rotation": [
-                    0.0,
-                    -0.0,
-                    0.0
-                  ],
-                  "scale": [
-                    1.0,
-                    1.0,
-                    1.0
-                  ]
-                },
-                "visible": true
-              }
-            ],
-            "name": "PlayerMesh",
-            "transform": {
-              "position": [
-                0.0,
-                -0.8700000047683716,
+                0.699999988079071,
                 0.0
               ],
               "rotation": [
@@ -637,153 +714,21 @@
               ]
             },
             "visible": true
-          },
+          }
+        ],
+        "components": [
           {
-            "active": true,
-            "components": [
-              {
-                "loop": true,
-                "soundFile": "assets/audios/walk_sound.wav",
-                "type": "SoundComponent",
-                "volume": 1.0
-              }
-            ],
-            "name": "Walk_Sound",
-            "transform": {
-              "position": [
-                0.0,
-                0.0,
-                0.0
-              ],
-              "rotation": [
-                0.0,
-                -0.0,
-                0.0
-              ],
-              "scale": [
-                1.0,
-                1.0,
-                1.0
-              ]
-            },
-            "visible": true
+            "pauseExempt": false,
+            "scriptPath": "scripts/player_controller.lua",
+            "type": "ScriptComponent"
           }
         ],
         "name": "Player",
         "transform": {
           "position": [
             0.0,
-            -1.4450000524520874,
+            -1.399999976158142,
             6.900000095367432
-          ],
-          "rotation": [
-            0.0,
-            -0.0,
-            0.0
-          ],
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        },
-        "visible": true
-      },
-      {
-        "active": true,
-        "components": [
-          {
-            "bodyA": "PlayerCollision",
-            "bodyB": "SnowskateCollision",
-            "enabled": false,
-            "jointType": "FIXED",
-            "pivotA": [
-              0.0,
-              -0.699999988079071,
-              0.0
-            ],
-            "pivotB": [
-              0.0,
-              0.0,
-              0.0
-            ],
-            "type": "JointComponent"
-          }
-        ],
-        "name": "PlayerJoint",
-        "transform": {
-          "position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "rotation": [
-            0.0,
-            -0.0,
-            0.0
-          ],
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        },
-        "visible": true
-      },
-      {
-        "active": true,
-        "name": "animation_script",
-        "transform": {
-          "position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "rotation": [
-            0.0,
-            -0.0,
-            0.0
-          ],
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        },
-        "visible": true
-      },
-      {
-        "active": true,
-        "components": [
-          {
-            "color": [
-              1.0,
-              1.0,
-              1.0
-            ],
-            "constant": 1.0,
-            "cutOff": 0.2199999988079071,
-            "direction": [
-              0.0,
-              -1.0,
-              0.0
-            ],
-            "intensity": 6.340000152587891,
-            "lightType": "POINT",
-            "linear": 0.09000000357627869,
-            "outerCutOff": 0.3100000023841858,
-            "quadratic": 0.03200000151991844,
-            "range": 21.3700008392334,
-            "showGizmo": true,
-            "type": "LightComponent"
-          }
-        ],
-        "name": "Light_0",
-        "transform": {
-          "position": [
-            -1.0,
-            4.699999809265137,
-            0.0
           ],
           "rotation": [
             0.0,
@@ -848,6 +793,7 @@
                 "bodyType": "STATIC",
                 "collisionShapeType": "BOX",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
@@ -886,7 +832,7 @@
           "position": [
             0.0,
             -2.0,
-            -15.0
+            -25.0
           ],
           "rotation": [
             0.0,
@@ -894,8 +840,8 @@
             0.0
           ],
           "scale": [
-            20.0,
-            2.0,
+            50.0,
+            1.5,
             1.0
           ]
         },
@@ -951,6 +897,7 @@
                 "bodyType": "STATIC",
                 "collisionShapeType": "BOX",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
@@ -989,7 +936,7 @@
           "position": [
             0.0,
             -2.0,
-            15.0
+            25.0
           ],
           "rotation": [
             0.0,
@@ -997,8 +944,8 @@
             0.0
           ],
           "scale": [
-            20.0,
-            2.0,
+            50.0,
+            1.5,
             1.0
           ]
         },
@@ -1054,6 +1001,7 @@
                 "bodyType": "STATIC",
                 "collisionShapeType": "BOX",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
@@ -1090,7 +1038,7 @@
         "name": "Wall_3",
         "transform": {
           "position": [
-            -10.0,
+            -25.0,
             -2.0,
             0.0
           ],
@@ -1101,8 +1049,8 @@
           ],
           "scale": [
             1.0,
-            2.0,
-            30.0
+            1.5,
+            50.0
           ]
         },
         "visible": true
@@ -1157,6 +1105,7 @@
                 "bodyType": "STATIC",
                 "collisionShapeType": "BOX",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
@@ -1193,7 +1142,7 @@
         "name": "Wall_4",
         "transform": {
           "position": [
-            10.0,
+            25.0,
             -2.0,
             0.0
           ],
@@ -1204,8 +1153,8 @@
           ],
           "scale": [
             1.0,
-            2.0,
-            30.0
+            1.5,
+            50.0
           ]
         },
         "visible": true
@@ -1240,109 +1189,6 @@
             1.0,
             1.0,
             1.0
-          ]
-        },
-        "visible": true
-      },
-      {
-        "active": true,
-        "children": [
-          {
-            "active": true,
-            "components": [
-              {
-                "material": {
-                  "blendMode": "Opaque",
-                  "color": [
-                    1.0,
-                    0.5,
-                    0.20000000298023224
-                  ],
-                  "metallic": 0.0,
-                  "reflectionStrength": 0.0,
-                  "roughness": 0.5
-                },
-                "meshType": "CUBE",
-                "type": "MeshRenderer"
-              }
-            ],
-            "name": "CubeMesh",
-            "transform": {
-              "position": [
-                0.0,
-                0.0,
-                0.0
-              ],
-              "rotation": [
-                0.0,
-                -0.0,
-                0.0
-              ],
-              "scale": [
-                1.0,
-                1.0,
-                1.0
-              ]
-            },
-            "visible": true
-          },
-          {
-            "active": true,
-            "components": [
-              {
-                "angularDamping": 0.0,
-                "bodyType": "STATIC",
-                "collisionShapeType": "BOX",
-                "friction": 0.5,
-                "linearDamping": 0.0,
-                "mass": 0.0,
-                "restitution": 0.0,
-                "shapeDimensions": [
-                  1.0,
-                  1.0,
-                  1.0
-                ],
-                "showCollisionShape": true,
-                "type": "PhysicsComponent"
-              }
-            ],
-            "name": "BoxCollision",
-            "transform": {
-              "position": [
-                0.0,
-                0.0,
-                0.0
-              ],
-              "rotation": [
-                0.0,
-                -0.0,
-                0.0
-              ],
-              "scale": [
-                1.0,
-                1.0,
-                1.0
-              ]
-            },
-            "visible": true
-          }
-        ],
-        "name": "GroundRoot",
-        "transform": {
-          "position": [
-            0.0,
-            -3.5,
-            0.0
-          ],
-          "rotation": [
-            0.0,
-            -0.0,
-            0.0
-          ],
-          "scale": [
-            20.0,
-            1.0,
-            30.0
           ]
         },
         "visible": true

@@ -147,6 +147,48 @@ void SceneNode::update(float deltaTime) {
     updateChildren(deltaTime);
 }
 
+void SceneNode::fixedUpdate(float deltaTime) {
+    if (!active) return;
+    bool paused = MenuManager::getInstance().isGamePaused();
+    for (auto& component : components) {
+        if (component->isEnabled()) {
+            if (auto* scriptComp = dynamic_cast<ScriptComponent*>(component.get())) {
+                if (!paused || scriptComp->isPauseExempt()) {
+                    scriptComp->fixedUpdate(deltaTime);
+                }
+            } else if (!paused) {
+                component->fixedUpdate(deltaTime);
+            }
+        }
+    }
+    fixedUpdateChildren(deltaTime);
+}
+
+void SceneNode::lateUpdate(float deltaTime) {
+    if (!active) return;
+
+    bool paused = MenuManager::getInstance().isGamePaused();
+
+    for (auto& component : components) {
+        if (component->isEnabled()) {
+            if (auto* scriptComp = dynamic_cast<ScriptComponent*>(component.get())) {
+                if (paused) {
+                    if (scriptComp->isPauseExempt()) {
+                        scriptComp->lateUpdate(deltaTime);
+                    }
+                } else {
+                    scriptComp->lateUpdate(deltaTime);
+                }
+            } else {
+                if (!paused) {
+                    component->lateUpdate(deltaTime);
+                }
+            }
+        }
+    }
+
+    lateUpdateChildren(deltaTime);
+}
 
 void SceneNode::render(Renderer& renderer) {
     if (!visible || !active) return;
@@ -218,8 +260,23 @@ bool SceneNode::hasTag(const std::string& tag) const {
 }
 
 void SceneNode::updateChildren(float deltaTime) {
-    for (auto& child : children) {
-        child->update(deltaTime);
+    std::vector<std::shared_ptr<SceneNode>> copy = children;
+    for (auto& child : copy) {
+        if (child) child->update(deltaTime);
+    }
+}
+
+void SceneNode::fixedUpdateChildren(float deltaTime) {
+    std::vector<std::shared_ptr<SceneNode>> copy = children;
+    for (auto& child : copy) {
+        if (child) child->fixedUpdate(deltaTime);
+    }
+}
+
+void SceneNode::lateUpdateChildren(float deltaTime) {
+    std::vector<std::shared_ptr<SceneNode>> copy = children;
+    for (auto& child : copy) {
+        if (child) child->lateUpdate(deltaTime);
     }
 }
 

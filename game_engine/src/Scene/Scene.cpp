@@ -41,6 +41,21 @@ void Scene::removeNode(const std::string& nodeName) {
     }
 }
 
+void Scene::queueRemoveNode(const std::string& nodeName) {
+    if (nodeName.empty() || nodeName == "Root") return;
+    pendingNodeRemovals.push_back(nodeName);
+}
+
+void Scene::processPendingRemovals() {
+    for (const auto& nodeName : pendingNodeRemovals) {
+        auto node = findNode(nodeName);
+        if (node && rootNode) {
+            rootNode->removeChild(node);
+        }
+    }
+    pendingNodeRemovals.clear();
+}
+
 std::shared_ptr<SceneNode> Scene::findNode(const std::string& nodeName) {
     if (!rootNode) return nullptr;
     
@@ -64,8 +79,21 @@ void Scene::start() {
 }
 
 void Scene::update(float deltaTime) {
+    processPendingRemovals();
     if (rootNode) {
         rootNode->update(deltaTime);
+    }
+}
+
+void Scene::fixedUpdate(float deltaTime) {
+    if (rootNode) {
+        rootNode->fixedUpdate(deltaTime);
+    }
+}
+
+void Scene::lateUpdate(float deltaTime) {
+    if (rootNode) {
+        rootNode->lateUpdate(deltaTime);
     }
 }
 

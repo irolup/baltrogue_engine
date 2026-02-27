@@ -16,9 +16,11 @@ public:
     
     // Component lifecycle
     virtual void start() {} // Called when component is first added
-    virtual void update(float deltaTime) {} // Called every frame
-    virtual void render(Renderer& renderer) {} // Called during rendering
-    virtual void destroy() {} // Called before component is destroyed
+    virtual void update(float deltaTime) {} // Every frame
+    virtual void fixedUpdate(float deltaTime) {} // Fixed rate (60 Hz)
+    virtual void lateUpdate(float deltaTime) {} // Every frame after physics
+    virtual void render(Renderer& renderer) {}
+    virtual void destroy() {}
     
     // Properties
     bool isEnabled() const { return enabled; }

@@ -11,6 +11,7 @@
 #include "Components/CameraComponent.h"
 #include "Components/PhysicsComponent.h"
 #include "Components/Area3DComponent.h"
+#include "Components/RaycastComponent.h"
 #include "Components/TextComponent.h"
 #include "Components/ScriptComponent.h"
 #include "Components/AnimationComponent.h"
@@ -87,6 +88,7 @@ void EditorUI::setupDockspace() {
 
 void EditorUI::renderMenuBar() {
     static bool openGridSettingsNextFrame = false;
+    static bool openPhysicsSettingsNextFrame = false;
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Scene")) {
@@ -157,12 +159,38 @@ void EditorUI::renderMenuBar() {
             if (ImGui::MenuItem("Disable All Physics Debug")) {
                 PhysicsManager::getInstance().setDebugDrawEnabled(false);
             }
+            if (ImGui::MenuItem("Physics Settings...")) {
+                openPhysicsSettingsNextFrame = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("World gravity and other physics settings.");
+            }
             
             ImGui::EndMenu();
         }
         if (openGridSettingsNextFrame) {
             ImGui::OpenPopup("GridSettings");
             openGridSettingsNextFrame = false;
+        }
+        if (openPhysicsSettingsNextFrame) {
+            ImGui::OpenPopup("PhysicsSettings");
+            openPhysicsSettingsNextFrame = false;
+        }
+        if (ImGui::BeginPopupModal("PhysicsSettings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            glm::vec3 gravity = PhysicsManager::getInstance().getGravity();
+            if (ImGui::DragFloat3("World Gravity", &gravity.x, 0.5f, -50.0f, 50.0f, "%.2f")) {
+                PhysicsManager::getInstance().setGravity(gravity);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Default (0, -9.81, 0). Affects all dynamic bodies with gravity enabled.");
+            }
+            if (ImGui::Button("Reset (-9.81 Y)")) {
+                PhysicsManager::getInstance().setGravity(glm::vec3(0.0f, -9.81f, 0.0f));
+            }
+            if (ImGui::Button("Close")) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
         if (ImGui::BeginPopupModal("GridSettings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             float cellSize = editor.getGridCellSize();
@@ -490,6 +518,21 @@ void EditorUI::renderMenuBar() {
                         physicsComponent->setShowCollisionShape(true);
                         physicsComponent->start();
                         
+                        auto selected = editor.getSelectedNode();
+                        if (selected) {
+                            selected->addChild(node);
+                        } else {
+                            scene->getRootNode()->addChild(node);
+                        }
+                    }
+                }
+                
+                if (ImGui::MenuItem("Raycast")) {
+                    auto scene = editor.getActiveScene();
+                    if (scene) {
+                        auto node = scene->createNode(editor.generateUniqueNodeName("Raycast"));
+                        auto raycastComponent = node->addComponent<RaycastComponent>();
+                        raycastComponent->setShowDebugLine(true);
                         auto selected = editor.getSelectedNode();
                         if (selected) {
                             selected->addChild(node);
@@ -1098,6 +1141,16 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                         }
                     }
                     
+                    if (ImGui::MenuItem("Raycast")) {
+                        auto scene = editor.getActiveScene();
+                        if (scene) {
+                            auto child = scene->createNode(editor.generateUniqueNodeName("Raycast"));
+                            auto raycastComponent = child->addComponent<RaycastComponent>();
+                            raycastComponent->setShowDebugLine(true);
+                            node->addChild(child);
+                        }
+                    }
+                    
                     ImGui::EndMenu();
                 }
                 
@@ -1109,27 +1162,26 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
             if (ImGui::MenuItem("Duplicate")) {
                 auto scene = editor.getActiveScene();
                 if (scene) {
-                    auto duplicate = scene->createNode(editor.generateUniqueNodeName(node->getName() + "_Copy"));
-                    duplicate->getTransform() = node->getTransform();
-                    
-                    const auto& components = node->getAllComponents();
-                    for (const auto& component : components) {
-                        if (component && component->isEnabled()) {
-                            if (component->getTypeName() == "MeshRenderer") {
-                                auto meshRenderer = duplicate->addComponent<MeshRenderer>();
-                                auto originalMeshRenderer = node->getComponent<MeshRenderer>();
-                                if (originalMeshRenderer) {
-                                    meshRenderer->setMesh(originalMeshRenderer->getMesh());
-                                    meshRenderer->setMaterial(originalMeshRenderer->getMaterial());
+                    auto duplicate = SceneSerializer::duplicateNodeSubtree(node);
+                    if (duplicate) {
+                        duplicate->setName(editor.generateUniqueNodeName(node->getName() + "_Copy"));
+                        std::function<void(std::shared_ptr<SceneNode>)> makeNamesUnique;
+                        makeNamesUnique = [&](std::shared_ptr<SceneNode> n) {
+                            for (size_t i = 0; i < n->getChildCount(); ++i) {
+                                auto ch = n->getChild(i);
+                                if (ch) {
+                                    ch->setName(editor.generateUniqueNodeName(ch->getName()));
+                                    makeNamesUnique(ch);
                                 }
                             }
+                        };
+                        makeNamesUnique(duplicate);
+                        if (node->getParent()) {
+                            node->getParent()->addChild(duplicate);
+                        } else {
+                            scene->getRootNode()->addChild(duplicate);
                         }
-                    }
-                    
-                    if (node->getParent()) {
-                        node->getParent()->addChild(duplicate);
-                    } else {
-                        scene->getRootNode()->addChild(duplicate);
+                        duplicate->start();
                     }
                 }
             }

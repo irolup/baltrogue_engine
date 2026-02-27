@@ -62,6 +62,8 @@ public:
     
     virtual void start();
     virtual void update(float deltaTime);
+    virtual void fixedUpdate(float deltaTime);
+    virtual void lateUpdate(float deltaTime);
     virtual void render(Renderer& renderer);
     
     bool isSelected() const { return selected; }
@@ -88,6 +90,8 @@ protected:
     bool selected;
     
     void updateChildren(float deltaTime);
+    void fixedUpdateChildren(float deltaTime);
+    void lateUpdateChildren(float deltaTime);
     void renderChildren(Renderer& renderer);
 };
 

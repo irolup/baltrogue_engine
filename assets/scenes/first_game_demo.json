@@ -229,7 +229,7 @@
         "components": [
           {
             "pauseExempt": false,
-            "scriptPath": "scripts/player_controller.lua",
+            "scriptPath": "scripts/player_controller_demo.lua",
             "type": "ScriptComponent"
           }
         ],

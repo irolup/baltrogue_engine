@@ -56,7 +56,8 @@ public:
 private:
     bool running;
     EngineMode mode;
-    
+    float physicsAccumulator;
+
     std::unique_ptr<SceneManager> sceneManager;
     std::unique_ptr<Renderer> renderer;
     std::unique_ptr<InputManager> inputManager;

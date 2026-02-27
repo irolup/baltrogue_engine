@@ -535,23 +535,21 @@ void TextComponent::renderWorldSpace(Renderer& renderer) {
     glActiveTexture(GL_TEXTURE0);
     fontAtlasTexture->bind();
     
-    // Store current blending state
     GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
-    
-    // Enable blending for transparency
+    GLboolean depthMaskWasEnabled;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWasEnabled);
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
-    // Render
+    glDepthMask(GL_FALSE);
+
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
-    
-    // Restore blending state
-    if (!blendWasEnabled) {
-        glDisable(GL_BLEND);
-    }
-    
+
+    if (!blendWasEnabled) glDisable(GL_BLEND);
+    if (depthMaskWasEnabled) glDepthMask(GL_TRUE);
+
     textShader->unuse();
 }
 
@@ -581,23 +579,21 @@ void TextComponent::renderWorldSpace(Renderer& renderer, const glm::mat4& worldT
     glActiveTexture(GL_TEXTURE0);
     fontAtlasTexture->bind();
     
-    // Store current blending state
     GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
-    
-    // Enable blending for transparency
+    GLboolean depthMaskWasEnabled;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWasEnabled);
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
-    // Render
+    glDepthMask(GL_FALSE);
+
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
-    
-    // Restore blending state
-    if (!blendWasEnabled) {
-        glDisable(GL_BLEND);
-    }
-    
+
+    if (!blendWasEnabled) glDisable(GL_BLEND);
+    if (depthMaskWasEnabled) glDepthMask(GL_TRUE);
+
     textShader->unuse();
 }
 
@@ -635,27 +631,22 @@ void TextComponent::renderScreenSpace(Renderer& renderer) {
     textShader->setMat4("uModelMat", modelMatrix);
     textShader->setInt("uFontAtlasTexture", 0);
     
-    // Bind font atlas texture
     glActiveTexture(GL_TEXTURE0);
     fontAtlasTexture->bind();
     
-    // Store current blending state
     GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
-    
-    // Enable blending for transparency
+    GLboolean depthMaskWasEnabled;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWasEnabled);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
     
-    // Render
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
     
-    // Restore blending state
-    if (!blendWasEnabled) {
-        glDisable(GL_BLEND);
-    }
-    
+    if (!blendWasEnabled) glDisable(GL_BLEND);
+    if (depthMaskWasEnabled) glDepthMask(GL_TRUE);
     textShader->unuse();
 }
 
@@ -670,27 +661,19 @@ void TextComponent::renderWorldSpaceDirectly(const glm::mat4& worldTransform, co
     textShader->setMat4("uModelMat", worldTransform);
     textShader->setInt("uFontAtlasTexture", 0);
     
-    // Bind font atlas texture
     glActiveTexture(GL_TEXTURE0);
     fontAtlasTexture->bind();
-    
-    // Store current blending state
     GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
-    
-    // Enable blending for transparency
+    GLboolean depthMaskWasEnabled;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWasEnabled);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
-    // Render
+    glDepthMask(GL_FALSE);
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
-    
-    // Restore blending state
-    if (!blendWasEnabled) {
-        glDisable(GL_BLEND);
-    }
-    
+    if (!blendWasEnabled) glDisable(GL_BLEND);
+    if (depthMaskWasEnabled) glDepthMask(GL_TRUE);
     textShader->unuse();
 }
 
@@ -723,27 +706,19 @@ void TextComponent::renderScreenSpaceDirectly() {
     textShader->setMat4("uModelMat", modelMatrix);
     textShader->setInt("uFontAtlasTexture", 0);
     
-    // Bind font atlas texture
     glActiveTexture(GL_TEXTURE0);
     fontAtlasTexture->bind();
-    
-    // Store current blending state
     GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
-    
-    // Enable blending for transparency
+    GLboolean depthMaskWasEnabled;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWasEnabled);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
-    // Render
+    glDepthMask(GL_FALSE);
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
-    
-    // Restore blending state
-    if (!blendWasEnabled) {
-        glDisable(GL_BLEND);
-    }
-    
+    if (!blendWasEnabled) glDisable(GL_BLEND);
+    if (depthMaskWasEnabled) glDepthMask(GL_TRUE);
     textShader->unuse();
 }
 
@@ -773,25 +748,23 @@ glm::vec2 TextComponent::calculateTextSize() const {
     
     return glm::vec2(maxWidth, totalHeight);
 }
-
-void TextComponent::generateVertices() {
+void TextComponent::generateVertices()
+{
     vertices.clear();
     indices.clear();
-    
-    if (packedChars.empty() || text.empty()) return;
-    
-    // Text processing (debug output removed for performance)
-    
-    // Calculate pixel scale to convert from font atlas pixels to world units
-    // Use a smaller scale factor to make text readable
-    float pixelScale = 0.01f; // Scale down significantly
-    glm::vec3 position = glm::vec3(0.0f);
-    
-    // Calculate text bounds for alignment
+
+    if (packedChars.empty() || text.empty())
+        return;
+
+    float pixelScale = 0.01f;
+
+    glm::vec3 basePosition(0.0f);
+
     glm::vec2 textSize = calculateTextSize();
     float offsetX = 0.0f;
-    
-    switch (alignment) {
+
+    switch (alignment)
+    {
         case TextAlignment::CENTER:
             offsetX = -textSize.x * 0.5f;
             break;
@@ -803,68 +776,85 @@ void TextComponent::generateVertices() {
             offsetX = 0.0f;
             break;
     }
-    
-    glm::vec3 startPosition = position + glm::vec3(offsetX, textSize.y * 0.5f, 0.0f);
+
+    glm::vec3 startPosition = basePosition + glm::vec3(offsetX, 0.0f, 0.0f);
     glm::vec3 currentPosition = startPosition;
-    
+
     int order[6] = { 0, 1, 2, 0, 2, 3 };
-    
-    for (char ch : text) {
-        if (ch == '\n') {
+
+    for (char ch : text)
+    {
+        if (ch == '\n')
+        {
             currentPosition.x = startPosition.x;
             currentPosition.y -= fontSize * pixelScale * scale * lineSpacing;
-        } else if (static_cast<uint32_t>(ch) >= firstCharCodePoint && static_cast<uint32_t>(ch) < firstCharCodePoint + charsToInclude) {
-            int charIndex = static_cast<int>(ch) - static_cast<int>(firstCharCodePoint);
-            // Character processing (debug output removed for performance)
-            if (charIndex >= 0 && static_cast<size_t>(charIndex) < packedChars.size() && static_cast<size_t>(charIndex) < alignedQuads.size()) {
-                stbtt_packedchar* packedChar = &packedChars[charIndex];
-                stbtt_aligned_quad* alignedQuad = &alignedQuads[charIndex];
-                
-                // Calculate glyph size and position
-                glm::vec2 glyphSize = {
-                    (packedChar->x1 - packedChar->x0) * pixelScale * scale,
-                    (packedChar->y1 - packedChar->y0) * pixelScale * scale
-                };
-                
-                glm::vec2 glyphBoundingBoxBottomLeft = {
-                    currentPosition.x + (packedChar->xoff * pixelScale * scale),
-                    currentPosition.y + (packedChar->yoff * pixelScale * scale)
-                };
-                
-                // Create quad vertices
-                glm::vec2 glyphVertices[4] = {
-                    { glyphBoundingBoxBottomLeft.x + glyphSize.x, glyphBoundingBoxBottomLeft.y + glyphSize.y },
-                    { glyphBoundingBoxBottomLeft.x, glyphBoundingBoxBottomLeft.y + glyphSize.y },
-                    { glyphBoundingBoxBottomLeft.x, glyphBoundingBoxBottomLeft.y },
-                    { glyphBoundingBoxBottomLeft.x + glyphSize.x, glyphBoundingBoxBottomLeft.y },
-                };
-                
-                glm::vec2 glyphTextureCoords[4] = {
-                    { alignedQuad->s1, alignedQuad->t0 },
-                    { alignedQuad->s0, alignedQuad->t0 },
-                    { alignedQuad->s0, alignedQuad->t1 },
-                    { alignedQuad->s1, alignedQuad->t1 },
-                };
-                
-                // Add vertices for this character
-                size_t startIndex = vertices.size();
-                for (int i = 0; i < 6; i++) {
-                    vertices.emplace_back(
-                        glm::vec3(glyphVertices[order[i]], currentPosition.z),
-                        color,
-                        glyphTextureCoords[order[i]]
-                    );
-                }
-                
-                // Add indices
-                for (int i = 0; i < 6; i++) {
-                    indices.push_back(static_cast<unsigned int>(startIndex + i));
-                }
-                
-                // Advance position
-                currentPosition.x += packedChar->xadvance * pixelScale * scale;
-            }
+            continue;
         }
+
+        uint32_t codepoint = static_cast<uint32_t>(ch);
+
+        if (codepoint < firstCharCodePoint ||
+            codepoint >= firstCharCodePoint + charsToInclude)
+            continue;
+
+        int charIndex = static_cast<int>(codepoint - firstCharCodePoint);
+
+        if (charIndex < 0 ||
+            static_cast<size_t>(charIndex) >= packedChars.size())
+            continue;
+
+        float xpos = currentPosition.x / (pixelScale * scale);
+        float ypos = currentPosition.y / (pixelScale * scale);
+
+        stbtt_aligned_quad q;
+        stbtt_GetPackedQuad(
+            packedChars.data(),
+            atlasWidth,
+            atlasHeight,
+            charIndex,
+            &xpos,
+            &ypos,
+            &q,
+            0
+        );
+
+        float x0 = q.x0 * pixelScale * scale;
+        float x1 = q.x1 * pixelScale * scale;
+        float y0 = -q.y0 * pixelScale * scale;
+        float y1 = -q.y1 * pixelScale * scale;
+        glm::vec2 glyphVertices[4] =
+        {
+            { x1, y0 },
+            { x0, y0 },
+            { x0, y1 },
+            { x1, y1 },
+        };
+
+        glm::vec2 glyphUVs[4] =
+        {
+            { q.s1, q.t0 },
+            { q.s0, q.t0 },
+            { q.s0, q.t1 },
+            { q.s1, q.t1 },
+        };
+
+        size_t startIndex = vertices.size();
+
+        for (int i = 0; i < 6; i++)
+        {
+            vertices.emplace_back(
+                glm::vec3(glyphVertices[order[i]], currentPosition.z),
+                color,
+                glyphUVs[order[i]]
+            );
+        }
+
+        for (int i = 0; i < 6; i++)
+        {
+            indices.push_back(static_cast<unsigned int>(startIndex + i));
+        }
+
+        currentPosition.x = xpos * pixelScale * scale;
     }
 }
 
@@ -873,11 +863,9 @@ void TextComponent::updateBuffers() {
     
     glBindVertexArray(vao);
     
-    // Update vertex buffer
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(TextVertex) * vertices.size(), vertices.data());
     
-    // Update element buffer
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, sizeof(unsigned int) * indices.size(), indices.data());
     

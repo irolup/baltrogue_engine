@@ -106,6 +106,7 @@ private:
     void applyMaterial(const Material& material);
     void updateFrustum();
     void renderSkybox(Scene& scene);
+    void renderTextNodes(SceneNode& node, const glm::mat4& parentTransform);
     bool isMeshInFrustum(const Mesh& mesh, const glm::mat4& modelMatrix) const;
     bool isAABBInFrustum(const glm::vec3& min, const glm::vec3& max, const glm::mat4& transform) const;
 };

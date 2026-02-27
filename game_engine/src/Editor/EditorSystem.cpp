@@ -13,6 +13,7 @@
 #include "Components/TextComponent.h"
 #include "Components/Area3DComponent.h"
 #include "Components/PhysicsComponent.h"
+#include "Components/RaycastComponent.h"
 #include "Components/SkyboxComponent.h"
 #include "Core/Engine.h"
 #include "Rendering/LightingManager.h"
@@ -640,11 +641,13 @@ void EditorSystem::renderSceneDirectly(Scene& scene, CameraComponent* camera) {
     bool isEditorCamera = (cameraMode == CameraMode::EDITOR_CAMERA);
     
     auto rootNode = scene.getRootNode();
-    if (rootNode) {
-        renderNodeDirectly(rootNode, glm::mat4(1.0f), viewMatrix, projectionMatrix, isEditorCamera);
-    }
-    
     renderSkyboxDirectly(scene, camera, viewMatrix, projectionMatrix);
+    if (rootNode) {
+        renderNodeDirectly(rootNode, glm::mat4(1.0f), viewMatrix, projectionMatrix, isEditorCamera, 1);
+    }
+    if (rootNode) {
+        renderNodeDirectly(rootNode, glm::mat4(1.0f), viewMatrix, projectionMatrix, isEditorCamera, 2);
+    }
     
     renderPhysicsDebugShapes(viewMatrix, projectionMatrix);
 }
@@ -699,7 +702,8 @@ void EditorSystem::renderSkyboxDirectly(Scene& scene, CameraComponent* camera, c
 }
 
 void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm::mat4& parentTransform,
-                                    const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, bool isEditorCamera) {
+                                    const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, bool isEditorCamera,
+                                    int renderPass) {
     if (!node || !node->isVisible() || !node->isActive()) return;
     
     glm::mat4 worldTransform = parentTransform * node->getLocalMatrix();
@@ -710,67 +714,76 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
         auto material = meshRenderer->getMaterial();
         
         if (mesh && material) {
-            if (activeScene) {
-                auto activeSkyboxNode = activeScene->getActiveSkybox();
-                if (activeSkyboxNode) {
-                    auto skyboxComp = activeSkyboxNode->getComponent<SkyboxComponent>();
-                    if (skyboxComp && skyboxComp->isActive()) {
-                        auto envMap = skyboxComp->getCubemapTexture();
-                        if (envMap) {
-                            material->setTexture("u_EnvironmentMap", envMap);
-                            material->setBool("u_HasEnvironmentMap", true);
+            bool opaque = (material->getBlendMode() == BlendMode::Opaque);
+            if (renderPass == 1 && !opaque) { /* skip transparent in opaque pass */ }
+            else if (renderPass == 2 && opaque) { /* skip opaque in transparent pass */ }
+            else {
+                if (activeScene) {
+                    auto activeSkyboxNode = activeScene->getActiveSkybox();
+                    if (activeSkyboxNode) {
+                        auto skyboxComp = activeSkyboxNode->getComponent<SkyboxComponent>();
+                        if (skyboxComp && skyboxComp->isActive()) {
+                            auto envMap = skyboxComp->getCubemapTexture();
+                            if (envMap) {
+                                material->setTexture("u_EnvironmentMap", envMap);
+                                material->setBool("u_HasEnvironmentMap", true);
+                            } else {
+                                material->setBool("u_HasEnvironmentMap", false);
+                            }
                         } else {
                             material->setBool("u_HasEnvironmentMap", false);
                         }
                     } else {
                         material->setBool("u_HasEnvironmentMap", false);
                     }
-                } else {
-                    material->setBool("u_HasEnvironmentMap", false);
                 }
-            }
 
-            material->apply();
-            
-            auto shader = material->getShader();
-            if (shader) {
-                shader->setMat4("modelMatrix", worldTransform);
-                shader->setMat4("viewMatrix", viewMatrix);
-                shader->setMat4("projectionMatrix", projectionMatrix);
+                material->apply();
                 
-                glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(worldTransform)));
-                shader->setMat3("normalMatrix", normalMatrix);
-                
-                glm::vec3 cameraPos = glm::vec3(glm::inverse(viewMatrix)[3]);
-                shader->setVec3("u_CameraPos", cameraPos);
-                
-                auto& lightingManager = LightingManager::getInstance();
-                size_t numLights = lightingManager.getActiveLightCount();
-                
-                if (numLights > 0) {
-                    try {
-                        auto lightDataArray = lightingManager.getLightDataArray();
-                        shader->setInt("u_NumLights", (int)numLights);
-                        
-                        for (size_t i = 0; i < numLights; ++i) {
-                            const auto& lightData = lightDataArray[i];
-                            std::string lightName = "u_Lights[" + std::to_string(i) + "]";
+                auto shader = material->getShader();
+                if (shader) {
+                    shader->setMat4("modelMatrix", worldTransform);
+                    shader->setMat4("viewMatrix", viewMatrix);
+                    shader->setMat4("projectionMatrix", projectionMatrix);
+                    
+                    glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(worldTransform)));
+                    shader->setMat3("normalMatrix", normalMatrix);
+                    
+                    glm::vec3 cameraPos = glm::vec3(glm::inverse(viewMatrix)[3]);
+                    shader->setVec3("u_CameraPos", cameraPos);
+                    
+                    auto& lightingManager = LightingManager::getInstance();
+                    size_t numLights = lightingManager.getActiveLightCount();
+                    
+                    if (numLights > 0) {
+                        try {
+                            auto lightDataArray = lightingManager.getLightDataArray();
+                            shader->setInt("u_NumLights", (int)numLights);
                             
-                            shader->setVec4(lightName + ".position", lightData.position);
-                            shader->setVec4(lightName + ".direction", lightData.direction);
-                            shader->setVec4(lightName + ".color", lightData.color);
-                            shader->setVec4(lightName + ".params", lightData.params);
-                            shader->setVec4(lightName + ".attenuation", lightData.attenuation);
+                            for (size_t i = 0; i < numLights; ++i) {
+                                const auto& lightData = lightDataArray[i];
+                                std::string lightName = "u_Lights[" + std::to_string(i) + "]";
+                                
+                                shader->setVec4(lightName + ".position", lightData.position);
+                                shader->setVec4(lightName + ".direction", lightData.direction);
+                                shader->setVec4(lightName + ".color", lightData.color);
+                                shader->setVec4(lightName + ".params", lightData.params);
+                                shader->setVec4(lightName + ".attenuation", lightData.attenuation);
+                            }
+                        } catch (...) {
+                            shader->setInt("u_NumLights", 0);
                         }
-                    } catch (...) {
+                    } else {
                         shader->setInt("u_NumLights", 0);
                     }
-                } else {
-                    shader->setInt("u_NumLights", 0);
+                }
+                
+                mesh->draw();
+                if (!material->getDepthWrite()) {
+                    glDepthMask(GL_TRUE);
+                    glDepthFunc(GL_LESS);
                 }
             }
-            
-            mesh->draw();
         }
     }
     
@@ -785,6 +798,9 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
                 auto material = (i < materials.size()) ? materials[i] : nullptr;
                 
                 if (!mesh) continue;
+                bool opaque = !material || (material->getBlendMode() == BlendMode::Opaque);
+                if (renderPass == 1 && !opaque) continue;
+                if (renderPass == 2 && opaque) continue;
                 
                 if (material) {
                     material->apply();
@@ -826,14 +842,19 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
                             shader->setInt("u_NumLights", 0);
                         }
                     }
+                    
+                    mesh->draw();
+                    if (material && !material->getDepthWrite()) {
+                        glDepthMask(GL_TRUE);
+                        glDepthFunc(GL_LESS);
+                    }
                 }
-                
-                mesh->draw();
             }
         }
     }
     
 #ifdef EDITOR_BUILD
+    if (renderPass != 2) {
     auto area3DComponent = node->getComponent<Area3DComponent>();
     // Gate Area3D wireframes behind the global debug toggle so they don't
     // unexpectedly show up after loading a scene.
@@ -940,12 +961,13 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
             }
         }
     }
+    }
 #endif
     
     for (size_t i = 0; i < node->getChildCount(); ++i) {
         auto child = node->getChild(i);
         if (child) {
-            renderNodeDirectly(child, worldTransform, viewMatrix, projectionMatrix, isEditorCamera);
+            renderNodeDirectly(child, worldTransform, viewMatrix, projectionMatrix, isEditorCamera, renderPass);
         }
     }
 }
@@ -953,7 +975,7 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
 void EditorSystem::renderPhysicsDebugShapes(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
 #ifdef EDITOR_BUILD
     auto& physicsManager = PhysicsManager::getInstance();
-    if (!physicsManager.isDebugDrawEnabled() || !activeScene) return;
+    if (!activeScene) return;
     
     auto debugMaterial = std::make_shared<Material>();
     debugMaterial->setColor(glm::vec3(0.0f, 1.0f, 0.0f));
@@ -1003,8 +1025,13 @@ void EditorSystem::renderPhysicsDebugShapes(const glm::mat4& viewMatrix, const g
             
             auto physicsComponent = node->getComponent<PhysicsComponent>();
             if (physicsComponent && physicsComponent->isEnabled() && 
-                physicsComponent->getShowCollisionShape()) {
+                physicsManager.isDebugDrawEnabled() && physicsComponent->getShowCollisionShape()) {
                 physicsComponent->renderDebugShape(*debugMaterial, viewMatrix, projectionMatrix);
+            }
+            
+            auto raycastComponent = node->getComponent<RaycastComponent>();
+            if (raycastComponent && raycastComponent->isEnabled() && raycastComponent->getShowDebugLine()) {
+                raycastComponent->renderDebugLine(*debugMaterial, viewMatrix, projectionMatrix);
             }
             
             for (size_t i = 0; i < node->getChildCount(); ++i) {

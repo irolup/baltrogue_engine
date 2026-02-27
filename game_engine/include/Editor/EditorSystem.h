@@ -120,8 +120,7 @@ private:
     void renderSceneToViewport();
     
     void renderSceneDirectly(Scene& scene, CameraComponent* camera);
-    void renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm::mat4& parentTransform,
-                          const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, bool isEditorCamera = false);
+    void renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm::mat4& parentTransform, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, bool isEditorCamera, int renderPass);
     void renderSkyboxDirectly(Scene& scene, CameraComponent* camera, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
     
     void renderPhysicsDebugShapes(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);

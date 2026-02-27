@@ -156,11 +156,9 @@ void PhysicsComponent::setBodyType(PhysicsBodyType type) {
         if (type == PhysicsBodyType::STATIC) {
             flags |= btCollisionObject::CF_STATIC_OBJECT;
             mass = 0.0f;
-        } else         if (type == PhysicsBodyType::KINEMATIC) {
+        } else if (bodyType == PhysicsBodyType::KINEMATIC) {
             flags |= btCollisionObject::CF_KINEMATIC_OBJECT;
             mass = 0.0f;
-        } else {
-            if (mass <= 0.0f) mass = 1.0f;
         }
         
         rigidBody->setCollisionFlags(flags);
@@ -566,16 +564,11 @@ void PhysicsComponent::createRigidBody() {
         flags |= btCollisionObject::CF_KINEMATIC_OBJECT;
         mass = 0.0f;
     } else {
-        if (mass <= 0.0f) mass = 1.0f;
-        
         rigidBody->setCollisionFlags(btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK);
-        
         rigidBody->setCcdMotionThreshold(0.1f);
         rigidBody->setCcdSweptSphereRadius(0.1f);
-        
         rigidBody->setAngularFactor(btVector3(1.0f, 1.0f, 1.0f));
         rigidBody->setLinearFactor(btVector3(1.0f, 1.0f, 1.0f));
-        
         rigidBody->setSleepingThresholds(0.1f, 0.1f);
     }
     
@@ -852,6 +845,16 @@ void PhysicsComponent::drawInspector() {
         float massValue = mass;
         if (ImGui::DragFloat("Mass", &massValue, 0.1f, 0.0f, 1000.0f)) {
             setMass(massValue);
+        }
+        
+        if (bodyType == PhysicsBodyType::DYNAMIC) {
+            bool gravEnabled = gravityEnabled;
+            if (ImGui::Checkbox("Gravity", &gravEnabled)) {
+                setGravityEnabled(gravEnabled);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("When enabled, this body uses the world gravity. Disable for floating objects (e.g. mass 0).");
+            }
         }
         
         // Friction

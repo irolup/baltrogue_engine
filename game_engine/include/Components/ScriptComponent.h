@@ -18,6 +18,8 @@ public:
     
     virtual void start() override;
     virtual void update(float deltaTime) override;
+    virtual void fixedUpdate(float deltaTime) override;
+    virtual void lateUpdate(float deltaTime) override;
     virtual void render(Renderer& renderer) override;
     virtual void destroy() override;
     
