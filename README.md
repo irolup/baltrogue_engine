@@ -116,6 +116,11 @@ After installation, set the environment variables:
 export VITASDK=/usr/local/vitasdk
 export PATH=$VITASDK/bin:$PATH
 ```
+Make sure `vitaGL` is available in your VitaSDK installation.  
+If it is missing, you can build and install it following the instructions on the official vitaGL repository:
+
+https://github.com/Rinnegatamante/vitaGL
+
 
 ### Dependencies Setup
 
