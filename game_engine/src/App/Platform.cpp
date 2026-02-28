@@ -108,8 +108,13 @@
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
         
-        // Create window with Vita resolution
-        window = glfwCreateWindow(VITA_WIDTH, VITA_HEIGHT, "First Game - Linux Build", nullptr, nullptr);
+        #ifdef EDITOR_BUILD
+        window = glfwCreateWindow(VITA_WIDTH, VITA_HEIGHT, "Editor", nullptr, nullptr);
+        #elif defined(LINUX_BUILD)
+        window = glfwCreateWindow(VITA_WIDTH, VITA_HEIGHT, "Linux Build", nullptr, nullptr);
+        #elif defined(VITA_BUILD)
+        window = glfwCreateWindow(VITA_WIDTH, VITA_HEIGHT, "Vita Build", nullptr, nullptr);
+        #endif
         if (!window) {
             glfwTerminate();
             return false;

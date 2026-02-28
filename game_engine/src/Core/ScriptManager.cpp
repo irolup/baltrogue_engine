@@ -75,7 +75,7 @@ ScriptManager& ScriptManager::getInstance() {
 
 ScriptManager::ScriptManager()
     : globalLuaState(nullptr)
-    , scriptDirectory("scripts/")
+    , scriptDirectory("assets/scripts/")
     , hotReloadEnabled(false)
     , initialized(false)
 {

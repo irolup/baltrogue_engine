@@ -39,9 +39,9 @@ EDITOR_BUILD_DIR := build_editor
 GAME_CFILES := $(foreach dir,$(GAME_SOURCES), $(wildcard $(dir)/*.c))
 GAME_CPPFILES := $(foreach dir,$(GAME_SOURCES), $(wildcard $(dir)/*.cpp))
 
-# Engine source files
-ENGINE_CFILES := $(foreach dir,$(ENGINE_SOURCES), $(wildcard $(dir)/*/*.c))
-ENGINE_CPPFILES := $(foreach dir,$(ENGINE_SOURCES), $(wildcard $(dir)/*/*.cpp))
+# Engine source files (exclude App - entry points and platform are built separately per target)
+ENGINE_CFILES := $(filter-out game_engine/src/App/%, $(wildcard game_engine/src/*/*.c))
+ENGINE_CPPFILES := $(filter-out game_engine/src/App/%, $(wildcard game_engine/src/*/*.cpp))
 
 # Vendor source files (ImGui for editor builds)
 IMGUI_SOURCES := vendor/imgui
@@ -58,20 +58,20 @@ TINYGLTF_CPPFILES := $(wildcard $(TINYGLTF_SOURCES)/*.cc)
 # All source files for game (Vita main + engine + platform, excluding old game files)
 # Include SceneSerializer.cpp for JSON scene loading in Vita builds
 # Include pthread stub for Vita (provides pthread compatibility for libstdc++)
-ALL_CFILES := $(ENGINE_CFILES) src/pthread_stub.c
-ALL_CPPFILES := src/vita_main.cpp src/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp
+ALL_CFILES := $(ENGINE_CFILES) game_engine/src/App/pthread_stub.c
+ALL_CPPFILES := game_engine/src/App/vita_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp
 
 # Linux game source files (new game main + engine + platform, excluding editor and old game files)
 # Include SceneSerializer.cpp for JSON scene loading in game builds
 LINUX_GAME_CFILES := $(ENGINE_CFILES)
-LINUX_GAME_CPPFILES := src/game_main.cpp src/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp
+LINUX_GAME_CPPFILES := game_engine/src/App/game_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp
 
 # Editor source files
 EDITOR_SOURCES := game_engine/src/Editor
 EDITOR_SOURCE_CPPFILES := $(wildcard $(EDITOR_SOURCES)/*.cpp)
 
 # Editor source files (engine + platform + editor main, excluding game logic files)
-EDITOR_PLATFORM_CPPFILES := src/Platform.cpp
+EDITOR_PLATFORM_CPPFILES := game_engine/src/App/Platform.cpp
 EDITOR_ALL_CPPFILES := $(ENGINE_CPPFILES) $(EDITOR_PLATFORM_CPPFILES) editor_main.cpp
 
 # Object files for Vita build
@@ -193,15 +193,16 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/models/lightning.glb=assets/models/lightning.glb \
 		-a assets/models/Pistol.glb=assets/models/Pistol.glb \
 		-a assets/audios/walk_sound.wav=assets/audios/walk_sound.wav \
-		-a scripts/pause_menu.lua=scripts/pause_menu.lua \
-		-a scripts/collectible_behavior.lua=scripts/collectible_behavior.lua \
-		-a scripts/player_controller.lua=scripts/player_controller.lua \
-		-a scripts/main_menu.lua=scripts/main_menu.lua \
-		-a scripts/goal_controller.lua=scripts/goal_controller.lua \
-		-a scripts/animated_character.lua=scripts/animated_character.lua \
-		-a scripts/physics_gun.lua=scripts/physics_gun.lua \
+		-a assets/scripts/pause_menu.lua=assets/scripts/pause_menu.lua \
+		-a assets/scripts/collectible_behavior.lua=assets/scripts/collectible_behavior.lua \
+		-a assets/scripts/player_controller.lua=assets/scripts/player_controller.lua \
+		-a assets/scripts/main_menu.lua=assets/scripts/main_menu.lua \
+		-a assets/scripts/goal_controller.lua=assets/scripts/goal_controller.lua \
+		-a assets/scripts/animated_character.lua=assets/scripts/animated_character.lua \
+		-a assets/scripts/physics_gun.lua=assets/scripts/physics_gun.lua \
 		-a assets/scenes/main_menu.json=assets/scenes/main_menu.json \
 		-a assets/scenes/first_game_demo.json=assets/scenes/first_game_demo.json \
+		-a assets/scenes/playground.json=assets/scenes/playground.json \
 		$@
 $(BUILD_DIR)/eboot.bin: $(BUILD_DIR)/$(TARGET).velf
 	vita-make-fself -s $< $@
@@ -213,16 +214,6 @@ $(BUILD_DIR)/$(TARGET).elf: $(OBJS) $(TINYGLTF_OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $^ $(BULLET_VITA_LIBS) $(VITA_LIBS) -o $@
 
 
-# Text test executable
-TEXT_TEST_TARGET := text_test
-TEXT_TEST_CPPFILES := src/text_test.cpp src/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES))
-TEXT_TEST_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(LINUX_GAME_CFILES:.c=.o) $(TEXT_TEST_CPPFILES:.cpp=.o))
-
-# Lua test executable
-LUA_TEST_TARGET := lua_test
-LUA_TEST_CPPFILES := src/lua_test.cpp src/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES))
-LUA_TEST_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(LINUX_GAME_CFILES:.c=.o) $(LUA_TEST_CPPFILES:.cpp=.o))
-
 # Linux game executable
 $(LINUX_BUILD_DIR)/$(TARGET): $(LINUX_OBJS) $(LINUX_TINYGLTF_OBJS) | $(LINUX_BUILD_DIR)
 	$(LINUX_CXX) $(LINUX_CXXFLAGS) $^ $(LINUX_LIBS) $(BULLET_LINUX_LIBS) -o $@
@@ -230,14 +221,6 @@ $(LINUX_BUILD_DIR)/$(TARGET): $(LINUX_OBJS) $(LINUX_TINYGLTF_OBJS) | $(LINUX_BUI
 # Linux editor executable
 $(EDITOR_BUILD_DIR)/$(EDITOR_TARGET): $(EDITOR_OBJS) $(EDITOR_TINYGLTF_OBJS) | $(EDITOR_BUILD_DIR)
 	$(LINUX_CXX) $(LINUX_CXXFLAGS) $^ $(LINUX_EDITOR_LIBS) $(BULLET_LINUX_LIBS) -o $@
-
-# Text test executable
-$(LINUX_BUILD_DIR)/$(TEXT_TEST_TARGET): $(TEXT_TEST_OBJS) | $(LINUX_BUILD_DIR)
-	$(LINUX_CXX) $(LINUX_CXXFLAGS) $^ $(LINUX_LIBS) $(BULLET_LINUX_LIBS) -o $@
-
-# Lua test executable
-$(LINUX_BUILD_DIR)/$(LUA_TEST_TARGET): $(LUA_TEST_OBJS) $(LINUX_TINYGLTF_OBJS) | $(LINUX_BUILD_DIR)
-	$(LINUX_CXX) $(LINUX_CXXFLAGS) $^ $(LINUX_LIBS) $(BULLET_LINUX_LIBS) -o $@
 
 # Build rules for C files (Vita)
 $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
@@ -331,7 +314,6 @@ help:
 	@echo "  clean          - Clean all build directories"
 	@echo "  install-deps   - Install Linux dependencies"
 	@echo "  install-editor-deps - Install editor dependencies"
-	@echo "  lua-test       - Build Lua scripting test executable"
 	@echo "  lua-vita       - Build Lua 5.3 static library for PS Vita"
 	@echo "  help           - Show this help message"
 
@@ -344,10 +326,4 @@ build-bullet:
 	@echo "  - Vita: Cross-compile using VitaSDK toolchain"
 	@echo "  - Place the built .a files in vendor/bullet/lib/"
 
-# Text test target
-text-test: $(LINUX_BUILD_DIR)/$(TEXT_TEST_TARGET)
-
-# Lua test target
-lua-test: $(LINUX_BUILD_DIR)/$(LUA_TEST_TARGET)
-
-.PHONY: all vita linux editor run run-editor clean install-deps install-editor-deps debug-linux debug-editor help build-bullet text-test lua-test lua-vita
+.PHONY: all vita linux editor run run-editor clean install-deps install-editor-deps debug-linux debug-editor help build-bullet lua-vita

@@ -1,35 +1,38 @@
+// Vita main file - runs the same scene as Linux game
 
-#ifdef LINUX_BUILD
-
-#include "../game_engine/include/Core/Engine.h"
-#include "../game_engine/include/Scene/Scene.h"
-#include "../game_engine/include/Scene/SceneNode.h"
-#include "../game_engine/include/Components/CameraComponent.h"
-#include "../game_engine/include/Components/MeshRenderer.h"
-#include "../game_engine/include/Components/ModelRenderer.h"
-#include "../game_engine/include/Components/LightComponent.h"
-#include "../game_engine/include/Components/PhysicsComponent.h"
-#include "../game_engine/include/Components/TextComponent.h"
-#include "../game_engine/include/Components/ScriptComponent.h"
-#include "../game_engine/include/Components/Area3DComponent.h"
-#include "../game_engine/include/Rendering/Mesh.h"
-#include "../game_engine/include/Rendering/Material.h"
-#include "../game_engine/include/Rendering/TextureManager.h"
-#include <iostream>
+#include "Core/Engine.h"
+#include "Scene/Scene.h"
+#include "Scene/SceneNode.h"
+#include "Components/CameraComponent.h"
+#include "Components/MeshRenderer.h"
+#include "Components/ModelRenderer.h"
+#include "Components/LightComponent.h"
+#include "Components/PhysicsComponent.h"
+#include "Components/TextComponent.h"
+#include "Components/ScriptComponent.h"
+#include "Components/Area3DComponent.h"
+#include "Rendering/Mesh.h"
+#include "Rendering/Material.h"
+#include "Rendering/TextureManager.h"
+#include <vitasdk.h>
+#include <vitaGL.h>
 
 using namespace GameEngine;
 
 int main() {
+    // Initialize VitaGL first (CRITICAL for Vita builds)
+    vglInit(0);
+
+    sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
+    
     // Create engine instance
     Engine engine;
     
-    // Initialize in game mode (but we'll create the editor scene)
+    // Initialize in game mode
     if (!engine.initialize()) {
-        std::cerr << "Failed to initialize game engine!" << std::endl;
+        // On Vita, we can't use std::cerr, so just return error
         return -1;
     }
-    
-    engine.setWindowTitle("Game Engine - Linux Game Build");
     
     // Enable editor mode for keyboard and mouse input
 #ifndef VITA_BUILD
@@ -42,21 +45,8 @@ int main() {
     
     // Create the same scene as the editor (camera + shapes)
     auto& sceneManager = engine.getSceneManager();
-    auto gameScene = sceneManager.createScene("Game Scene");
+    auto gameScene = sceneManager.createScene("Vita Game Scene");
     
-    // Add default directional light
-    auto lightNode = gameScene->createNode("Default Light");
-    auto lightComponent = lightNode->addComponent<LightComponent>();
-    lightComponent->setType(LightType::DIRECTIONAL);
-    lightComponent->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
-    lightComponent->setIntensity(1.0f);
-    lightComponent->setRange(100.0f);
-    lightComponent->setShowGizmo(false);
-    lightNode->getTransform().setPosition(glm::vec3(0.0f, 10.0f, 0.0f));
-    lightNode->getTransform().setEulerAngles(glm::vec3(-45.0f, 0.0f, 0.0f));
-    gameScene->getRootNode()->addChild(lightNode);
-    lightComponent->start();
-
     // Create Main Camera as a child of Player (so it moves with PlayerRoot -> Player)
     // Scene structure: PlayerRoot (empty, move this) -> Player (PhysicsComponent) -> Main Camera
     auto cameraNode = gameScene->createNode("Main Camera");
@@ -159,30 +149,26 @@ int main() {
     // Add a script component
     auto scriptNode1 = gameScene->createNode("Main Menu Controller");
     auto scriptComponent1 = scriptNode1->addComponent<ScriptComponent>();
-    scriptComponent1->loadScript("scripts/main_menu.lua");
+    scriptComponent1->loadScript("assets/scripts/main_menu.lua");
     scriptComponent1->setPauseExempt(true);
     gameScene->getRootNode()->addChild(scriptNode1);
     scriptComponent1->start();
 
-    std::cout << "Main menu scene loaded!" << std::endl;
 
     // Try to load main menu scene from JSON file first
     // If it doesn't exist, fall back to loading the current scene
-    std::cout << "Attempting to load main menu from assets/scenes/main_menu.json..." << std::endl;
     if (sceneManager.loadSceneFromFile("Main Menu", "assets/scenes/main_menu.json")) {
-        std::cout << "Main menu loaded from assets/scenes/main_menu.json" << std::endl;
-        std::cout << "Use W/S or Up/Down arrows to navigate, Enter/Space to select." << std::endl;
+        // Main menu loaded successfully from JSON
     } else {
-        std::cout << "Main menu scene not found or failed to load. Loading current scene..." << std::endl;
         // Load the current scene (main menu created in code above)
         sceneManager.loadScene(gameScene);
-        std::cout << "Current scene loaded (main menu from code)." << std::endl;
     }
     
     // Run the game
     engine.run();
     
+    // Cleanup VitaGL
+    vglEnd();
+    
     return 0;
 }
-
-#endif // LINUX_BUILD

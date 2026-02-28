@@ -69,7 +69,7 @@ int pthread_mutex_trylock(pthread_mutex_t *mutex) {
     return (result < 0) ? EBUSY : 0;
 }
 
-int pthread_create(pthread_t *thread, const pthread_attr_t *attr, 
+int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
                    void *(*start_routine)(void *), void *arg) {
     (void)thread;
     (void)attr;
@@ -143,8 +143,9 @@ int sem_wait(sem_t *sem) {
 }
 
 int sem_trywait(sem_t *sem) {
-    if (!sem || sem->semId < 0) return -1;
-    int result = sceKernelPollSema(sem->semId, 1);
+    if (!sem) return -1;
+    SceUID semId = *((SceUID*)sem);
+    if (semId < 0) return -1;
+    int result = sceKernelPollSema(semId, 1);
     return (result < 0) ? -1 : 0;
 }
-

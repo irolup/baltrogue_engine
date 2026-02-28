@@ -412,6 +412,6 @@ Copy these files from your ImGui download to `vendor/imgui/`:
 ## Additional Resources
 
 - Component API documentation: See individual component docs in `docs/` folder
-- Example scripts: See `scripts/` folder for Lua script examples
+- Example scripts: See `assets/scripts/` folder for Lua script examples
 - Scene files: See `assets/scenes/` for example scene configurations
 

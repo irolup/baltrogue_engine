@@ -2,7 +2,7 @@
 #define SOUND_COMPONENT_H
 
 #include "Components/Component.h"
-#include "../../include/Platform.h"
+#include "Platform.h"
 #include <string>
 #include <memory>
 #include <atomic>

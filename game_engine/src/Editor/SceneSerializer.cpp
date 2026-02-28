@@ -81,22 +81,22 @@ void SceneSerializer::saveSceneToGame(std::shared_ptr<Scene> scene) {
     std::string vitaMainContent = generateVitaMainContent(scene, discoveredTextures);
     
     // Write game_main.cpp
-    std::ofstream gameMainFile("src/game_main.cpp");
+    std::ofstream gameMainFile("game_engine/src/App/game_main.cpp");
     if (gameMainFile.is_open()) {
         gameMainFile << gameMainContent;
         gameMainFile.close();
-        std::cout << "Scene saved to src/game_main.cpp successfully!" << std::endl;
+        std::cout << "Scene saved to game_engine/src/App/game_main.cpp successfully!" << std::endl;
     } else {
-        std::cerr << "Failed to open src/game_main.cpp for writing!" << std::endl;
+        std::cerr << "Failed to open game_engine/src/App/game_main.cpp for writing!" << std::endl;
     }
     
-    std::ofstream vitaMainFile("src/vita_main.cpp");
+    std::ofstream vitaMainFile("game_engine/src/App/vita_main.cpp");
     if (vitaMainFile.is_open()) {
         vitaMainFile << vitaMainContent;
         vitaMainFile.close();
-        std::cout << "Scene also saved to src/vita_main.cpp successfully!" << std::endl;
+        std::cout << "Scene also saved to game_engine/src/App/vita_main.cpp successfully!" << std::endl;
     } else {
-        std::cerr << "Failed to open src/vita_main.cpp for writing!" << std::endl;
+        std::cerr << "Failed to open game_engine/src/App/vita_main.cpp for writing!" << std::endl;
     }
     
     updateMakefileWithTextures(discoveredTextures);
@@ -110,20 +110,20 @@ std::string SceneSerializer::generateGameMainContent(std::shared_ptr<Scene> scen
     std::string content = R"(
 #ifdef LINUX_BUILD
 
-#include "../game_engine/include/Core/Engine.h"
-#include "../game_engine/include/Scene/Scene.h"
-#include "../game_engine/include/Scene/SceneNode.h"
-#include "../game_engine/include/Components/CameraComponent.h"
-#include "../game_engine/include/Components/MeshRenderer.h"
-#include "../game_engine/include/Components/ModelRenderer.h"
-#include "../game_engine/include/Components/LightComponent.h"
-#include "../game_engine/include/Components/PhysicsComponent.h"
-#include "../game_engine/include/Components/TextComponent.h"
-#include "../game_engine/include/Components/ScriptComponent.h"
-#include "../game_engine/include/Components/Area3DComponent.h"
-#include "../game_engine/include/Rendering/Mesh.h"
-#include "../game_engine/include/Rendering/Material.h"
-#include "../game_engine/include/Rendering/TextureManager.h"
+#include "Core/Engine.h"
+#include "Scene/Scene.h"
+#include "Scene/SceneNode.h"
+#include "Components/CameraComponent.h"
+#include "Components/MeshRenderer.h"
+#include "Components/ModelRenderer.h"
+#include "Components/LightComponent.h"
+#include "Components/PhysicsComponent.h"
+#include "Components/TextComponent.h"
+#include "Components/ScriptComponent.h"
+#include "Components/Area3DComponent.h"
+#include "Rendering/Mesh.h"
+#include "Rendering/Material.h"
+#include "Rendering/TextureManager.h"
 #include <iostream>
 
 using namespace GameEngine;
@@ -836,20 +836,20 @@ std::string SceneSerializer::generateVitaMainContent(std::shared_ptr<Scene> scen
     std::string content = R"(
 // Vita main file - runs the same scene as Linux game
 
-#include "../game_engine/include/Core/Engine.h"
-#include "../game_engine/include/Scene/Scene.h"
-#include "../game_engine/include/Scene/SceneNode.h"
-#include "../game_engine/include/Components/CameraComponent.h"
-#include "../game_engine/include/Components/MeshRenderer.h"
-#include "../game_engine/include/Components/ModelRenderer.h"
-#include "../game_engine/include/Components/LightComponent.h"
-#include "../game_engine/include/Components/PhysicsComponent.h"
-#include "../game_engine/include/Components/TextComponent.h"
-#include "../game_engine/include/Components/ScriptComponent.h"
-#include "../game_engine/include/Components/Area3DComponent.h"
-#include "../game_engine/include/Rendering/Mesh.h"
-#include "../game_engine/include/Rendering/Material.h"
-#include "../game_engine/include/Rendering/TextureManager.h"
+#include "Core/Engine.h"
+#include "Scene/Scene.h"
+#include "Scene/SceneNode.h"
+#include "Components/CameraComponent.h"
+#include "Components/MeshRenderer.h"
+#include "Components/ModelRenderer.h"
+#include "Components/LightComponent.h"
+#include "Components/PhysicsComponent.h"
+#include "Components/TextComponent.h"
+#include "Components/ScriptComponent.h"
+#include "Components/Area3DComponent.h"
+#include "Rendering/Mesh.h"
+#include "Rendering/Material.h"
+#include "Rendering/TextureManager.h"
 #include <vitasdk.h>
 #include <vitaGL.h>
 
@@ -3103,7 +3103,7 @@ std::vector<std::string> SceneSerializer::discoverAndGenerateScriptAssets() {
     
     try {
         // Discover all Lua script files in the scripts directory
-        std::string scriptsDir = "scripts";
+        std::string scriptsDir = "assets/scripts";
         
         // Use filesystem to recursively find script files
         for (const auto& entry : std::filesystem::recursive_directory_iterator(scriptsDir)) {
@@ -3237,7 +3237,7 @@ void SceneSerializer::updateMakefileWithAssets(const std::vector<std::string>& d
         // Add script assets
         for (const auto& scriptPath : discoveredScripts) {
             // Preserve the directory structure for scripts in VPK
-            // e.g., scripts/player_behavior.lua -> scripts/player_behavior.lua
+            // e.g., assets/scripts/player_behavior.lua -> assets/scripts/player_behavior.lua
             newVpkCommand += "\t\t-a " + scriptPath + "=" + scriptPath + " \\\n";
         }
         

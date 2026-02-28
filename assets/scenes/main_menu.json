@@ -242,7 +242,7 @@
         "components": [
           {
             "pauseExempt": true,
-            "scriptPath": "scripts/main_menu.lua",
+            "scriptPath": "assets/scripts/main_menu.lua",
             "type": "ScriptComponent"
           }
         ],

@@ -200,7 +200,7 @@
         "components": [
           {
             "pauseExempt": true,
-            "scriptPath": "scripts/collectible_behavior.lua",
+            "scriptPath": "assets/scripts/collectible_behavior.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -229,7 +229,7 @@
         "components": [
           {
             "pauseExempt": false,
-            "scriptPath": "scripts/player_controller_demo.lua",
+            "scriptPath": "assets/scripts/player_controller_demo.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -258,7 +258,7 @@
         "components": [
           {
             "pauseExempt": true,
-            "scriptPath": "scripts/pause_menu.lua",
+            "scriptPath": "assets/scripts/pause_menu.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -287,7 +287,7 @@
         "components": [
           {
             "pauseExempt": true,
-            "scriptPath": "scripts/physics_gun.lua",
+            "scriptPath": "assets/scripts/physics_gun.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -1114,7 +1114,7 @@
         "components": [
           {
             "pauseExempt": false,
-            "scriptPath": "scripts/animated_character.lua",
+            "scriptPath": "assets/scripts/animated_character.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -1773,7 +1773,7 @@
         "components": [
           {
             "pauseExempt": false,
-            "scriptPath": "scripts/goal_controller.lua",
+            "scriptPath": "assets/scripts/goal_controller.lua",
             "type": "ScriptComponent"
           }
         ],

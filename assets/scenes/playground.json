@@ -124,7 +124,7 @@
         "components": [
           {
             "pauseExempt": true,
-            "scriptPath": "scripts/pause_menu.lua",
+            "scriptPath": "assets/scripts/pause_menu.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -153,7 +153,7 @@
         "components": [
           {
             "pauseExempt": true,
-            "scriptPath": "scripts/physics_gun.lua",
+            "scriptPath": "assets/scripts/physics_gun.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -719,7 +719,7 @@
         "components": [
           {
             "pauseExempt": false,
-            "scriptPath": "scripts/player_controller.lua",
+            "scriptPath": "assets/scripts/player_controller.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -1174,6 +1174,446 @@
           }
         ],
         "name": "Skybox",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "material": {
+                      "blendMode": "Opaque",
+                      "color": [
+                        1.0,
+                        0.5,
+                        0.20000000298023224
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
+                    },
+                    "meshType": "CUBE",
+                    "type": "MeshRenderer"
+                  }
+                ],
+                "name": "CubeMesh",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "angularDamping": 0.0,
+                    "bodyType": "KINEMATIC",
+                    "collisionShapeType": "BOX",
+                    "friction": 0.5,
+                    "gravityEnabled": true,
+                    "linearDamping": 0.0,
+                    "mass": 0.0,
+                    "restitution": 0.0,
+                    "shapeDimensions": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "showCollisionShape": true,
+                    "type": "PhysicsComponent"
+                  }
+                ],
+                "name": "BoxCollision (1)",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "name": "front_wall",
+            "transform": {
+              "position": [
+                0.0,
+                -2.299999952316284,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                6.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "material": {
+                      "blendMode": "Opaque",
+                      "color": [
+                        1.0,
+                        0.5,
+                        0.20000000298023224
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
+                    },
+                    "meshType": "CUBE",
+                    "type": "MeshRenderer"
+                  }
+                ],
+                "name": "CubeMesh (1)",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "angularDamping": 0.0,
+                    "bodyType": "KINEMATIC",
+                    "collisionShapeType": "BOX",
+                    "friction": 0.5,
+                    "gravityEnabled": true,
+                    "linearDamping": 0.0,
+                    "mass": 0.0,
+                    "restitution": 0.0,
+                    "shapeDimensions": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "showCollisionShape": true,
+                    "type": "PhysicsComponent"
+                  }
+                ],
+                "name": "BoxCollision (2)",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "name": "left_Wall",
+            "transform": {
+              "position": [
+                -3.5,
+                -2.299999952316284,
+                -3.5
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                6.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "material": {
+                      "blendMode": "Opaque",
+                      "color": [
+                        1.0,
+                        0.5,
+                        0.20000000298023224
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
+                    },
+                    "meshType": "CUBE",
+                    "type": "MeshRenderer"
+                  }
+                ],
+                "name": "CubeMesh (2)",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "angularDamping": 0.0,
+                    "bodyType": "KINEMATIC",
+                    "collisionShapeType": "BOX",
+                    "friction": 0.5,
+                    "gravityEnabled": true,
+                    "linearDamping": 0.0,
+                    "mass": 0.0,
+                    "restitution": 0.0,
+                    "shapeDimensions": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "showCollisionShape": true,
+                    "type": "PhysicsComponent"
+                  }
+                ],
+                "name": "BoxCollision (3)",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "name": "right_Wall",
+            "transform": {
+              "position": [
+                3.5,
+                -2.299999952316284,
+                -3.5
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                6.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "material": {
+                      "blendMode": "Opaque",
+                      "color": [
+                        1.0,
+                        0.5,
+                        0.20000000298023224
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
+                    },
+                    "meshType": "CUBE",
+                    "type": "MeshRenderer"
+                  }
+                ],
+                "name": "CubeMesh (3)",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "angularDamping": 0.0,
+                    "bodyType": "KINEMATIC",
+                    "collisionShapeType": "BOX",
+                    "friction": 0.5,
+                    "gravityEnabled": true,
+                    "linearDamping": 0.0,
+                    "mass": 0.0,
+                    "restitution": 0.0,
+                    "shapeDimensions": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "showCollisionShape": true,
+                    "type": "PhysicsComponent"
+                  }
+                ],
+                "name": "BoxCollision (4)",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "name": "back_wall",
+            "transform": {
+              "position": [
+                0.0,
+                -2.299999952316284,
+                -7.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                6.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "ennemies_enclosure",
         "transform": {
           "position": [
             0.0,
