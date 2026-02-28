@@ -8,6 +8,9 @@ local maxGrabDistance = 30.0
 local ballRootName = "Ball"
 local ballPhysicsNodeName = "SphereCollision"
 local ballSpawnX, ballSpawnY, ballSpawnZ = 0, 0, 0
+local cubeRootName = "Cube"
+local cubePhysicsNodeName = "BoxCollision (1)"
+local cubeSpawnX, cubeSpawnY, cubeSpawnZ = 0, 0, -1.8582239151000977
 
 local beamOffsetRight, beamOffsetDown, beamOffsetForward = 0.55, -0.15, -1.7
 
@@ -20,12 +23,10 @@ local outlineParams = {
     depthWrite = false
 }
 
--- Currently held object
 local heldNodeName = nil
--- Offset from object center to grab point
+local heldRootName = nil
 local hitOffsetLocalX, hitOffsetLocalY, hitOffsetLocalZ = 0, 0, 0
 local currentGrabDistance = 5.0
-local rotationDiffX, rotationDiffY, rotationDiffZ = 0, 0, 0
 local rotationInputX, rotationInputY = 0, 0
 -- Beam length to use in lateUpdate (so beam follows camera with no 1-frame lag)
 local lastBeamLength = maxGrabDistance
@@ -81,19 +82,23 @@ function update(deltaTime)
 
     local dt = (deltaTime and deltaTime > 0) and deltaTime or fixedDeltaTime
 
-    -- Respawn ball (PC: M key)
+    -- Respawn ball and cube (PC: M key)
     if input.isActionPressed("RespawnBall") then
-        if heldNodeName == ballPhysicsNodeName then
+        if heldNodeName == ballPhysicsNodeName or heldNodeName == cubePhysicsNodeName then
             heldNodeName = nil
+            heldRootName = nil
         end
         if setNodePosition then
             setNodePosition(ballRootName, ballSpawnX, ballSpawnY, ballSpawnZ)
+            setNodePosition(cubeRootName, cubeSpawnX, cubeSpawnY, cubeSpawnZ)
         end
         if setNodeVelocity then
             setNodeVelocity(ballPhysicsNodeName, 0, 0, 0)
+            setNodeVelocity(cubePhysicsNodeName, 0, 0, 0)
         end
         if setNodeAngularVelocity then
             setNodeAngularVelocity(ballPhysicsNodeName, 0, 0, 0)
+            setNodeAngularVelocity(cubePhysicsNodeName, 0, 0, 0)
         end
     end
 
@@ -106,6 +111,12 @@ function update(deltaTime)
         if heldNodeName then
             if scene and scene.clearNodeMaterialOverride then
                 scene.clearNodeMaterialOverride(heldNodeName)
+                if heldRootName and heldRootName ~= heldNodeName then
+                    scene.clearNodeMaterialOverride(heldRootName)
+                end
+            end
+            if setNodeBodyType then
+                setNodeBodyType(heldNodeName, "dynamic")
             end
             if setNodeAngularVelocity then
                 setNodeAngularVelocity(heldNodeName, 0, 0, 0)
@@ -114,6 +125,7 @@ function update(deltaTime)
                 setNodeGravityEnabled(heldNodeName, true)
             end
             heldNodeName = nil
+            heldRootName = nil
         end
         rotationInputX, rotationInputY = 0, 0
         lastGrabHeld = false
@@ -131,6 +143,12 @@ function update(deltaTime)
         if heldNodeName then
             if scene and scene.clearNodeMaterialOverride then
                 scene.clearNodeMaterialOverride(heldNodeName)
+                if heldRootName and heldRootName ~= heldNodeName then
+                    scene.clearNodeMaterialOverride(heldRootName)
+                end
+            end
+            if setNodeBodyType then
+                setNodeBodyType(heldNodeName, "dynamic")
             end
             if setNodeAngularVelocity then
                 setNodeAngularVelocity(heldNodeName, 0, 0, 0)
@@ -139,6 +157,7 @@ function update(deltaTime)
                 setNodeGravityEnabled(heldNodeName, true)
             end
             heldNodeName = nil
+            heldRootName = nil
         end
         rotationInputX, rotationInputY = 0, 0
     end
@@ -161,14 +180,24 @@ function update(deltaTime)
         local hitNode, hitX, hitY, hitZ, hitDist = physicsRaycast(rayOriginX, rayOriginY, rayOriginZ, rayDirX, rayDirY, rayDirZ, maxGrabDistance)
         if hitNode and type(hitNode) == "string" and hitNode ~= "" and hitX and hitY and hitZ and hitDist then
             heldNodeName = hitNode
+            heldRootName = (getNodeParentName and getNodeParentName(hitNode)) or hitNode
             if scene and scene.setNodeMaterialOverride then
                 scene.setNodeMaterialOverride(heldNodeName, outlineVertPath, outlineFragPath, outlineParams)
+                if heldRootName and heldRootName ~= heldNodeName then
+                    scene.setNodeMaterialOverride(heldRootName, outlineVertPath, outlineFragPath, outlineParams)
+                end
+            end
+            if setNodeBodyType then
+                setNodeBodyType(heldNodeName, "kinematic")
             end
             if setNodeGravityEnabled then
                 setNodeGravityEnabled(heldNodeName, false)
             end
             if setNodeAngularVelocity then
                 setNodeAngularVelocity(heldNodeName, 0, 0, 0)
+            end
+            if setNodeAngularFactor then
+                setNodeAngularFactor(heldNodeName, 0, 0, 0)
             end
             hitOffsetLocalX, hitOffsetLocalY, hitOffsetLocalZ = 0, 0, 0
             currentGrabDistance = hitDist
@@ -183,13 +212,6 @@ function update(deltaTime)
                         currentGrabDistance = d
                     end
                 end
-            end
-            local camPitch, camYaw, camRoll = getNodeWorldEuler(cameraName)
-            local objPitch, objYaw, objRoll = getNodeWorldEuler(heldNodeName)
-            if camPitch and objPitch then
-                rotationDiffX = objPitch - camPitch
-                rotationDiffY = objYaw - camYaw
-                rotationDiffZ = objRoll - camRoll
             end
         end
     end
@@ -217,10 +239,8 @@ function update(deltaTime)
             setNodeAngularVelocity(heldNodeName, 0, 0, 0)
         end
 
-        local camPitch, camYaw, camRoll = getNodeWorldEuler(cameraName)
-        if camPitch then
-            setNodeWorldRotation(heldNodeName, camPitch + rotationDiffX, camYaw + rotationDiffY, camRoll + rotationDiffZ)
-        end
+        local moveNode = heldRootName or heldNodeName
+        -- Do not set rotation from camera: object keeps its rotation; only PhysicsRotate changes it
 
         local effectiveGrabDistance = currentGrabDistance
         if physicsRaycastObstacle then
@@ -238,24 +258,18 @@ function update(deltaTime)
         if (rotationInputX ~= 0 or rotationInputY ~= 0) and getNodeRight and getNodeUp and applyNodeRotationAroundAxis then
             local rx, ry, rz = getNodeRight(cameraName)
             local ux, uy, uz = getNodeUp(cameraName)
-            applyNodeRotationAroundAxis(heldNodeName, rx, ry, rz, rotationInputY)
-            applyNodeRotationAroundAxis(heldNodeName, ux, uy, uz, -rotationInputX)
-            local objPitch, objYaw, objRoll = getNodeWorldEuler(heldNodeName)
-            if objPitch and camPitch then
-                rotationDiffX = objPitch - camPitch
-                rotationDiffY = objYaw - camYaw
-                rotationDiffZ = objRoll - camRoll
-            end
+            applyNodeRotationAroundAxis(moveNode, rx, ry, rz, rotationInputY)
+            applyNodeRotationAroundAxis(moveNode, ux, uy, uz, -rotationInputX)
             rotationInputX, rotationInputY = 0, 0
         end
 
-        local woX, woY, woZ = localToWorldOffset(heldNodeName, hitOffsetLocalX, hitOffsetLocalY, hitOffsetLocalZ)
+        local woX, woY, woZ = localToWorldOffset(moveNode, hitOffsetLocalX, hitOffsetLocalY, hitOffsetLocalZ)
         local centerDestX = holdX - woX
         local centerDestY = holdY - woY
         local centerDestZ = holdZ - woZ
 
         if setNodePosition then
-            setNodePosition(heldNodeName, centerDestX, centerDestY, centerDestZ)
+            setNodePosition(moveNode, centerDestX, centerDestY, centerDestZ)
         end
         setNodeVelocity(heldNodeName, 0, 0, 0)
         if syncNodeTransformToPhysics then

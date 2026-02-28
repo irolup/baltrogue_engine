@@ -844,14 +844,7 @@ void ScriptManager::bindSceneSystem() {
             overrideMat = engine.getOrCreateMaterialByShaderPaths(vertexPath, fragmentPath);
         }
         if (!overrideMat) { lua_pushboolean(L, false); return 1; }
-        std::shared_ptr<SceneNode> root;
-        SceneNode* parentPtr = node->getParent();
-        if (parentPtr) {
-            root = activeScene->findNode(parentPtr->getName());
-            if (!root) root = node;
-        } else {
-            root = node;
-        }
+        // Apply override to this node and its descendants only (not parent + siblings)
         int meshCount = 0;
         std::function<void(SceneNode*)> visit = [&visit, &overrideMat, &meshCount](SceneNode* n) {
             if (!n) return;
@@ -862,7 +855,7 @@ void ScriptManager::bindSceneSystem() {
                 if (ch) visit(ch.get());
             }
         };
-        visit(root.get());
+        visit(node.get());
         lua_pushboolean(L, true);
         return 1;
     }, 0);
@@ -876,14 +869,7 @@ void ScriptManager::bindSceneSystem() {
         if (!activeScene) { lua_pushboolean(L, false); return 1; }
         auto node = activeScene->findNode(nodeName);
         if (!node) { lua_pushboolean(L, false); return 1; }
-        std::shared_ptr<SceneNode> root;
-        SceneNode* parentPtr = node->getParent();
-        if (parentPtr) {
-            root = activeScene->findNode(parentPtr->getName());
-            if (!root) root = node;
-        } else {
-            root = node;
-        }
+        // Clear override on this node and its descendants only (not parent + siblings)
         int meshCount = 0;
         std::function<void(SceneNode*)> visit = [&visit, &meshCount](SceneNode* n) {
             if (!n) return;
@@ -894,7 +880,7 @@ void ScriptManager::bindSceneSystem() {
                 if (ch) visit(ch.get());
             }
         };
-        visit(root.get());
+        visit(node.get());
         lua_pushboolean(L, true);
         return 1;
     }, 0);

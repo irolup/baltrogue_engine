@@ -301,8 +301,15 @@ uniform int u_HasARMTexture;
 
 float3 calculateNormal(FragmentInput input) {
     if (u_HasNormalTexture) {
+        float3 T = normalize(input.tangent);
+        float3 N = normalize(input.normal);
+        float3 B = normalize(input.bitangent);
+        float bLen = length(input.bitangent);
+        if (bLen < 0.01f) {
+            return N;
+        }
         float3 normalMap = normalize(tex2D(u_NormalTexture, input.texCoord).rgb * 2.0f - 1.0f);
-        float3x3 TBN = float3x3(normalize(input.tangent), normalize(input.bitangent), normalize(input.normal));
+        float3x3 TBN = float3x3(T, B, N);
         return normalize(mul(normalMap, TBN));
     } else {
         return normalize(input.normal);
@@ -432,8 +439,15 @@ varying vec3 vBitangent;
 
 vec3 calculateNormal() {
     if (u_HasNormalTexture) {
+        vec3 T = normalize(vTangent);
+        vec3 N = normalize(vNormal);
+        vec3 B = normalize(vBitangent);
+        float bLen = length(vBitangent);
+        if (bLen < 0.01) {
+            return N;
+        }
         vec3 normalMap = normalize(texture2D(u_NormalTexture, vTexCoord).rgb * 2.0 - 1.0);
-        mat3 TBN = mat3(normalize(vTangent), normalize(vBitangent), normalize(vNormal));
+        mat3 TBN = mat3(T, B, N);
         return normalize(TBN * normalMap);
     } else {
         return normalize(vNormal);

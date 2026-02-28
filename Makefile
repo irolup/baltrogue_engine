@@ -1,5 +1,5 @@
 TITLEID     := VSDK00420
-TARGET      := first_game
+TARGET      := first_game_demo
 EDITOR_TARGET := game_editor
 
 # Source directories
@@ -196,7 +196,7 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/audios/walk_sound.wav=assets/audios/walk_sound.wav \
 		-a assets/scripts/pause_menu.lua=assets/scripts/pause_menu.lua \
 		-a assets/scripts/collectible_behavior.lua=assets/scripts/collectible_behavior.lua \
-		-a assets/scripts/player_controller.lua=assets/scripts/player_controller.lua \
+		-a assets/scripts/player_controller_demo.lua=assets/scripts/player_controller_demo.lua \
 		-a assets/scripts/main_menu.lua=assets/scripts/main_menu.lua \
 		-a assets/scripts/goal_controller.lua=assets/scripts/goal_controller.lua \
 		-a assets/scripts/animated_character.lua=assets/scripts/animated_character.lua \

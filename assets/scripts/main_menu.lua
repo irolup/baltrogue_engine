@@ -87,7 +87,7 @@ function handleMenuSelection()
     if selectedIndex == 0 then
         print("Main Menu: Starting new game...")
         if scene and scene.loadSceneFromFile then
-            if scene.loadSceneFromFile("Game Scene", "assets/scenes/playground.json") then
+            if scene.loadSceneFromFile("Game Scene", "assets/scenes/first_game_demo.json") then
                 print("Main Menu: Game scene loaded from JSON")
             else
                 print("Main Menu: ERROR - Failed to load game scene from JSON!")

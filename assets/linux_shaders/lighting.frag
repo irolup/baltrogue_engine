@@ -39,11 +39,16 @@ varying vec3 vBitangent;
 // Helper function to convert normal from tangent space to world space
 vec3 calculateNormal() {
     if (u_HasNormalTexture) {
+        vec3 T = normalize(vTangent);
+        vec3 N = normalize(vNormal);
+        vec3 B = normalize(vBitangent);
+        float bLen = length(vBitangent);
+        if (bLen < 0.01) {
+            return N;
+        }
         // Sample normal from texture and convert from [0,1] to [-1,1]
         vec3 normalMap = normalize(texture2D(u_NormalTexture, vTexCoord).rgb * 2.0 - 1.0);
-        
-        // Transform from tangent space to world space
-        mat3 TBN = mat3(normalize(vTangent), normalize(vBitangent), normalize(vNormal));
+        mat3 TBN = mat3(T, B, N);
         return normalize(TBN * normalMap);
     } else {
         return normalize(vNormal);

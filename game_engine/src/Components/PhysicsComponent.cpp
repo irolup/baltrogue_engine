@@ -81,17 +81,10 @@ void PhysicsComponent::update(float deltaTime) {
         
         if (rigidBody && owner) {
             if (bodyType == PhysicsBodyType::KINEMATIC) {
-                glm::mat4 currentWorldTransform = owner->getWorldMatrix();
-                
-                float transformDifference = glm::length(glm::vec3(currentWorldTransform[3]) - 
-                                                      glm::vec3(lastWorldTransform[3]));
-                
-                const float MIN_TRANSFORM_THRESHOLD = 0.001f;
-                
-                if (transformDifference > MIN_TRANSFORM_THRESHOLD) {
-                    syncTransformToPhysics();
-                    lastWorldTransform = currentWorldTransform;
-                }
+                // Always sync kinematic body from node transform every frame so script-driven
+                // movement (e.g. physics gun) is applied regardless of update order.
+                syncTransformToPhysics();
+                lastWorldTransform = owner->getWorldMatrix();
             } else {
                 if (rigidBody && owner) {
                     lastWorldTransform = owner->getWorldMatrix();
@@ -156,9 +149,13 @@ void PhysicsComponent::setBodyType(PhysicsBodyType type) {
         if (type == PhysicsBodyType::STATIC) {
             flags |= btCollisionObject::CF_STATIC_OBJECT;
             mass = 0.0f;
-        } else if (bodyType == PhysicsBodyType::KINEMATIC) {
+        } else if (type == PhysicsBodyType::KINEMATIC) {
             flags |= btCollisionObject::CF_KINEMATIC_OBJECT;
             mass = 0.0f;
+        } else if (type == PhysicsBodyType::DYNAMIC) {
+            if (mass <= 0.0f) {
+                mass = 1.0f;
+            }
         }
         
         rigidBody->setCollisionFlags(flags);

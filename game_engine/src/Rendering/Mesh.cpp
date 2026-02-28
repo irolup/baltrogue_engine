@@ -489,6 +489,8 @@ void Mesh::calculateTangents() {
         vertex.tangent = glm::vec3(0.0f);
     }
     
+    const float uvEpsilon = 1e-6f;
+    
     for (size_t i = 0; i < indices.size(); i += 3) {
         Vertex& v0 = vertices[indices[i]];
         Vertex& v1 = vertices[indices[i + 1]];
@@ -500,7 +502,10 @@ void Mesh::calculateTangents() {
         glm::vec2 deltaUV1 = v1.texCoords - v0.texCoords;
         glm::vec2 deltaUV2 = v2.texCoords - v0.texCoords;
         
-        float f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+        float denom = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
+        if (std::abs(denom) < uvEpsilon) continue; // Skip degenerate UV to avoid inf/NaN tangent
+        
+        float f = 1.0f / denom;
         
         glm::vec3 tangent;
         tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
@@ -513,7 +518,17 @@ void Mesh::calculateTangents() {
     }
     
     for (auto& vertex : vertices) {
-        vertex.tangent = glm::normalize(vertex.tangent);
+        float len = glm::length(vertex.tangent);
+        if (len < 1e-6f) {
+            // Fallback when UVs were degenerate: pick a tangent perpendicular to normal
+            const glm::vec3 n = glm::normalize(vertex.normal);
+            if (std::abs(n.y) < 0.99f)
+                vertex.tangent = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), n));
+            else
+                vertex.tangent = glm::normalize(glm::cross(glm::vec3(0.0f, 0.0f, 1.0f), n));
+        } else {
+            vertex.tangent = glm::normalize(vertex.tangent);
+        }
     }
 }
 

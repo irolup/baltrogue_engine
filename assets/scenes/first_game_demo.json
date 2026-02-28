@@ -1,7 +1,14 @@
 {
   "activeCamera": "PlayerCamera",
   "activeSkybox": "Skybox",
-  "name": "Pickup Zone Example",
+  "name": "First Game Demo",
+  "physics": {
+    "gravity": [
+      0.0,
+      -9.8100004196167,
+      0.0
+    ]
+  },
   "rootNode": {
     "active": true,
     "children": [
@@ -147,9 +154,15 @@
                 "bodyType": "KINEMATIC",
                 "collisionShapeType": "BOX",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -368,9 +381,15 @@
                 "bodyType": "DYNAMIC",
                 "collisionShapeType": "CAPSULE",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
-                "mass": 0.0,
+                "mass": 1.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -436,9 +455,9 @@
                   {
                     "alignment": "CENTER",
                     "color": [
-                      1.0,
-                      1.0,
-                      1.0,
+                      0.0,
+                      0.0,
+                      0.0,
                       1.0
                     ],
                     "fontPath": "assets/fonts/DroidSans.ttf",
@@ -476,9 +495,9 @@
                   {
                     "alignment": "CENTER",
                     "color": [
-                      1.0,
-                      1.0,
-                      1.0,
+                      0.0,
+                      0.0,
+                      0.0,
                       1.0
                     ],
                     "fontPath": "assets/fonts/DroidSans.ttf",
@@ -516,9 +535,9 @@
                   {
                     "alignment": "CENTER",
                     "color": [
-                      1.0,
-                      1.0,
-                      1.0,
+                      0.0,
+                      0.0,
+                      0.0,
                       1.0
                     ],
                     "fontPath": "assets/fonts/DroidSans.ttf",
@@ -556,9 +575,9 @@
                   {
                     "alignment": "CENTER",
                     "color": [
-                      1.0,
-                      1.0,
-                      1.0,
+                      0.0,
+                      0.0,
+                      0.0,
                       1.0
                     ],
                     "fontPath": "assets/fonts/DroidSans.ttf",
@@ -599,9 +618,9 @@
                       {
                         "alignment": "CENTER",
                         "color": [
-                          1.0,
-                          1.0,
-                          1.0,
+                          0.0,
+                          0.0,
+                          0.0,
                           1.0
                         ],
                         "fontPath": "assets/fonts/DroidSans.ttf",
@@ -663,7 +682,7 @@
                       "blendMode": "Additive",
                       "color": [
                         0.0,
-                        0.9,
+                        0.8999999761581421,
                         1.0
                       ],
                       "customTextureUniforms": [
@@ -793,7 +812,7 @@
                 "transform": {
                   "position": [
                     0.0,
-                    0.0,
+                    -1.0,
                     0.0
                   ],
                   "rotation": [
@@ -931,9 +950,15 @@
                 "bodyType": "STATIC",
                 "collisionShapeType": "BOX",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -1030,9 +1055,15 @@
                 "bodyType": "DYNAMIC",
                 "collisionShapeType": "SPHERE",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
-                "mass": 0.0,
+                "mass": 1.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -1188,9 +1219,15 @@
                 "bodyType": "STATIC",
                 "collisionShapeType": "BOX",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -1286,9 +1323,15 @@
                 "bodyType": "STATIC",
                 "collisionShapeType": "BOX",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -1384,9 +1427,15 @@
                 "bodyType": "STATIC",
                 "collisionShapeType": "BOX",
                 "friction": 0.5,
+                "gravityEnabled": true,
                 "linearDamping": 0.0,
                 "mass": 0.0,
                 "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
                 "showCollisionShape": true,
                 "type": "PhysicsComponent"
               }
@@ -1485,9 +1534,15 @@
                     "bodyType": "STATIC",
                     "collisionShapeType": "BOX",
                     "friction": 0.5,
+                    "gravityEnabled": true,
                     "linearDamping": 0.0,
                     "mass": 0.0,
                     "restitution": 0.0,
+                    "shapeDimensions": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
                     "showCollisionShape": true,
                     "type": "PhysicsComponent"
                   }
@@ -1583,9 +1638,15 @@
                     "bodyType": "STATIC",
                     "collisionShapeType": "BOX",
                     "friction": 0.5,
+                    "gravityEnabled": true,
                     "linearDamping": 0.0,
                     "mass": 0.0,
                     "restitution": 0.0,
+                    "shapeDimensions": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
                     "showCollisionShape": true,
                     "type": "PhysicsComponent"
                   }
@@ -1817,6 +1878,113 @@
             0.0,
             0.0,
             0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "armTexture": "assets/textures/red_brick/red_brick_arm_1k.png",
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ],
+                  "diffuseTexture": "assets/textures/red_brick/red_brick_diff_1k.png",
+                  "metallic": 0.0,
+                  "normalTexture": "assets/textures/red_brick/red_brick_nor_gl_1k.png",
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "CubeMesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "DYNAMIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.5,
+                "gravityEnabled": true,
+                "linearDamping": 0.0,
+                "mass": 1.0,
+                "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "BoxCollision (1)",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "Cube",
+        "transform": {
+          "position": [
+            0.0,
+            0.0,
+            -1.8582239151000977
           ],
           "rotation": [
             0.0,

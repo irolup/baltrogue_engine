@@ -41,11 +41,16 @@ uniform int u_HasARMTexture;
 // Helper function to convert normal from tangent space to world space
 float3 calculateNormal(FragmentInput input) {
     if (u_HasNormalTexture) {
+        float3 T = normalize(input.tangent);
+        float3 N = normalize(input.normal);
+        float3 B = normalize(input.bitangent);
+        float bLen = length(input.bitangent);
+        if (bLen < 0.01f) {
+            return N;
+        }
         // Sample normal from texture and convert from [0,1] to [-1,1]
         float3 normalMap = normalize(tex2D(u_NormalTexture, input.texCoord).rgb * 2.0f - 1.0f);
-        
-        // Transform from tangent space to world space
-        float3x3 TBN = float3x3(normalize(input.tangent), normalize(input.bitangent), normalize(input.normal));
+        float3x3 TBN = float3x3(T, B, N);
         return normalize(mul(normalMap, TBN));
     } else {
         return normalize(input.normal);

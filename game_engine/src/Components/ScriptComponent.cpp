@@ -1397,6 +1397,31 @@ void ScriptComponent::bindCommonFunctions() {
     });
     lua_setglobal(luaState, "getNodePosition");
     
+    // Get parent node name for a node. Returns parent name or nil if no parent/not found.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        if (!nodeName) { lua_pushnil(L); return 1; }
+#ifndef VITA_BUILD
+        try {
+#endif
+        auto& engine = GetEngine();
+        auto activeScene = engine.getSceneManager().getCurrentScene();
+        if (!activeScene) { lua_pushnil(L); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushnil(L); return 1; }
+        auto* parent = node->getParent();
+        if (!parent) { lua_pushnil(L); return 1; }
+        lua_pushstring(L, parent->getName().c_str());
+        return 1;
+#ifndef VITA_BUILD
+        } catch (...) {
+            lua_pushnil(L);
+            return 1;
+        }
+#endif
+    });
+    lua_setglobal(luaState, "getNodeParentName");
+    
     // Generic node local position function - gets any node's LOCAL position by name
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         const char* nodeName = luaL_checkstring(L, 1);
@@ -2028,6 +2053,37 @@ void ScriptComponent::bindCommonFunctions() {
         return 0;
     });
     lua_setglobal(luaState, "setNodeGravityEnabled");
+    
+    // Set physics body type: "static", "dynamic", or "kinematic". Returns true if node had PhysicsComponent and type was set.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        const char* bodyTypeStr = luaL_checkstring(L, 2);
+        if (!nodeName || !bodyTypeStr) { lua_pushboolean(L, false); return 1; }
+#ifndef VITA_BUILD
+        try {
+#endif
+        auto& engine = GetEngine();
+        auto activeScene = engine.getSceneManager().getCurrentScene();
+        if (!activeScene) { lua_pushboolean(L, false); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushboolean(L, false); return 1; }
+        auto* physicsComp = node->getComponent<PhysicsComponent>();
+        if (!physicsComp) { lua_pushboolean(L, false); return 1; }
+        std::string bt(bodyTypeStr);
+        PhysicsBodyType bodyType = PhysicsBodyType::STATIC;
+        if (bt == "dynamic") bodyType = PhysicsBodyType::DYNAMIC;
+        else if (bt == "kinematic") bodyType = PhysicsBodyType::KINEMATIC;
+        physicsComp->setBodyType(bodyType);
+        lua_pushboolean(L, true);
+        return 1;
+#ifndef VITA_BUILD
+        } catch (...) {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+#endif
+    });
+    lua_setglobal(luaState, "setNodeBodyType");
     
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         int enabled = lua_toboolean(L, 1);
@@ -3595,14 +3651,7 @@ void ScriptComponent::bindSceneToLua() {
             overrideMat = engine.getOrCreateMaterialByShaderPaths(vertexPath, fragmentPath);
         }
         if (!overrideMat) { lua_pushboolean(L, false); return 1; }
-        std::shared_ptr<GameEngine::SceneNode> root;
-        GameEngine::SceneNode* parentPtr = node->getParent();
-        if (parentPtr) {
-            root = activeScene->findNode(parentPtr->getName());
-            if (!root) root = node;
-        } else {
-            root = node;
-        }
+        // Apply override to this node and its descendants only (not parent + siblings)
         std::function<void(GameEngine::SceneNode*)> visit = [&visit, &overrideMat](GameEngine::SceneNode* n) {
             if (!n) return;
             auto mr = n->getComponent<GameEngine::MeshRenderer>();
@@ -3612,7 +3661,7 @@ void ScriptComponent::bindSceneToLua() {
                 if (ch) visit(ch.get());
             }
         };
-        visit(root.get());
+        visit(node.get());
         lua_pushboolean(L, true);
         return 1;
     }, 0);
@@ -3626,14 +3675,7 @@ void ScriptComponent::bindSceneToLua() {
         if (!activeScene) { lua_pushboolean(L, false); return 1; }
         auto node = activeScene->findNode(nodeName);
         if (!node) { lua_pushboolean(L, false); return 1; }
-        std::shared_ptr<GameEngine::SceneNode> root;
-        GameEngine::SceneNode* parentPtr = node->getParent();
-        if (parentPtr) {
-            root = activeScene->findNode(parentPtr->getName());
-            if (!root) root = node;
-        } else {
-            root = node;
-        }
+        // Clear override on this node and its descendants only (not parent + siblings)
         std::function<void(GameEngine::SceneNode*)> visit = [&visit](GameEngine::SceneNode* n) {
             if (!n) return;
             auto mr = n->getComponent<GameEngine::MeshRenderer>();
@@ -3643,7 +3685,7 @@ void ScriptComponent::bindSceneToLua() {
                 if (ch) visit(ch.get());
             }
         };
-        visit(root.get());
+        visit(node.get());
         lua_pushboolean(L, true);
         return 1;
     }, 0);
