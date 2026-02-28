@@ -44,7 +44,7 @@ Cross-platform game engine for **PS Vita** and **Linux**, with a visual editor o
 
 Editor layout (scene graph, viewport, properties):
 
-![Editor Screenshot](docs/references/screenshot_first_demo.png)
+![Editor Screenshot](docs/references/screenshot_first_demo_v2.png)
 
 First demo scene (physics, player, camera):
 
