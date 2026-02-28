@@ -60,7 +60,6 @@ first_game/
 ├── src/                  # Game entry points (vita_main, game_main, Platform)
 ├── include/              # Game headers
 ├── assets/               # Scenes, shaders, textures, models
-├── editor_main.cpp       # Editor entry point
 └── Makefile
 ```
 
