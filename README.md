@@ -101,6 +101,11 @@ make vita
 
 Output: `build/first_game.vpk`.
 
+**Running the homebrew**
+
+- **Real Vita**: You need `libshacccg.suprx` on your Vita. See the [Vita troubleshooting guide](https://cimmerian.gitbook.io/vita-troubleshooting-guide/shader-compiler/extract-libshacccg.suprx) for how to obtain and install it.
+- **Vita3K**: If you use the [Vita3K](https://vita3k.org/) emulator, install or place `libshacccg.suprx` in Vita3K’s data path so the emulator can load it when running the homebrew.
+
 ### Dependencies
 
 - **Lua**: submodule, build for Vita with `./setup.sh lua`
