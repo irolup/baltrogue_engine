@@ -1749,14 +1749,14 @@ void EditorUI::renderInputMapping() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Save to File")) {
-        inputMapping.saveMappingsToFile("input_mappings.txt");
+        inputMapping.saveMappingsToFile("config/input_mappings.txt");
         // Reload mappings to refresh the UI
         inputMapping.reloadMappings();
     }
     ImGui::SameLine();
     if (ImGui::Button("Open File in Editor")) {
 #ifdef LINUX_BUILD
-        int result = system("xdg-open input_mappings.txt &");
+        int result = system("xdg-open config/input_mappings.txt &");
         (void)result; // Ignore return value - we don't need to check if xdg-open succeeded
 #endif
     }
@@ -1897,7 +1897,7 @@ void EditorUI::renderInputMapping() {
     // Preset operations
     ImGui::Text("Preset Operations:");
     if (ImGui::Button("Load Default Mappings")) {
-        inputMapping.loadMappingsFromFile("default_input_mappings.txt", true);
+        inputMapping.loadMappingsFromFile("config/default_input_mappings.txt", true);
     }
     ImGui::SameLine();
     if (ImGui::Button("Clear All Mappings")) {
@@ -1908,7 +1908,7 @@ void EditorUI::renderInputMapping() {
     
     // Help section
     ImGui::Text("Help:");
-    ImGui::BulletText("Hot-reload is enabled - changes to input_mappings.txt are automatically loaded");
+    ImGui::BulletText("Hot-reload is enabled - changes to config/input_mappings.txt are automatically loaded");
     ImGui::BulletText("Use 'Open File in Editor' to edit mappings in a text editor");
     ImGui::BulletText("Input codes: W=87, A=65, S=83, D=68, Space=32, Shift=340, Ctrl=341, E=69, Esc=256");
     ImGui::BulletText("Vita buttons: Cross=16384, Circle=32768, Square=8192, Triangle=4096");

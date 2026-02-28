@@ -32,26 +32,26 @@ void InputMappingManager::initialize() {
 #endif
     
     // Check if saved mappings file exists
-    std::ifstream savedFile("input_mappings.txt");
+    std::ifstream savedFile("config/input_mappings.txt");
     bool hasSavedMappings = savedFile.is_open();
     savedFile.close();
     
     if (hasSavedMappings) {
         // If user has saved mappings, load only those (not defaults)
-        loadMappingsFromFile("input_mappings.txt", true);
+        loadMappingsFromFile("config/input_mappings.txt", true);
 #ifdef VITA_BUILD
         printf("InputMappingManager: Loaded saved mappings, total mappings: %zu\n", mappings.size());
 #endif
     } else {
         // If no saved mappings, load defaults
-        loadMappingsFromFile("default_input_mappings.txt", true);
+        loadMappingsFromFile("config/default_input_mappings.txt", true);
 #ifdef VITA_BUILD
         printf("InputMappingManager: Loaded default mappings, total mappings: %zu\n", mappings.size());
 #endif
     }
     
     // Enable hot-reload for the input mappings file
-    enableHotReload("input_mappings.txt");
+    enableHotReload("config/input_mappings.txt");
     
 #ifdef VITA_BUILD
     printf("InputMappingManager: Final mappings count: %zu\n", mappings.size());
@@ -63,7 +63,7 @@ void InputMappingManager::shutdown() {
 
     //only save if we are in editor mode
     #ifdef EDITOR_BUILD
-        saveMappingsToFile("input_mappings.txt");
+        saveMappingsToFile("config/input_mappings.txt");
     #endif
     
     mappings.clear();

@@ -156,7 +156,7 @@ end
 
 ### Input Mapping File
 
-Input mappings are stored in `input_mappings.txt`:
+Input mappings are stored in `config/input_mappings.txt`:
 
 ```
 action:MoveForward,PC,0,87,1,0.0,1.0,0

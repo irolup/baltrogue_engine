@@ -1,5 +1,0 @@
-DroidSans.ttf
-ProggyVector.ttf
-ProggyClean.ttf
-Ubuntu.ttf
-sui.ttf

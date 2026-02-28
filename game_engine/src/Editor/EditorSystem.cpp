@@ -66,6 +66,7 @@ bool EditorSystem::initialize() {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+    io.IniFilename = "config/imgui.ini";
     
     ImGui::StyleColorsDark();
     

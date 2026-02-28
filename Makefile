@@ -72,7 +72,7 @@ EDITOR_SOURCE_CPPFILES := $(wildcard $(EDITOR_SOURCES)/*.cpp)
 
 # Editor source files (engine + platform + editor main, excluding game logic files)
 EDITOR_PLATFORM_CPPFILES := game_engine/src/App/Platform.cpp
-EDITOR_ALL_CPPFILES := $(ENGINE_CPPFILES) $(EDITOR_PLATFORM_CPPFILES) editor_main.cpp
+EDITOR_ALL_CPPFILES := $(ENGINE_CPPFILES) $(EDITOR_PLATFORM_CPPFILES) game_engine/src/App/editor_main.cpp
 
 # Object files for Vita build
 OBJS := $(addprefix $(BUILD_DIR)/,$(ALL_CFILES:.c=.o) $(ALL_CPPFILES:.cpp=.o))
@@ -160,10 +160,11 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/shaders/beam.frag=assets/shaders/beam.frag \
 		-a assets/shaders/outline.vert=assets/shaders/outline.vert \
 		-a assets/shaders/outline.frag=assets/shaders/outline.frag \
-		-a textures.txt=textures.txt \
-		-a fonts.txt=fonts.txt \
-		-a scripts.txt=scripts.txt \
-		-a input_mappings.txt=input_mappings.txt \
+		$(if $(wildcard textures.txt),-a textures.txt=textures.txt ) \
+		$(if $(wildcard fonts.txt),-a fonts.txt=fonts.txt ) \
+		$(if $(wildcard scripts.txt),-a scripts.txt=scripts.txt ) \
+		$(if $(wildcard config/input_mappings.txt),-a config/input_mappings.txt=config/input_mappings.txt ) \
+		-a config/default_input_mappings.txt=config/default_input_mappings.txt \
 		-a assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_arm_1k.png=checkered_pavement_tiles_arm_1k.png \
 		-a assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_diff_1k.png=checkered_pavement_tiles_diff_1k.png \
 		-a assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_nor_gl_1k.png=checkered_pavement_tiles_nor_gl_1k.png \

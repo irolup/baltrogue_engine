@@ -2949,13 +2949,15 @@ std::vector<std::string> SceneSerializer::discoverAndGenerateTextureAssets() {
 #ifdef LINUX_BUILD
 void SceneSerializer::generateInputMappingAssets() {
     try {
-        // Check if input_mappings.txt exists
-        std::ifstream inputFile("input_mappings.txt");
+        // Check if config/input_mappings.txt exists
+        std::ifstream inputFile("config/input_mappings.txt");
         if (!inputFile.is_open()) {
-            std::cout << "No input_mappings.txt found, creating default one..." << std::endl;
+            std::cout << "No config/input_mappings.txt found, creating default one..." << std::endl;
+            
+            std::filesystem::create_directories("config");
             
             // Create default input mappings file
-            std::ofstream defaultFile("input_mappings.txt");
+            std::ofstream defaultFile("config/input_mappings.txt");
             if (defaultFile.is_open()) {
                 defaultFile << R"(action:MoveForward,0,87,1,0.1,1.0
 action:MoveBackward,0,83,1,0.1,1.0
@@ -2977,11 +2979,11 @@ action:LookHorizontal,2,1,1,0.1,1.0
 action:LookVertical,2,1,1,0.1,1.0
 )";
                 defaultFile.close();
-                std::cout << "Created default input_mappings.txt" << std::endl;
+                std::cout << "Created default config/input_mappings.txt" << std::endl;
             }
         } else {
             inputFile.close();
-            std::cout << "Found existing input_mappings.txt" << std::endl;
+            std::cout << "Found existing config/input_mappings.txt" << std::endl;
         }
         
         // Generate input mapping manifest for Vita builds
@@ -2997,7 +2999,7 @@ action:LookVertical,2,1,1,0.1,1.0
 void SceneSerializer::generateInputMappingManifest() {
     // First, read the existing input mappings file into memory
     std::vector<std::string> existingMappings;
-    std::ifstream inputFile("input_mappings.txt");
+    std::ifstream inputFile("config/input_mappings.txt");
     if (inputFile.is_open()) {
         std::string line;
         while (std::getline(inputFile, line)) {
@@ -3009,7 +3011,7 @@ void SceneSerializer::generateInputMappingManifest() {
     }
     
     // Now write the file with header and existing mappings
-    std::ofstream manifestFile("input_mappings.txt");
+    std::ofstream manifestFile("config/input_mappings.txt");
     if (manifestFile.is_open()) {
         manifestFile << "# Input Mappings Configuration\n";
         manifestFile << "# Format: action:name,type,code,actionType,deadzone,sensitivity\n";
@@ -3198,7 +3200,7 @@ void SceneSerializer::updateMakefileWithAssets(const std::vector<std::string>& d
         newVpkCommand += "\t\t-a textures.txt=textures.txt \\\n";
         newVpkCommand += "\t\t-a fonts.txt=fonts.txt \\\n";
         newVpkCommand += "\t\t-a scripts.txt=scripts.txt \\\n";
-        newVpkCommand += "\t\t-a input_mappings.txt=input_mappings.txt \\\n";
+        newVpkCommand += "\t\t-a config/input_mappings.txt=config/input_mappings.txt \\\n";
         
         // Add texture assets
         for (const auto& texturePath : discoveredTextures) {

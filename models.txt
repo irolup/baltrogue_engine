@@ -1,3 +1,0 @@
-models/lightning.glb
-models/Player.glb
-
