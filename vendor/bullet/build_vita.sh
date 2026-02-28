@@ -58,8 +58,8 @@ cmake .. \
     -DBUILD_FEATHERSTONE=OFF \
     -DBUILD_VEHICLE=OFF \
     -DBUILD_CHARACTER=OFF \
-    -DBUILD_DYNAMICS=OFF \
-    -DBUILD_CONSTRAINTS=OFF \
+    -DBUILD_DYNAMICS=ON \
+    -DBUILD_CONSTRAINTS=ON \
     -DCMAKE_INSTALL_PREFIX=../lib_vita \
     -DCMAKE_CXX_FLAGS="-fno-exceptions -std=gnu++11 -fpermissive -ffast-math -DVITA_BUILD -DBT_THREADSAFE=1" \
     -DCMAKE_C_FLAGS="-ffast-math -DVITA_BUILD"

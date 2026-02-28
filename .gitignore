@@ -22,3 +22,5 @@ vendor/bullet/build_vita/
 vendor/bullet/build3/
 vendor/bullet/lib/
 vendor/bullet/lib_vita/
+vendor/lua
+vendor/openal-soft
