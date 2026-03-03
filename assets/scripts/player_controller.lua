@@ -16,43 +16,103 @@ local maxPitch = 30.0
 local firstPersonCamLocalPos = { 0.0, 0.7, 0.0 }
 local playerModelNodeName = "PlayerModel"
 local gunMeshNodeName = "GunMesh"
+local equippedTextNodeName = "equiped_objet"
 
-local SHOW_DEBUG_RAYS = false
-local raycast1Name = "Raycast1"
-local raycast2Name = "Raycast2"
+-- Weapon state
+local WEAPON_PISTOL = 1  -- Apply impulse
+local WEAPON_MELEE = 2  -- Melee attack
+local WEAPON_GRAVITY = 3  -- Grab/move objects with gravity gun
+local WEAPON_PRISM = 4    -- Create gravity prism that affects enemies and objects
+local weaponNames = { [WEAPON_PISTOL] = "Impulse Pistol", [WEAPON_MELEE] = "Melee", [WEAPON_GRAVITY] = "Gravity Gun", [WEAPON_PRISM] = "Gravity Prism" }
+local currentWeapon = WEAPON_PISTOL
+local weaponConfig = {
+    [WEAPON_PISTOL] = { range = 50.0, fireRate = 0.4, impulseStrength = 14.0 },
+    [WEAPON_MELEE]  = { damage = 25, range = 3.0,  fireRate = 0.6 },
+    [WEAPON_GRAVITY] = nil,
+    [WEAPON_PRISM]  = { fireRate = 1.2, radius = 4.0, duration = 5.0, rotationSpeed = 90.0, invertGravity = false },
+}
+local lastFireTime = 0
 
-function start()
-    lastJumpTime = getTime()
-    if setNodeVisible then
-        setNodeVisible(playerModelNodeName, false)
-        setNodeVisible(gunMeshNodeName, true)
-    end
-    if input and input.setMouseCapture then
-        input.setMouseCapture(true)
+-- Gravity gun
+local gravityGunOpts = { cameraName = cameraName, playerModelNodeName = playerModelNodeName, gunLaserNodeName = "GunLaser" }
+local gravityGun = nil
+local impulsePistol = nil
+local meleeWeapon = nil
+local gravityPrism = nil
+
+-- Game-defined enemy list
+-- Prism and melee use this; enemy script runs in another state so cannot share _G.
+_G.GameEnemies = _G.GameEnemies or { ["enemy"] = "CapsuleCollision" }
+
+local function updateEquippedText()
+    if renderer and renderer.setText and equippedTextNodeName then
+        renderer.setText(equippedTextNodeName, "Equipped: " .. (weaponNames[currentWeapon] or "?"))
     end
 end
 
-function update(deltaTime)
-    if isGamePaused and isGamePaused() then
+local function getEnemyRootName(hitNodeName)
+    if not hitNodeName or hitNodeName == "" then return nil end
+    if getNodeParentName then
+        local parent = getNodeParentName(hitNodeName)
+        if parent then return parent end
+    end
+    return hitNodeName
+end
+
+local function tryFireWeapon()
+    local now = getTime()
+    local cfg = weaponConfig[currentWeapon]
+    if not cfg or (now - lastFireTime) < cfg.fireRate then return end
+    lastFireTime = now
+
+    if currentWeapon == WEAPON_PISTOL and impulsePistol and impulsePistol.fire then
+        impulsePistol.fire(cfg, cameraName)
         return
     end
 
-    local currentTime = getTime()
-
-    if setNodeAngularFactor then
-        setNodeAngularFactor("PlayerCollision", 0, 0, 0)
+    if currentWeapon == WEAPON_MELEE and meleeWeapon and meleeWeapon.fire then
+        meleeWeapon.fire(cfg, cameraName, getEnemyRootName)
+        return
     end
 
+    if currentWeapon == WEAPON_PRISM and gravityPrism and gravityPrism.place then
+        gravityPrism.place(cameraName, {
+            radius = cfg.radius,
+            duration = cfg.duration,
+            rotationSpeed = cfg.rotationSpeed,
+            invertGravity = cfg.invertGravity,
+        }, { playerRootName = playerRootName })
+        return
+    end
+end
+
+local function handleWeaponInput()
+    if input.isActionPressed("SecondaryFire") then
+        if currentWeapon == WEAPON_PISTOL then currentWeapon = WEAPON_MELEE
+        elseif currentWeapon == WEAPON_MELEE then currentWeapon = WEAPON_GRAVITY
+        elseif currentWeapon == WEAPON_GRAVITY then currentWeapon = WEAPON_PRISM
+        else currentWeapon = WEAPON_PISTOL end
+        updateEquippedText()
+    end
+    if input.isActionPressed("WeaponSlot1") then currentWeapon = WEAPON_PISTOL; updateEquippedText() end
+    if input.isActionPressed("WeaponSlot2") then currentWeapon = WEAPON_MELEE;  updateEquippedText() end
+    if input.isActionPressed("WeaponSlot3") then currentWeapon = WEAPON_GRAVITY; updateEquippedText() end
+    if input.isActionPressed("WeaponSlot4") then currentWeapon = WEAPON_PRISM;  updateEquippedText() end
+    if input.isActionPressed("WeaponSlot5") then currentWeapon = WEAPON_MELEE;  updateEquippedText() end
+
+    if currentWeapon ~= WEAPON_GRAVITY and (input.isActionPressed("PrimaryFire") or (input.isActionHeld and input.isActionHeld("PrimaryFire"))) then
+        tryFireWeapon()
+    end
+end
+
+local function handleMovement(deltaTime, currentTime)
     local moveH = input.getActionAxis("MoveHorizontal")
     local moveV = input.getActionAxis("MoveVertical")
-    if moveH == 0 then
-        moveH = input.getActionAxis("MoveRight") - input.getActionAxis("MoveLeft")
-    end
-    if moveV == 0 then
-        moveV = input.getActionAxis("MoveBackward") - input.getActionAxis("MoveForward")
-    end
+    if moveH == 0 then moveH = input.getActionAxis("MoveRight") - input.getActionAxis("MoveLeft") end
+    if moveV == 0 then moveV = input.getActionAxis("MoveBackward") - input.getActionAxis("MoveForward") end
 
-    local lookH, lookV = 0.0, 0.0
+    local lookH = 0.0
+    local lookV = 0.0
     if input and input.getMouseDelta then
         local dx, dy = input.getMouseDelta()
         lookH = dx * mouseSensitivity * 0.005
@@ -77,9 +137,7 @@ function update(deltaTime)
     local desiredVelX = rightX * moveH * currentMoveSpeed + forwardX * moveV * currentMoveSpeed
     local desiredVelZ = rightZ * moveH * currentMoveSpeed + forwardZ * moveV * currentMoveSpeed
 
-    if setNodeRotation then
-        setNodeRotation(playerRootName, 0, cameraYaw, 0)
-    end
+    if setNodeRotation then setNodeRotation(playerRootName, 0, cameraYaw, 0) end
 
     if setNodeVelocity then
         local vx, vy, vz = 0, 0, 0
@@ -98,19 +156,57 @@ function update(deltaTime)
         local px, py, pz = getNodePosition(playerRootName)
         if px and py and pz then
             local moveY = input.getActionAxis("MoveUp") - input.getActionAxis("MoveDown")
-            setNodePosition(playerRootName,
-                px + desiredVelX * deltaTime,
-                py + moveY * currentMoveSpeed * deltaTime,
-                pz + desiredVelZ * deltaTime)
+            setNodePosition(playerRootName, px + desiredVelX * deltaTime, py + moveY * currentMoveSpeed * deltaTime, pz + desiredVelZ * deltaTime)
         end
     end
 
-
-    -- First-person camera
     if setNodeLocalPosition then
         setNodeLocalPosition(cameraName, firstPersonCamLocalPos[1], firstPersonCamLocalPos[2], firstPersonCamLocalPos[3])
     end
-    if setNodeRotation then
-        setNodeRotation(cameraName, -cameraPitch, 0.0, 0.0)
+    if setNodeRotation then setNodeRotation(cameraName, -cameraPitch, 0.0, 0.0) end
+end
+
+function start()
+    lastJumpTime = getTime()
+    lastFireTime = getTime()
+    if setNodeVisible then
+        setNodeVisible(playerModelNodeName, false)
+        setNodeVisible(gunMeshNodeName, true)
+    end
+    if input and input.setMouseCapture then input.setMouseCapture(true) end
+    updateEquippedText()
+
+    local ok, mod = pcall(dofile, "assets/scripts/gravity_gun.lua")
+    if ok and mod and mod.update then gravityGun = mod end
+    ok, mod = pcall(dofile, "assets/scripts/impulse_pistol.lua")
+    if ok and mod and mod.fire then impulsePistol = mod end
+    ok, mod = pcall(dofile, "assets/scripts/melee.lua")
+    if ok and mod and mod.fire then meleeWeapon = mod end
+    ok, mod = pcall(dofile, "assets/scripts/gravity_prism.lua")
+    if ok and mod and mod.place then gravityPrism = mod end
+end
+
+function update(deltaTime)
+    if isGamePaused and isGamePaused() then return end
+    local currentTime = getTime()
+
+    handleWeaponInput()
+
+    if gravityGun then
+        gravityGun.update(deltaTime, currentWeapon == WEAPON_GRAVITY, gravityGunOpts)
+    end
+    if gravityPrism and gravityPrism.update then
+        gravityPrism.update(deltaTime)
+    end
+
+    if setNodeAngularFactor then setNodeAngularFactor("PlayerCollision", 0, 0, 0) end
+    handleMovement(deltaTime, currentTime)
+end
+
+function lateUpdate(deltaTime)
+    if isGamePaused and isGamePaused() then return end
+    if gravityGun then gravityGun.lateUpdate(gravityGunOpts) end
+    if impulsePistol and impulsePistol.lateUpdate then
+        impulsePistol.lateUpdate(gravityGunOpts, currentWeapon == WEAPON_PISTOL)
     end
 end

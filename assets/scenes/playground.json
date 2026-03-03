@@ -152,35 +152,6 @@
         "active": true,
         "components": [
           {
-            "pauseExempt": true,
-            "scriptPath": "assets/scripts/physics_gun.lua",
-            "type": "ScriptComponent"
-          }
-        ],
-        "name": "Physics_Gun_Controller",
-        "transform": {
-          "position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "rotation": [
-            0.0,
-            -0.0,
-            0.0
-          ],
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        },
-        "visible": true
-      },
-      {
-        "active": true,
-        "components": [
-          {
             "color": [
               1.0,
               1.0,
@@ -481,11 +452,11 @@
                         "lineSpacing": 1.0,
                         "renderMode": "SCREEN_SPACE",
                         "scale": 1.0,
-                        "text": "Score : 0",
+                        "text": "Equipped:",
                         "type": "TextComponent"
                       }
                     ],
-                    "name": "Score",
+                    "name": "equiped_objet",
                     "transform": {
                       "position": [
                         -8.199999809265137,
@@ -611,66 +582,28 @@
                 "active": true,
                 "components": [
                   {
-                    "collisionMask": -1,
-                    "from": [
-                      0.0,
-                      0.0,
-                      0.0
+                    "alignment": "CENTER",
+                    "color": [
+                      1.0,
+                      1.0,
+                      1.0,
+                      1.0
                     ],
-                    "showDebugLine": true,
-                    "to": [
-                      0.0,
-                      0.0,
-                      -1.0
-                    ],
-                    "type": "RaycastComponent"
+                    "fontPath": "assets/fonts/DroidSans.ttf",
+                    "fontSize": 32.0,
+                    "lineSpacing": 1.2000000476837158,
+                    "renderMode": "SCREEN_SPACE",
+                    "scale": 1.0,
+                    "text": "+",
+                    "type": "TextComponent"
                   }
                 ],
-                "name": "Raycast1",
+                "name": "crosshair",
                 "transform": {
                   "position": [
-                    -0.36281824111938477,
-                    -0.24053335189819336,
-                    -1.4410309791564941
-                  ],
-                  "rotation": [
                     0.0,
-                    -0.0,
+                    0.0,
                     0.0
-                  ],
-                  "scale": [
-                    1.0,
-                    1.0,
-                    1.0
-                  ]
-                },
-                "visible": true
-              },
-              {
-                "active": true,
-                "components": [
-                  {
-                    "collisionMask": -1,
-                    "from": [
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "showDebugLine": true,
-                    "to": [
-                      0.0,
-                      0.0,
-                      -1.0
-                    ],
-                    "type": "RaycastComponent"
-                  }
-                ],
-                "name": "Raycast2",
-                "transform": {
-                  "position": [
-                    0.20043611526489258,
-                    -0.12481212615966797,
-                    -0.6251993179321289
                   ],
                   "rotation": [
                     0.0,
@@ -1619,6 +1552,117 @@
             0.0,
             0.0,
             0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CAPSULE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "CapsuleMesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "DYNAMIC",
+                "collisionShapeType": "CAPSULE",
+                "friction": 0.5,
+                "gravityEnabled": true,
+                "linearDamping": 0.0,
+                "mass": 1.0,
+                "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "CapsuleCollision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "components": [
+          {
+            "pauseExempt": false,
+            "scriptPath": "assets/scripts/enemy_main.lua",
+            "type": "ScriptComponent"
+          }
+        ],
+        "name": "enemy",
+        "transform": {
+          "position": [
+            -1.02294921875,
+            0.0,
+            -2.0569369792938232
           ],
           "rotation": [
             0.0,

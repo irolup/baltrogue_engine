@@ -200,7 +200,10 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/scripts/main_menu.lua=assets/scripts/main_menu.lua \
 		-a assets/scripts/goal_controller.lua=assets/scripts/goal_controller.lua \
 		-a assets/scripts/animated_character.lua=assets/scripts/animated_character.lua \
-		-a assets/scripts/physics_gun.lua=assets/scripts/physics_gun.lua \
+		-a assets/scripts/gravity_gun.lua=assets/scripts/gravity_gun.lua \
+		-a assets/scripts/impulse_pistol.lua=assets/scripts/impulse_pistol.lua \
+		-a assets/scripts/melee.lua=assets/scripts/melee.lua \
+		-a assets/scripts/gravity_prism.lua=assets/scripts/gravity_prism.lua \
 		-a assets/scenes/main_menu.json=assets/scenes/main_menu.json \
 		-a assets/scenes/first_game_demo.json=assets/scenes/first_game_demo.json \
 		-a assets/scenes/playground.json=assets/scenes/playground.json \

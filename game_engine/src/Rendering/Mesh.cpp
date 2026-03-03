@@ -355,7 +355,11 @@ std::shared_ptr<Mesh> Mesh::createCapsule(float radius, float halfHeight, int se
         int startIndex = vertices.size();
         for (int y = 0; y <= rings; y++) {
             float v = (float)y / rings;
-            float phi = (glm::pi<float>() * 0.5f) * v;
+            float phi;
+            if (!flip)
+                phi = (glm::pi<float>() * 0.5f) * (1.0f - v);
+            else
+                phi = (glm::pi<float>() * 0.5f) * v;  
 
             for (int x = 0; x <= segments; x++) {
                 float u = (float)x / segments;
@@ -365,7 +369,9 @@ std::shared_ptr<Mesh> Mesh::createCapsule(float radius, float halfHeight, int se
                 float yPos = radius * cos(phi);
                 float zPos = radius * sin(theta) * sin(phi);
 
-                if (flip) yPos = -yPos;
+                if (flip) {
+                    yPos = -yPos;
+                }
 
                 glm::vec3 pos(xPos, yPos + yOffset, zPos);
                 glm::vec3 normal = glm::normalize(glm::vec3(xPos, yPos, zPos));
@@ -380,7 +386,7 @@ std::shared_ptr<Mesh> Mesh::createCapsule(float radius, float halfHeight, int se
                 int i1 = i0 + 1;
                 int i2 = i0 + (segments + 1);
                 int i3 = i2 + 1;
-
+        
                 indices.push_back(i0);
                 indices.push_back(i2);
                 indices.push_back(i1);
