@@ -88,6 +88,9 @@ public:
     void syncTransformFromPhysics();
     void syncTransformToPhysics();
     
+    glm::vec3 getWorldPosition() const;
+    void setWorldRotation(const glm::quat& worldRotation);
+    
     void forceUpdateCollisionShape();
     
     bool isColliding() const;

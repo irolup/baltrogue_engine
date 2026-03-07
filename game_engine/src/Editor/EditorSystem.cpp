@@ -15,6 +15,7 @@
 #include "Components/PhysicsComponent.h"
 #include "Components/RaycastComponent.h"
 #include "Components/SkyboxComponent.h"
+#include "Components/NavVolumeComponent.h"
 #include "Core/Engine.h"
 #include "Rendering/LightingManager.h"
 #include "Rendering/Material.h"
@@ -23,6 +24,8 @@
 #include "Rendering/Texture.h"
 #include "Rendering/Mesh.h"
 #include "Physics/PhysicsManager.h"
+#include "Navigation/NavGrid.h"
+#include "Navigation/NavGridRegistry.h"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -48,6 +51,7 @@ EditorSystem::EditorSystem()
     , gridLockEnabled(false)
     , showGrid(false)
     , gridMeshDirty(true)
+    , showNavMeshDebug(false)
     , gridVao(0)
     , gridVbo(0)
     , gridIbo(0)
@@ -635,7 +639,9 @@ void EditorSystem::renderSceneToViewport() {
 
 void EditorSystem::renderSceneDirectly(Scene& scene, CameraComponent* camera) {
     if (!camera) return;
-    
+
+    syncNavGridFromScene();
+
     glm::mat4 viewMatrix = camera->getViewMatrix();
     glm::mat4 projectionMatrix = camera->getProjectionMatrix();
     
@@ -651,6 +657,9 @@ void EditorSystem::renderSceneDirectly(Scene& scene, CameraComponent* camera) {
     }
     
     renderPhysicsDebugShapes(viewMatrix, projectionMatrix);
+    if (showNavMeshDebug) {
+        renderNavMeshDebug(viewMatrix, projectionMatrix);
+    }
 }
 
 void EditorSystem::renderSkyboxDirectly(Scene& scene, CameraComponent* camera, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
@@ -1034,7 +1043,7 @@ void EditorSystem::renderPhysicsDebugShapes(const glm::mat4& viewMatrix, const g
             if (raycastComponent && raycastComponent->isEnabled() && raycastComponent->getShowDebugLine()) {
                 raycastComponent->renderDebugLine(*debugMaterial, viewMatrix, projectionMatrix);
             }
-            
+
             for (size_t i = 0; i < node->getChildCount(); ++i) {
                 auto child = node->getChild(i);
                 if (child) {
@@ -1053,6 +1062,96 @@ void EditorSystem::renderPhysicsDebugShapes(const glm::mat4& viewMatrix, const g
     if (depthTestEnabled) {
         glEnable(GL_DEPTH_TEST);
     }
+#endif
+}
+
+void EditorSystem::syncNavGridFromScene() {
+#ifdef EDITOR_BUILD
+    if (!activeScene) return;
+    auto root = activeScene->getRootNode();
+    if (!root) return;
+    std::function<void(std::shared_ptr<SceneNode>)> visit = [&](std::shared_ptr<SceneNode> node) {
+        if (!node || !node->isActive()) return;
+        auto comp = node->getComponent<NavVolumeComponent>();
+        if (comp)
+            comp->syncToNavGrid();
+        for (size_t i = 0; i < node->getChildCount(); ++i)
+            visit(node->getChild(i));
+    };
+    visit(root);
+#endif
+}
+
+void EditorSystem::renderNavMeshDebug(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
+#ifdef EDITOR_BUILD
+    auto debugMaterial = std::make_shared<Material>();
+    auto debugShader = std::make_shared<Shader>();
+    std::string vertexShaderSource =
+        "#version 330 core\n"
+        "layout (location = 0) in vec3 aPos;\n"
+        "uniform mat4 modelMatrix;\n"
+        "uniform mat4 viewMatrix;\n"
+        "uniform mat4 projectionMatrix;\n"
+        "void main() {\n"
+        "    gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(aPos, 1.0);\n"
+        "}\n";
+    std::string fragmentShaderSource =
+        "#version 330 core\n"
+        "out vec4 FragColor;\n"
+        "uniform vec3 u_Color;\n"
+        "void main() {\n"
+        "    FragColor = vec4(u_Color, 1.0);\n"
+        "}\n";
+    if (!debugShader->loadFromSource(vertexShaderSource, fragmentShaderSource))
+        return;
+    debugMaterial->setShader(debugShader);
+
+    std::shared_ptr<Mesh> cellMesh = Mesh::createWireframePlane(1.0f, 1.0f);
+    if (!cellMesh) return;
+
+    GLint currentPolygonMode[2];
+    glGetIntegerv(GL_POLYGON_MODE, currentPolygonMode);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    GLboolean depthTestEnabled;
+    glGetBooleanv(GL_DEPTH_TEST, &depthTestEnabled);
+    glEnable(GL_DEPTH_TEST);
+
+    int gridIndex = 0;
+    NavGridRegistry::get().forEachGrid([&](NavGrid* grid) {
+        grid->syncObstaclesFromNodes();
+        int sizeX = grid->getGridSizeX();
+        int sizeZ = grid->getGridSizeZ();
+        float cellSize = grid->getCellSize();
+        float hue = 0.33f + (gridIndex % 4) * 0.15f;
+        if (hue > 1.0f) hue -= 1.0f;
+        glm::vec3 baseColor(0.2f, 0.8f, 0.3f);
+        for (int iz = 0; iz < sizeZ; ++iz) {
+            for (int ix = 0; ix < sizeX; ++ix) {
+                glm::vec3 center = grid->cellToWorld(ix, iz);
+                glm::mat4 model = glm::translate(glm::mat4(1.0f), center)
+                    * glm::scale(glm::mat4(1.0f), glm::vec3(cellSize, 1.0f, cellSize));
+                bool obstacle = grid->isTileObstacle(ix, iz);
+                glm::vec3 color = obstacle ? glm::vec3(0.9f, 0.2f, 0.2f) : baseColor;
+                debugMaterial->setColor(color);
+                debugMaterial->apply();
+                auto shader = debugMaterial->getShader();
+                if (shader) {
+                    shader->setMat4("modelMatrix", model);
+                    shader->setMat4("viewMatrix", viewMatrix);
+                    shader->setMat4("projectionMatrix", projectionMatrix);
+                    shader->setVec3("u_Color", debugMaterial->getColor());
+                }
+                cellMesh->bind();
+                cellMesh->draw();
+                cellMesh->unbind();
+            }
+        }
+        ++gridIndex;
+    });
+
+    glPolygonMode(GL_FRONT_AND_BACK, currentPolygonMode[0]);
+    if (!depthTestEnabled)
+        glDisable(GL_DEPTH_TEST);
 #endif
 }
 

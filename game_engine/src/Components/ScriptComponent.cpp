@@ -12,6 +12,10 @@
 #include "Components/BeamRenderer.h"
 #include "Components/MeshRenderer.h"
 #include "Components/RaycastComponent.h"
+#include "Navigation/NavGrid.h"
+#include "Navigation/NavGridRegistry.h"
+#include "Components/NavVolumeComponent.h"
+#include "Components/NavAgentComponent.h"
 #include "Rendering/Material.h"
 #include "Rendering/Shader.h"
 #include "Rendering/AnimationManager.h"
@@ -381,7 +385,8 @@ void ScriptComponent::bindEngineToLua() {
     
     bindInputToLua();
     bindCameraToLua();
-    // bindPhysicsToLua();
+    bindPhysicsToLua();
+    bindNavToLua();
     bindRendererToLua();
     bindSceneToLua();
     bindAnimationToLua();
@@ -412,6 +417,13 @@ void ScriptComponent::bindTransformToLua() {
             float y = lua_tonumber(L, 2);
             float z = lua_tonumber(L, 3);
             self->owner->getTransform().setPosition(glm::vec3(x, y, z));
+            for (size_t i = 0; i < self->owner->getChildCount(); ++i) {
+                auto child = self->owner->getChild(i);
+                if (child) {
+                    auto* phys = child->getComponent<PhysicsComponent>();
+                    if (phys) phys->syncTransformToPhysics();
+                }
+            }
         }
         return 0;
     });
@@ -1138,13 +1150,264 @@ void ScriptComponent::bindPhysicsToLua() {
     
     lua_newtable(luaState);
     
+    lua_pushstring(luaState, "raycast");
+    lua_pushcclosure(luaState, [](lua_State* L) -> int {
+        float ox = luaL_checknumber(L, 1);
+        float oy = luaL_checknumber(L, 2);
+        float oz = luaL_checknumber(L, 3);
+        float dx = luaL_checknumber(L, 4);
+        float dy = luaL_checknumber(L, 5);
+        float dz = luaL_checknumber(L, 6);
+        float maxDist = luaL_checknumber(L, 7);
+        int mask = (lua_gettop(L) >= 8 && lua_isnumber(L, 8)) ? (int)lua_tonumber(L, 8) : -1;
+        glm::vec3 origin(ox, oy, oz);
+        glm::vec3 dir(dx, dy, dz);
+        float len = glm::length(dir);
+        if (len < 1e-6f) { lua_pushnil(L); return 1; }
+        dir /= len;
+        glm::vec3 to = origin + dir * maxDist;
+        bool hit = false;
+        std::string hitNodeName;
+        glm::vec3 hitPoint;
+        glm::vec3 hitNormal;
+        float hitDistance;
+        bool ok = PhysicsManager::getInstance().raycastFromTo(origin, to, mask, hit, hitNodeName, hitPoint, hitNormal, hitDistance);
+        if (!ok || !hit) { lua_pushnil(L); return 1; }
+        lua_newtable(L);
+        lua_pushstring(L, "hitNodeName");
+        lua_pushstring(L, hitNodeName.c_str());
+        lua_settable(L, -3);
+        lua_pushstring(L, "hitPoint");
+        lua_newtable(L);
+        lua_pushstring(L, "x"); lua_pushnumber(L, hitPoint.x); lua_settable(L, -3);
+        lua_pushstring(L, "y"); lua_pushnumber(L, hitPoint.y); lua_settable(L, -3);
+        lua_pushstring(L, "z"); lua_pushnumber(L, hitPoint.z); lua_settable(L, -3);
+        lua_settable(L, -3);
+        lua_pushstring(L, "hitDistance");
+        lua_pushnumber(L, hitDistance);
+        lua_settable(L, -3);
+        lua_pushstring(L, "hitNormal");
+        lua_newtable(L);
+        lua_pushstring(L, "x"); lua_pushnumber(L, hitNormal.x); lua_settable(L, -3);
+        lua_pushstring(L, "y"); lua_pushnumber(L, hitNormal.y); lua_settable(L, -3);
+        lua_pushstring(L, "z"); lua_pushnumber(L, hitNormal.z); lua_settable(L, -3);
+        lua_settable(L, -3);
+        return 1;
+    }, 0);
+    lua_settable(luaState, -3);
+    
     lua_pushstring(luaState, "addForce");
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         return 0;
     });
     lua_settable(luaState, -3);
     
-    lua_setglobal(luaState, "physics");
+    lua_setglobal(luaState, "Physics");
+}
+
+void ScriptComponent::bindNavToLua() {
+    if (!luaState) return;
+    lua_newtable(luaState);
+
+    lua_pushstring(luaState, "find_path");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        float sx = luaL_checknumber(L, 1);
+        float sy = luaL_checknumber(L, 2);
+        float sz = luaL_checknumber(L, 3);
+        float tx = luaL_checknumber(L, 4);
+        float ty = luaL_checknumber(L, 5);
+        float tz = luaL_checknumber(L, 6);
+        bool allowDiagonal = true;
+        NavGrid* grid = nullptr;
+        if (lua_gettop(L) >= 7 && lua_istable(L, 7)) {
+            lua_getfield(L, 7, "allow_diagonal");
+            if (lua_isboolean(L, -1)) allowDiagonal = lua_toboolean(L, -1) != 0;
+            lua_pop(L, 1);
+            lua_getfield(L, 7, "volume");
+            if (lua_type(L, -1) == LUA_TSTRING) {
+                const char* volName = lua_tostring(L, -1);
+                auto& engine = GetEngine();
+                auto scene = engine.getSceneManager().getCurrentScene();
+                if (scene && volName) {
+                    auto node = scene->findNode(volName);
+                    if (node) {
+                        auto* vol = node->getComponent<NavVolumeComponent>();
+                        if (vol) grid = vol->getGrid();
+                    }
+                }
+            }
+            lua_pop(L, 1);
+        }
+        if (!grid) grid = NavGridRegistry::get().getFirstGrid();
+        glm::vec3 start(sx, sy, sz);
+        glm::vec3 end(tx, ty, tz);
+        std::vector<glm::vec3> path = grid ? grid->findPath(start, end, allowDiagonal) : std::vector<glm::vec3>();
+        lua_newtable(L);
+        for (size_t i = 0; i < path.size(); ++i) {
+            lua_newtable(L);
+            lua_pushnumber(L, path[i].x); lua_seti(L, -2, 1);
+            lua_pushnumber(L, path[i].y); lua_seti(L, -2, 2);
+            lua_pushnumber(L, path[i].z); lua_seti(L, -2, 3);
+            lua_seti(L, -2, (lua_Integer)(i + 1));
+        }
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
+    lua_pushstring(luaState, "world_to_cell");
+    lua_pushcclosure(luaState, [](lua_State* L) -> int {
+        float wx = (float)luaL_checknumber(L, 1);
+        float wz = (float)luaL_checknumber(L, 2);
+        NavGrid* grid = NavGridRegistry::get().getFirstGrid();
+        if (lua_gettop(L) >= 3 && lua_type(L, 3) == LUA_TSTRING) {
+            const char* volName = lua_tostring(L, 3);
+            auto& engine = GetEngine();
+            auto scene = engine.getSceneManager().getCurrentScene();
+            if (scene && volName) {
+                auto node = scene->findNode(volName);
+                if (node) {
+                    auto* vol = node->getComponent<NavVolumeComponent>();
+                    if (vol && vol->getGrid()) grid = vol->getGrid();
+                }
+            }
+        }
+        if (!grid) { lua_pushinteger(L, 0); lua_pushinteger(L, 0); return 2; }
+        int ix = 0, iz = 0;
+        grid->worldToCell(wx, wz, ix, iz);
+        lua_pushinteger(L, ix);
+        lua_pushinteger(L, iz);
+        return 2;
+    }, 0);
+    lua_settable(luaState, -3);
+
+    lua_pushstring(luaState, "get_agent");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        auto& engine = GetEngine();
+        auto activeScene = engine.getSceneManager().getCurrentScene();
+        if (!activeScene || !nodeName) { lua_pushnil(L); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushnil(L); return 1; }
+        NavAgentComponent* agent = node->getComponent<NavAgentComponent>();
+        if (!agent) { lua_pushnil(L); return 1; }
+        lua_newtable(L);
+        lua_pushstring(L, "_navAgent");
+        lua_pushlightuserdata(L, agent);
+        lua_settable(L, -3);
+        lua_pushstring(L, "set_destination");
+        lua_pushcfunction(L, [](lua_State* LL) -> int {
+            lua_getfield(LL, 1, "_navAgent");
+            NavAgentComponent* a = static_cast<NavAgentComponent*>(lua_touserdata(LL, -1));
+            lua_pop(LL, 1);
+            if (!a || lua_gettop(LL) < 4) return 0;
+            float x = luaL_checknumber(LL, 2);
+            float y = luaL_checknumber(LL, 3);
+            float z = luaL_checknumber(LL, 4);
+            a->setDestination(glm::vec3(x, y, z));
+            return 0;
+        });
+        lua_settable(L, -3);
+        lua_pushstring(L, "set_follow_path");
+        lua_pushcfunction(L, [](lua_State* LL) -> int {
+            lua_getfield(LL, 1, "_navAgent");
+            NavAgentComponent* a = static_cast<NavAgentComponent*>(lua_touserdata(LL, -1));
+            lua_pop(LL, 1);
+            if (!a || !lua_istable(LL, 2)) return 0;
+            std::vector<glm::vec3> path;
+            lua_len(LL, 2);
+            lua_Integer len = lua_tointeger(LL, -1);
+            lua_pop(LL, 1);
+            for (lua_Integer i = 1; i <= len; ++i) {
+                lua_geti(LL, 2, i);
+                if (lua_istable(LL, -1)) {
+                    lua_geti(LL, -1, 1);
+                    lua_geti(LL, -2, 2);
+                    lua_geti(LL, -3, 3);
+                    float x = (float)lua_tonumber(LL, -3);
+                    float y = (float)lua_tonumber(LL, -2);
+                    float z = (float)lua_tonumber(LL, -1);
+                    lua_pop(LL, 4);
+                    path.push_back(glm::vec3(x, y, z));
+                } else lua_pop(LL, 1);
+            }
+            a->setFollowPath(path);
+            return 0;
+        });
+        lua_settable(L, -3);
+        lua_pushstring(L, "clear_destination");
+        lua_pushcfunction(L, [](lua_State* LL) -> int {
+            lua_getfield(LL, 1, "_navAgent");
+            NavAgentComponent* a = static_cast<NavAgentComponent*>(lua_touserdata(LL, -1));
+            lua_pop(LL, 1);
+            if (a) a->clearDestination();
+            return 0;
+        });
+        lua_settable(L, -3);
+        lua_pushstring(L, "has_path");
+        lua_pushcfunction(L, [](lua_State* LL) -> int {
+            lua_getfield(LL, 1, "_navAgent");
+            NavAgentComponent* a = static_cast<NavAgentComponent*>(lua_touserdata(LL, -1));
+            lua_pop(LL, 1);
+            lua_pushboolean(LL, a ? a->hasPath() : false);
+            return 1;
+        });
+        lua_settable(L, -3);
+        lua_pushstring(L, "path_count");
+        lua_pushcfunction(L, [](lua_State* LL) -> int {
+            lua_getfield(LL, 1, "_navAgent");
+            NavAgentComponent* a = static_cast<NavAgentComponent*>(lua_touserdata(LL, -1));
+            lua_pop(LL, 1);
+            lua_pushinteger(LL, a ? a->getPathSize() : 0);
+            return 1;
+        });
+        lua_settable(L, -3);
+        lua_pushstring(L, "path_index");
+        lua_pushcfunction(L, [](lua_State* LL) -> int {
+            lua_getfield(LL, 1, "_navAgent");
+            NavAgentComponent* a = static_cast<NavAgentComponent*>(lua_touserdata(LL, -1));
+            lua_pop(LL, 1);
+            lua_pushinteger(LL, a ? a->getPathIndex() : 0);
+            return 1;
+        });
+        lua_settable(L, -3);
+        lua_pushstring(L, "is_moving");
+        lua_pushcfunction(L, [](lua_State* LL) -> int {
+            lua_getfield(LL, 1, "_navAgent");
+            NavAgentComponent* a = static_cast<NavAgentComponent*>(lua_touserdata(LL, -1));
+            lua_pop(LL, 1);
+            lua_pushboolean(LL, a ? a->isMoving() : false);
+            return 1;
+        });
+        lua_settable(L, -3);
+        lua_pushstring(L, "get_position");
+        lua_pushcfunction(L, [](lua_State* LL) -> int {
+            lua_getfield(LL, 1, "_navAgent");
+            NavAgentComponent* a = static_cast<NavAgentComponent*>(lua_touserdata(LL, -1));
+            lua_pop(LL, 1);
+            if (!a) { lua_pushnil(LL); return 1; }
+            glm::vec3 p = a->getPosition();
+            lua_pushnumber(LL, p.x);
+            lua_pushnumber(LL, p.y);
+            lua_pushnumber(LL, p.z);
+            return 3;
+        });
+        lua_settable(L, -3);
+        lua_pushstring(L, "on_path_finished");
+        lua_pushcfunction(L, [](lua_State* LL) -> int {
+            lua_getfield(LL, 1, "_navAgent");
+            NavAgentComponent* a = static_cast<NavAgentComponent*>(lua_touserdata(LL, -1));
+            lua_pop(LL, 1);
+            if (!a) return 0;
+            bool finished = a->consumePathFinishedFlag();
+            lua_pushboolean(LL, finished ? 1 : 0);
+            return 1;
+        });
+        lua_settable(L, -3);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
+    lua_setglobal(luaState, "Nav");
 }
 
 void ScriptComponent::bindRendererToLua() {
@@ -1666,6 +1929,7 @@ void ScriptComponent::bindCommonFunctions() {
                         auto physicsComp = n->getComponent<PhysicsComponent>();
                         if (physicsComp) {
                             physicsComp->forceUpdateCollisionShape();
+                            physicsComp->syncTransformToPhysics();
                         }
                         for (size_t i = 0; i < n->getChildCount(); ++i) {
                             auto child = n->getChild(i);
@@ -2053,6 +2317,103 @@ void ScriptComponent::bindCommonFunctions() {
         return 0;
     });
     lua_setglobal(luaState, "setNodeGravityEnabled");
+    
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* childName = luaL_checkstring(L, 1);
+        bool enabled = lua_toboolean(L, 2) != 0;
+        lua_getglobal(L, "_currentScriptComponent");
+        ScriptComponent* self = static_cast<ScriptComponent*>(lua_touserdata(L, -1));
+        lua_pop(L, 1);
+        if (!self || !self->owner || !childName) return 0;
+        for (size_t i = 0; i < self->owner->getChildCount(); ++i) {
+            auto child = self->owner->getChild(i);
+            if (child && child->getName() == childName) {
+                auto* phys = child->getComponent<PhysicsComponent>();
+                if (phys) {
+                    phys->setGravityEnabled(enabled);
+                    lua_pushboolean(L, true);
+                    return 1;
+                }
+                break;
+            }
+        }
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_setglobal(luaState, "setOwnerChildGravityEnabled");
+    
+    // Set gravity on the current script owner's FIRST child that has PhysicsComponent
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        bool enabled = lua_toboolean(L, 1) != 0;
+        lua_getglobal(L, "_currentScriptComponent");
+        ScriptComponent* self = static_cast<ScriptComponent*>(lua_touserdata(L, -1));
+        lua_pop(L, 1);
+        if (!self || !self->owner) { lua_pushboolean(L, false); return 1; }
+        for (size_t i = 0; i < self->owner->getChildCount(); ++i) {
+            auto child = self->owner->getChild(i);
+            if (child) {
+                auto* phys = child->getComponent<PhysicsComponent>();
+                if (phys) {
+                    phys->setGravityEnabled(enabled);
+                    lua_pushboolean(L, true);
+                    return 1;
+                }
+            }
+        }
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_setglobal(luaState, "setOwnerFirstPhysicsChildGravityEnabled");
+    
+    // Set angular factor on the current script owner's FIRST child that has PhysicsComponent.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        float x = luaL_checknumber(L, 1);
+        float y = luaL_checknumber(L, 2);
+        float z = luaL_checknumber(L, 3);
+        lua_getglobal(L, "_currentScriptComponent");
+        ScriptComponent* self = static_cast<ScriptComponent*>(lua_touserdata(L, -1));
+        lua_pop(L, 1);
+        if (!self || !self->owner) return 0;
+        for (size_t i = 0; i < self->owner->getChildCount(); ++i) {
+            auto child = self->owner->getChild(i);
+            if (child) {
+                auto* phys = child->getComponent<PhysicsComponent>();
+                if (phys) {
+                    phys->setAngularFactor(glm::vec3(x, y, z));
+                    break;
+                }
+            }
+        }
+        return 0;
+    });
+    lua_setglobal(luaState, "setOwnerFirstPhysicsChildAngularFactor");
+    
+    // Set angular factor on the current script owner's child by name.
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* childName = luaL_checkstring(L, 1);
+        float x = luaL_checknumber(L, 2);
+        float y = luaL_checknumber(L, 3);
+        float z = luaL_checknumber(L, 4);
+        lua_getglobal(L, "_currentScriptComponent");
+        ScriptComponent* self = static_cast<ScriptComponent*>(lua_touserdata(L, -1));
+        lua_pop(L, 1);
+        if (!self || !self->owner || !childName) return 0;
+        for (size_t i = 0; i < self->owner->getChildCount(); ++i) {
+            auto child = self->owner->getChild(i);
+            if (child && child->getName() == childName) {
+                auto* phys = child->getComponent<PhysicsComponent>();
+                if (phys) {
+                    phys->setAngularFactor(glm::vec3(x, y, z));
+                    lua_pushboolean(L, true);
+                    return 1;
+                }
+                break;
+            }
+        }
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_setglobal(luaState, "setOwnerChildAngularFactor");
     
     // Set physics body type: "static", "dynamic", or "kinematic". Returns true if node had PhysicsComponent and type was set.
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
@@ -3687,6 +4048,39 @@ void ScriptComponent::bindSceneToLua() {
         };
         visit(node.get());
         lua_pushboolean(L, true);
+        return 1;
+    }, 0);
+    lua_settable(luaState, -3);
+    
+    lua_pushstring(luaState, "setNodeBlendMode");
+    lua_pushcclosure(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        const char* modeStr = luaL_optstring(L, 2, "Opaque");
+        if (!nodeName) { lua_pushboolean(L, false); return 1; }
+        auto activeScene = GameEngine::GetEngine().getSceneManager().getCurrentScene();
+        if (!activeScene) { lua_pushboolean(L, false); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushboolean(L, false); return 1; }
+        GameEngine::BlendMode mode = GameEngine::BlendMode::Opaque;
+        if (modeStr) {
+            if (strcmp(modeStr, "Alpha") == 0) mode = GameEngine::BlendMode::Alpha;
+            else if (strcmp(modeStr, "Additive") == 0) mode = GameEngine::BlendMode::Additive;
+        }
+        bool anySet = false;
+        std::function<void(GameEngine::SceneNode*)> visit = [&visit, mode, &anySet](GameEngine::SceneNode* n) {
+            if (!n) return;
+            auto mr = n->getComponent<GameEngine::MeshRenderer>();
+            if (mr) {
+                auto mat = mr->getMaterialOverride() ? mr->getMaterialOverride() : mr->getMaterial();
+                if (mat) { mat->setBlendMode(mode); anySet = true; }
+            }
+            for (size_t i = 0; i < n->getChildCount(); ++i) {
+                auto ch = n->getChild(i);
+                if (ch) visit(ch.get());
+            }
+        };
+        visit(node.get());
+        lua_pushboolean(L, anySet);
         return 1;
     }, 0);
     lua_settable(luaState, -3);

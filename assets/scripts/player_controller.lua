@@ -18,30 +18,26 @@ local playerModelNodeName = "PlayerModel"
 local gunMeshNodeName = "GunMesh"
 local equippedTextNodeName = "equiped_objet"
 
--- Weapon state
-local WEAPON_PISTOL = 1  -- Apply impulse
-local WEAPON_MELEE = 2  -- Melee attack
-local WEAPON_GRAVITY = 3  -- Grab/move objects with gravity gun
-local WEAPON_PRISM = 4    -- Create gravity prism that affects enemies and objects
+local WEAPON_PISTOL = 1
+local WEAPON_MELEE = 2
+local WEAPON_GRAVITY = 3
+local WEAPON_PRISM = 4
 local weaponNames = { [WEAPON_PISTOL] = "Impulse Pistol", [WEAPON_MELEE] = "Melee", [WEAPON_GRAVITY] = "Gravity Gun", [WEAPON_PRISM] = "Gravity Prism" }
 local currentWeapon = WEAPON_PISTOL
 local weaponConfig = {
-    [WEAPON_PISTOL] = { range = 50.0, fireRate = 0.4, impulseStrength = 14.0 },
+    [WEAPON_PISTOL] = { range = 50.0, fireRate = 0.4, impulseStrength = 70.0 },
     [WEAPON_MELEE]  = { damage = 25, range = 3.0,  fireRate = 0.6 },
     [WEAPON_GRAVITY] = nil,
-    [WEAPON_PRISM]  = { fireRate = 1.2, radius = 4.0, duration = 5.0, rotationSpeed = 90.0, invertGravity = false },
+    [WEAPON_PRISM]  = { fireRate = 1.2, radius = 4.0, duration = 5.0, rotationSpeed = 90.0, strength = 2.5, invertGravity = false },
 }
 local lastFireTime = 0
 
--- Gravity gun
 local gravityGunOpts = { cameraName = cameraName, playerModelNodeName = playerModelNodeName, gunLaserNodeName = "GunLaser" }
 local gravityGun = nil
 local impulsePistol = nil
 local meleeWeapon = nil
 local gravityPrism = nil
 
--- Game-defined enemy list
--- Prism and melee use this; enemy script runs in another state so cannot share _G.
 _G.GameEnemies = _G.GameEnemies or { ["enemy"] = "CapsuleCollision" }
 
 local function updateEquippedText()
@@ -80,6 +76,7 @@ local function tryFireWeapon()
             radius = cfg.radius,
             duration = cfg.duration,
             rotationSpeed = cfg.rotationSpeed,
+            strength = cfg.strength,
             invertGravity = cfg.invertGravity,
         }, { playerRootName = playerRootName })
         return

@@ -12,11 +12,15 @@
 #include "Components/PhysicsComponent.h"
 #include "Components/Area3DComponent.h"
 #include "Components/RaycastComponent.h"
+#include "Components/NavObstacleComponent.h"
+#include "Components/NavAgentComponent.h"
+#include "Components/NavVolumeComponent.h"
 #include "Components/TextComponent.h"
 #include "Components/ScriptComponent.h"
 #include "Components/AnimationComponent.h"
 #include "Components/SoundComponent.h"
 #include "Components/SkyboxComponent.h"
+#include "Components/BeamRenderer.h"
 #include "Core/Engine.h"
 #include "Editor/BuildSystem.h"
 #include "Editor/SceneSerializer.h"
@@ -139,6 +143,13 @@ void EditorUI::renderMenuBar() {
             bool physicsDebugEnabled = PhysicsManager::getInstance().isDebugDrawEnabled();
             if (ImGui::MenuItem("Physics Debug Shapes", nullptr, &physicsDebugEnabled)) {
                 PhysicsManager::getInstance().setDebugDrawEnabled(physicsDebugEnabled);
+            }
+            bool showNavMeshDebug = editor.isShowNavMeshDebugEnabled();
+            if (ImGui::MenuItem("Nav Mesh Wireframe", nullptr, &showNavMeshDebug)) {
+                editor.setShowNavMeshDebugEnabled(showNavMeshDebug);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Draw the navigation grid in the viewport (green = walkable, red = blocked).");
             }
             ImGui::Separator();
             bool gridLock = editor.isGridLockEnabled();
@@ -1394,6 +1405,23 @@ void EditorUI::renderProperties() {
                         }
                     }
                 }
+                if (ImGui::MenuItem("Nav Obstacle")) {
+                    if (!selected->getComponent<NavObstacleComponent>()) {
+                        auto comp = selected->addComponent<NavObstacleComponent>();
+                        comp->start();
+                    }
+                }
+                if (ImGui::MenuItem("Nav Agent")) {
+                    if (!selected->getComponent<NavAgentComponent>()) {
+                        selected->addComponent<NavAgentComponent>();
+                    }
+                }
+                if (ImGui::MenuItem("Nav Volume")) {
+                    if (!selected->getComponent<NavVolumeComponent>()) {
+                        auto comp = selected->addComponent<NavVolumeComponent>();
+                        comp->start();
+                    }
+                }
                 ImGui::EndPopup();
             }
             
@@ -1461,6 +1489,16 @@ void EditorUI::renderProperties() {
                     selected->removeComponent<SoundComponent>();
                 } else if (componentToRemove == "SkyboxComponent") {
                     selected->removeComponent<SkyboxComponent>();
+                } else if (componentToRemove == "NavAgentComponent") {
+                    selected->removeComponent<NavAgentComponent>();
+                } else if (componentToRemove == "NavObstacleComponent") {
+                    selected->removeComponent<NavObstacleComponent>();
+                } else if (componentToRemove == "NavVolumeComponent") {
+                    selected->removeComponent<NavVolumeComponent>();
+                } else if (componentToRemove == "RaycastComponent") {
+                    selected->removeComponent<RaycastComponent>();
+                } else if (componentToRemove == "BeamRenderer") {
+                    selected->removeComponent<BeamRenderer>();
                 }
             }
             

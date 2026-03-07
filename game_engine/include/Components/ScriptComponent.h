@@ -64,6 +64,7 @@ private:
     void bindInputToLua();
     void bindCameraToLua();
     void bindPhysicsToLua();
+    void bindNavToLua();
     void bindRendererToLua();
     void bindSceneToLua();
     void bindAnimationToLua();

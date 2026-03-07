@@ -84,6 +84,9 @@ public:
     glm::vec3 gridCellToWorld(int gx, int gz, float y = 0.0f) const;
     bool isGridCellInBounds(int gx, int gz) const;
 
+    bool isShowNavMeshDebugEnabled() const { return showNavMeshDebug; }
+    void setShowNavMeshDebugEnabled(bool enabled) { showNavMeshDebug = enabled; }
+
 private:
     void buildGridMesh();
     void renderGridInViewport(CameraComponent* camera);
@@ -107,6 +110,7 @@ private:
     bool gridLockEnabled;
     bool showGrid;
     bool gridMeshDirty;
+    bool showNavMeshDebug;
 
     GLuint gridVao;
     GLuint gridVbo;
@@ -124,6 +128,8 @@ private:
     void renderSkyboxDirectly(Scene& scene, CameraComponent* camera, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
     
     void renderPhysicsDebugShapes(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
+    void renderNavMeshDebug(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
+    void syncNavGridFromScene();
 };
 
 } // namespace GameEngine

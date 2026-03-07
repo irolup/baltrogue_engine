@@ -92,6 +92,9 @@ public:
 
     bool raycastFromTo(const glm::vec3& from, const glm::vec3& to, int collisionFilterMask,
                        bool& hit, std::string& hitNodeName, glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance);
+    bool raycastFromTo(const glm::vec3& from, const glm::vec3& to, int collisionFilterMask,
+                       bool& hit, std::string& hitNodeName, glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance,
+                       class SceneNode* excludeNode);
 
 private:
     PhysicsManager();

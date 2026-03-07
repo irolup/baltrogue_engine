@@ -1,9 +1,11 @@
--- Gravity Prism: creates a volume where gravity rotates. Affects enemies + objects.
+-- Gravity Prism: rotating gravity volume. Affects enemies + objects.
 local WORLD_GRAVITY = 9.81
 local DEFAULT_RADIUS = 4.0
 local DEFAULT_DURATION = 5.0
 local DEFAULT_ROTATION_SPEED = 90.0
+local DEFAULT_STRENGTH = 2.5
 local PLACE_RANGE = 30.0
+local DEFAULT_BLEND_MODE = "Additive"
 
 local prismVisualCounter = 0
 local lastDebugTime = -999
@@ -45,13 +47,16 @@ local function releasePrismAffected(affectedNodes)
 end
 
 local function place(cameraName, cfg, opts)
-    if not getNodePosition or not physicsRaycast then return false end
+    if not getNodePosition then return false end
+    if not physicsRaycastGround and not physicsRaycast then return false end
     opts = opts or {}
     cfg = cfg or {}
     local radius = (type(cfg.radius) == "number") and cfg.radius or DEFAULT_RADIUS
     local duration = (type(cfg.duration) == "number") and cfg.duration or DEFAULT_DURATION
     local rotationSpeed = (type(cfg.rotationSpeed) == "number") and cfg.rotationSpeed or DEFAULT_ROTATION_SPEED
+    local strength = (type(cfg.strength) == "number" and cfg.strength > 0) and cfg.strength or DEFAULT_STRENGTH
     local invertGravity = cfg.invertGravity == true
+    local blendMode = (type(cfg.blendMode) == "string" and (cfg.blendMode == "Opaque" or cfg.blendMode == "Alpha" or cfg.blendMode == "Additive")) and cfg.blendMode or DEFAULT_BLEND_MODE
 
     local camX, camY, camZ
     if getActiveCameraPosition then camX, camY, camZ = getActiveCameraPosition() end
@@ -74,15 +79,27 @@ local function place(cameraName, cfg, opts)
         end
     end
 
-    local hitNode, hitX, hitY, hitZ, hitDist = physicsRaycast(camX, camY, camZ, fx, fy, fz, PLACE_RANGE)
     local px, py, pz
-    if hitNode and type(hitNode) == "string" and hitDist and hitDist > 0.5 then
-        local d = math.max(0, hitDist - 0.5)
-        px, py, pz = camX + fx * d, camY + fy * d, camZ + fz * d
+    local exclude1 = (opts and type(opts.playerRootName) == "string") and opts.playerRootName or ""
+    local exclude2 = (opts and type(opts.playerModelNodeName) == "string") and opts.playerModelNodeName or ""
+    if physicsRaycastGround then
+        local hx, hy, hz, nx, ny, nz, hitDist = physicsRaycastGround(camX, camY, camZ, fx, fy, fz, PLACE_RANGE, exclude1, exclude2)
+        if hx and hitDist and hitDist <= PLACE_RANGE then
+            px, py, pz = hx, hy, hz
+        else
+            px = camX + fx * PLACE_RANGE
+            py = camY + fy * PLACE_RANGE
+            pz = camZ + fz * PLACE_RANGE
+        end
     else
-        px = camX + fx * (PLACE_RANGE * 0.5)
-        py = camY + fy * (PLACE_RANGE * 0.5)
-        pz = camZ + fz * (PLACE_RANGE * 0.5)
+        local hitNode, hitX, hitY, hitZ, hitDist = physicsRaycast(camX, camY, camZ, fx, fy, fz, PLACE_RANGE)
+        if hitNode and type(hitNode) == "string" and hitNode ~= "" and hitDist and hitDist <= PLACE_RANGE then
+            px, py, pz = hitX, hitY, hitZ
+        else
+            px = camX + fx * PLACE_RANGE
+            py = camY + fy * PLACE_RANGE
+            pz = camZ + fz * PLACE_RANGE
+        end
     end
 
     local now = getTime and getTime() or 0
@@ -94,6 +111,7 @@ local function place(cameraName, cfg, opts)
         spawnTime = now,
         duration = duration,
         rotationSpeed = rotationSpeed,
+        strength = strength,
         invertGravity = invertGravity,
         affectedNodes = {},
         visualNodeName = nil,
@@ -104,6 +122,9 @@ local function place(cameraName, cfg, opts)
         if created then
             setNodePosition(visualName, px, py, pz)
             if scene.addMeshToNode(visualName, "sphere", radius) then
+                if scene.setNodeBlendMode then
+                    scene.setNodeBlendMode(visualName, blendMode)
+                end
                 prismData.visualNodeName = visualName
             else
                 if destroyNode then destroyNode(visualName) end
@@ -151,8 +172,9 @@ local function update(deltaTime)
             table.remove(prisms, i)
         else
             local angleRad = math.rad(p.rotationSpeed * (now - p.spawnTime))
-            local gx = WORLD_GRAVITY * math.sin(angleRad)
-            local gy = -WORLD_GRAVITY * math.cos(angleRad)
+            local g = (p.strength or DEFAULT_STRENGTH) * WORLD_GRAVITY
+            local gx = g * math.sin(angleRad)
+            local gy = -g * math.cos(angleRad)
             local gz = 0
             if p.invertGravity then gx, gy, gz = -gx, -gy, -gz end
 
@@ -206,6 +228,8 @@ return {
         radius = DEFAULT_RADIUS,
         duration = DEFAULT_DURATION,
         rotationSpeed = DEFAULT_ROTATION_SPEED,
+        strength = DEFAULT_STRENGTH,
         invertGravity = false,
+        blendMode = DEFAULT_BLEND_MODE,
     }
 }

@@ -196,7 +196,7 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/audios/walk_sound.wav=assets/audios/walk_sound.wav \
 		-a assets/scripts/pause_menu.lua=assets/scripts/pause_menu.lua \
 		-a assets/scripts/collectible_behavior.lua=assets/scripts/collectible_behavior.lua \
-		-a assets/scripts/player_controller_demo.lua=assets/scripts/player_controller_demo.lua \
+		-a assets/scripts/player_controller.lua=assets/scripts/player_controller.lua \
 		-a assets/scripts/main_menu.lua=assets/scripts/main_menu.lua \
 		-a assets/scripts/goal_controller.lua=assets/scripts/goal_controller.lua \
 		-a assets/scripts/animated_character.lua=assets/scripts/animated_character.lua \
@@ -204,6 +204,8 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/scripts/impulse_pistol.lua=assets/scripts/impulse_pistol.lua \
 		-a assets/scripts/melee.lua=assets/scripts/melee.lua \
 		-a assets/scripts/gravity_prism.lua=assets/scripts/gravity_prism.lua \
+		-a assets/scripts/enemy_main.lua=assets/scripts/enemy_main.lua \
+		-a assets/scripts/enemy_chase.lua=assets/scripts/enemy_chase.lua \
 		-a assets/scenes/main_menu.json=assets/scenes/main_menu.json \
 		-a assets/scenes/first_game_demo.json=assets/scenes/first_game_demo.json \
 		-a assets/scenes/playground.json=assets/scenes/playground.json \

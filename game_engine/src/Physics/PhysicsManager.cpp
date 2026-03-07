@@ -457,14 +457,37 @@ bool PhysicsManager::raycastGround(const glm::vec3& origin, const glm::vec3& dir
 
 struct MaskedRayResultCallback : public btCollisionWorld::ClosestRayResultCallback {
     MaskedRayResultCallback(const btVector3& rayFromWorld, const btVector3& rayToWorld)
-        : ClosestRayResultCallback(rayFromWorld, rayToWorld) {}
+        : ClosestRayResultCallback(rayFromWorld, rayToWorld), excludeNode(nullptr) {}
+    MaskedRayResultCallback(const btVector3& rayFromWorld, const btVector3& rayToWorld, SceneNode* exclude)
+        : ClosestRayResultCallback(rayFromWorld, rayToWorld), excludeNode(exclude) {}
+    SceneNode* excludeNode;
+    static bool isNodeUnder(SceneNode* node, SceneNode* ancestor) {
+        if (!node || !ancestor) return false;
+        for (SceneNode* n = node; n; n = n->getParent())
+            if (n == ancestor) return true;
+        return false;
+    }
     virtual btScalar addSingleResult(btCollisionWorld::LocalRayResult& rayResult, bool normalInWorldSpace) override {
+        if (excludeNode) {
+            const btCollisionObject* obj = rayResult.m_collisionObject;
+            if (obj && obj->getUserPointer()) {
+                Component* comp = static_cast<Component*>(obj->getUserPointer());
+                if (comp && comp->getOwner() && isNodeUnder(comp->getOwner(), excludeNode))
+                    return btScalar(2.0);
+            }
+        }
         return ClosestRayResultCallback::addSingleResult(rayResult, normalInWorldSpace);
     }
 };
 
 bool PhysicsManager::raycastFromTo(const glm::vec3& from, const glm::vec3& to, int collisionFilterMask,
                                    bool& outHit, std::string& hitNodeName, glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance) {
+    return raycastFromTo(from, to, collisionFilterMask, outHit, hitNodeName, hitPoint, hitNormal, hitDistance, nullptr);
+}
+
+bool PhysicsManager::raycastFromTo(const glm::vec3& from, const glm::vec3& to, int collisionFilterMask,
+                                   bool& outHit, std::string& hitNodeName, glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance,
+                                   SceneNode* excludeNode) {
     outHit = false;
     hitNodeName.clear();
     hitPoint = from;
@@ -484,7 +507,7 @@ bool PhysicsManager::raycastFromTo(const glm::vec3& from, const glm::vec3& to, i
         : static_cast<short>(btBroadphaseProxy::AllFilter | btBroadphaseProxy::SensorTrigger);
 
     // 1) Test sensors (ghosts) first with up-to-date world transform.
-    MaskedRayResultCallback sensorCallback(rayFrom, rayTo);
+    MaskedRayResultCallback sensorCallback(rayFrom, rayTo, excludeNode);
     sensorCallback.m_collisionFilterGroup = btBroadphaseProxy::DefaultFilter | btBroadphaseProxy::SensorTrigger;
     sensorCallback.m_collisionFilterMask = rayMask;
     int n = dynamicsWorld->getNumCollisionObjects();
@@ -513,7 +536,7 @@ bool PhysicsManager::raycastFromTo(const glm::vec3& from, const glm::vec3& to, i
     }
 
     // 2) Test rigid bodies.
-    MaskedRayResultCallback rigidCallback(rayFrom, rayTo);
+    MaskedRayResultCallback rigidCallback(rayFrom, rayTo, excludeNode);
     rigidCallback.m_collisionFilterGroup = btBroadphaseProxy::DefaultFilter | btBroadphaseProxy::SensorTrigger;
     rigidCallback.m_collisionFilterMask = rayMask;
     dynamicsWorld->rayTest(rayFrom, rayTo, rigidCallback);

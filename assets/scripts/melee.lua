@@ -18,9 +18,6 @@ return {
 
         local rootName = getEnemyRootName(hitNode)
         if not rootName then return end
-        local gameEnemies = _G.GameEnemies
-        if not gameEnemies or not gameEnemies[rootName] then return end
-
         local damage = cfg.damage or 25
         if type(callNodeScriptFunctionWithParam) == "function" then
             callNodeScriptFunctionWithParam(rootName, "takeDamage", damage)

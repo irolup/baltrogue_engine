@@ -3,6 +3,7 @@
 #include "Physics/PhysicsManager.h"
 #include "Scene/SceneNode.h"
 #include "Core/Transform.h"
+#include "Components/NavAgentComponent.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Renderer.h"
 #include "Rendering/Material.h"
@@ -236,6 +237,27 @@ glm::vec3 PhysicsComponent::getLinearVelocity() const {
     return glm::vec3(0.0f);
 }
 
+glm::vec3 PhysicsComponent::getWorldPosition() const {
+    if (rigidBody) {
+        btTransform transform;
+        rigidBody->getMotionState()->getWorldTransform(transform);
+        btVector3 pos = transform.getOrigin();
+        return glm::vec3(pos.x(), pos.y(), pos.z());
+    }
+    if (owner)
+        return glm::vec3(owner->getWorldMatrix() * glm::vec4(owner->getTransform().getPosition(), 1.0f));
+    return glm::vec3(0.0f);
+}
+
+void PhysicsComponent::setWorldRotation(const glm::quat& worldRotation) {
+    if (!rigidBody) return;
+    btTransform transform;
+    rigidBody->getMotionState()->getWorldTransform(transform);
+    transform.setRotation(btQuaternion(worldRotation.x, worldRotation.y, worldRotation.z, worldRotation.w));
+    rigidBody->getMotionState()->setWorldTransform(transform);
+    rigidBody->setWorldTransform(transform);
+}
+
 void PhysicsComponent::setAngularVelocity(const glm::vec3& velocity) {
     if (rigidBody) {
         rigidBody->setAngularVelocity(btVector3(velocity.x, velocity.y, velocity.z));
@@ -348,14 +370,26 @@ void PhysicsComponent::syncTransformFromPhysics() {
             if (owner->getParent()) {
                 if (bodyType == PhysicsBodyType::DYNAMIC) {
                     auto* parent = owner->getParent();
-                    auto& parentTransform = parent->getTransform();
-                    glm::vec3 ownerLocalPos = owner->getTransform().getPosition();
-                    glm::quat parentRot = parentTransform.getRotation();
-                    glm::vec3 scale = parentTransform.getScale();
-                    glm::vec3 ownerOffsetWorld = parentRot * (ownerLocalPos * scale);
-                    parentTransform.setPosition(physicsWorldPos - ownerOffsetWorld);
-                    if (!rotationLocked) {
-                        parentTransform.setRotation(physicsWorldRot);
+                    bool parentHasNavAgent = (parent->getComponent<NavAgentComponent>() != nullptr);
+                    if (!parentHasNavAgent) {
+                        for (size_t i = 0; i < parent->getChildCount(); ++i) {
+                            auto sib = parent->getChild(i);
+                            if (sib && sib->getComponent<NavAgentComponent>() != nullptr) {
+                                parentHasNavAgent = true;
+                                break;
+                            }
+                        }
+                    }
+                    // When parent or any sibling has NavAgent, let NavAgent own the transform (sync from body there).
+                    if (!parentHasNavAgent) {
+                        auto& parentTransform = parent->getTransform();
+                        glm::vec3 ownerLocalPos = owner->getTransform().getPosition();
+                        glm::quat parentRot = parentTransform.getRotation();
+                        glm::vec3 scale = parentTransform.getScale();
+                        glm::vec3 ownerOffsetWorld = parentRot * (ownerLocalPos * scale);
+                        parentTransform.setPosition(physicsWorldPos - ownerOffsetWorld);
+                        if (!rotationLocked)
+                            parentTransform.setRotation(physicsWorldRot);
                     }
                 } else {
                 }

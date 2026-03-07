@@ -63,6 +63,7 @@
               {
                 "angularDamping": 0.0,
                 "bodyType": "KINEMATIC",
+                "collisionGroup": 2,
                 "collisionShapeType": "BOX",
                 "friction": 0.5,
                 "gravityEnabled": true,
@@ -661,7 +662,7 @@
           "position": [
             0.0,
             -1.399999976158142,
-            6.900000095367432
+            20.544952392578125
           ],
           "rotation": [
             0.0,
@@ -1213,6 +1214,11 @@
                 "visible": true
               }
             ],
+            "components": [
+              {
+                "type": "NavObstacleComponent"
+              }
+            ],
             "name": "front_wall",
             "transform": {
               "position": [
@@ -1317,10 +1323,15 @@
                 "visible": true
               }
             ],
+            "components": [
+              {
+                "type": "NavObstacleComponent"
+              }
+            ],
             "name": "left_Wall",
             "transform": {
               "position": [
-                -3.5,
+                -10.0,
                 -2.299999952316284,
                 -3.5
               ],
@@ -1421,10 +1432,15 @@
                 "visible": true
               }
             ],
+            "components": [
+              {
+                "type": "NavObstacleComponent"
+              }
+            ],
             "name": "right_Wall",
             "transform": {
               "position": [
-                3.5,
+                10.0,
                 -2.299999952316284,
                 -3.5
               ],
@@ -1484,7 +1500,7 @@
                 "visible": true
               },
               {
-                "active": true,
+                "active": false,
                 "components": [
                   {
                     "angularDamping": 0.0,
@@ -1525,6 +1541,11 @@
                 "visible": true
               }
             ],
+            "components": [
+              {
+                "type": "NavObstacleComponent"
+              }
+            ],
             "name": "back_wall",
             "transform": {
               "position": [
@@ -1538,7 +1559,7 @@
                 0.0
               ],
               "scale": [
-                6.0,
+                20.0,
                 1.0,
                 1.0
               ]
@@ -1552,6 +1573,36 @@
             0.0,
             0.0,
             0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cellSize": 1.0,
+            "gridSizeX": 20,
+            "gridSizeZ": 7,
+            "type": "NavVolumeComponent"
+          }
+        ],
+        "name": "NavVolume",
+        "transform": {
+          "position": [
+            -5.0,
+            -1.3077471256256104,
+            -3.5
           ],
           "rotation": [
             0.0,
@@ -1642,7 +1693,310 @@
                 0.0
               ],
               "scale": [
+                1.2000000476837158,
                 1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "Eyes",
+            "transform": {
+              "position": [
+                5.364418029785156e-06,
+                0.5353398323059082,
+                -0.44141435623168945
+              ],
+              "rotation": [
+                1.8319994132820483e-10,
+                4.7971661336910547e-17,
+                -3.94900279143684e-10
+              ],
+              "scale": [
+                0.1999986618757248,
+                0.20000000298023224,
+                0.1999986618757248
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "components": [
+          {
+            "pauseExempt": false,
+            "scriptPath": "assets/scripts/enemy_main.lua",
+            "type": "ScriptComponent"
+          },
+          {
+            "speed": 5.0,
+            "turnSpeed": 8.0,
+            "type": "NavAgentComponent"
+          }
+        ],
+        "name": "enemy",
+        "transform": {
+          "position": [
+            -1.0,
+            -1.800018548965454,
+            -4.68870210647583
+          ],
+          "rotation": [
+            -179.99989318847656,
+            -0.0,
+            179.99989318847656
+          ],
+          "scale": [
+            1.0000001192092896,
+            1.0,
+            1.0000001192092896
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "STATIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.5,
+                "gravityEnabled": true,
+                "linearDamping": 0.0,
+                "mass": 0.0,
+                "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "BoxCollision (5)",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.5,
+                    0.20000000298023224
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "CubeMesh (4)",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "components": [
+          {
+            "type": "NavObstacleComponent"
+          }
+        ],
+        "name": "Wall_Test",
+        "transform": {
+          "position": [
+            -4.6427741050720215,
+            -2.093320846557617,
+            -3.514188528060913
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            0.6386462450027466
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    0.24705874919891357,
+                    1.0,
+                    0.19999998807907104
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CAPSULE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "CapsuleMesh (1)",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "Eyes (1)",
+            "transform": {
+              "position": [
+                2.384185791015625e-05,
+                0.5353397130966187,
+                -0.44141435623168945
+              ],
+              "rotation": [
+                1.7912882288584342e-10,
+                1.424724981512139e-15,
+                3.4109290392159153e-10
+              ],
+              "scale": [
+                1.2603874206542969,
+                0.20000000298023224,
+                0.00019999867072328925
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "DYNAMIC",
+                "collisionShapeType": "CAPSULE",
+                "friction": 0.5,
+                "gravityEnabled": true,
+                "linearDamping": 0.0,
+                "mass": 1.0,
+                "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "CapsuleCollision (1)",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.2000000476837158,
                 1.0,
                 1.0
               ]
@@ -1655,14 +2009,282 @@
             "pauseExempt": false,
             "scriptPath": "assets/scripts/enemy_main.lua",
             "type": "ScriptComponent"
+          },
+          {
+            "assignedVolumeNodeName": "NavVolume2",
+            "speed": 5.0,
+            "turnSpeed": 8.0,
+            "type": "NavAgentComponent"
           }
         ],
-        "name": "enemy",
+        "name": "enemy2",
         "transform": {
           "position": [
-            -1.02294921875,
+            1.5403695106506348,
+            -1.8000226020812988,
+            -4.68870210647583
+          ],
+          "rotation": [
+            -179.99989318847656,
+            -0.0,
+            179.99989318847656
+          ],
+          "scale": [
+            1.0000001192092896,
+            1.0,
+            1.0000001192092896
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cellSize": 1.0,
+            "gridSizeX": 6,
+            "gridSizeZ": 16,
+            "type": "NavVolumeComponent"
+          }
+        ],
+        "name": "NavVolume2",
+        "transform": {
+          "position": [
+            6.475580215454102,
+            0.6129885911941528,
+            -4.0623884201049805
+          ],
+          "rotation": [
             0.0,
-            -2.0569369792938232
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "material": {
+                      "blendMode": "Opaque",
+                      "color": [
+                        1.0,
+                        0.5,
+                        0.20000000298023224
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
+                    },
+                    "meshType": "CUBE",
+                    "type": "MeshRenderer"
+                  }
+                ],
+                "name": "CubeMesh (5)",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "angularDamping": 0.0,
+                    "bodyType": "STATIC",
+                    "collisionShapeType": "BOX",
+                    "friction": 0.5,
+                    "gravityEnabled": true,
+                    "linearDamping": 0.0,
+                    "mass": 0.0,
+                    "restitution": 0.0,
+                    "shapeDimensions": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "showCollisionShape": true,
+                    "type": "PhysicsComponent"
+                  }
+                ],
+                "name": "BoxCollision (6)",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "name": "platform",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                5.0,
+                4.0,
+                5.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "material": {
+                      "blendMode": "Opaque",
+                      "color": [
+                        1.0,
+                        0.5,
+                        0.20000000298023224
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
+                    },
+                    "meshType": "CUBE",
+                    "type": "MeshRenderer"
+                  }
+                ],
+                "name": "CubeMesh (6)",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "angularDamping": 0.0,
+                    "bodyType": "STATIC",
+                    "collisionShapeType": "BOX",
+                    "friction": 0.5,
+                    "gravityEnabled": true,
+                    "linearDamping": 0.0,
+                    "mass": 0.0,
+                    "restitution": 0.0,
+                    "shapeDimensions": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "showCollisionShape": true,
+                    "type": "PhysicsComponent"
+                  }
+                ],
+                "name": "BoxCollision (7)",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "name": "ramp",
+            "transform": {
+              "position": [
+                0.0,
+                -0.5253313183784485,
+                6.044407367706299
+              ],
+              "rotation": [
+                28.341957092285156,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                5.0,
+                1.0,
+                8.808431625366211
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "enemies_platform",
+        "transform": {
+          "position": [
+            16.0,
+            -0.8007685542106628,
+            -5.0
           ],
           "rotation": [
             0.0,

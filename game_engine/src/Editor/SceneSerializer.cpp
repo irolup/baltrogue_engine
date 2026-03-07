@@ -16,6 +16,9 @@
 #include "Components/SoundComponent.h"
 #include "Components/SkyboxComponent.h"
 #include "Components/JointComponent.h"
+#include "Components/NavObstacleComponent.h"
+#include "Components/NavAgentComponent.h"
+#include "Components/NavVolumeComponent.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Rendering/Shader.h"
@@ -2212,6 +2215,23 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                         componentJson["pivotB"] = json::array({ pb.x, pb.y, pb.z });
                         componentJson["enabled"] = jointComp->isEnabled();
                     }
+                } else if (component->getTypeName() == "NavObstacleComponent") {
+                    // no extra props
+                } else if (component->getTypeName() == "NavAgentComponent") {
+                    auto navAgent = node->getComponent<NavAgentComponent>();
+                    if (navAgent) {
+                        componentJson["speed"] = navAgent->getSpeed();
+                        componentJson["turnSpeed"] = navAgent->getTurnSpeed();
+                        if (!navAgent->getAssignedVolumeNodeName().empty())
+                            componentJson["assignedVolumeNodeName"] = navAgent->getAssignedVolumeNodeName();
+                    }
+                } else if (component->getTypeName() == "NavVolumeComponent") {
+                    auto navVol = node->getComponent<NavVolumeComponent>();
+                    if (navVol) {
+                        componentJson["gridSizeX"] = navVol->getGridSizeX();
+                        componentJson["gridSizeZ"] = navVol->getGridSizeZ();
+                        componentJson["cellSize"] = navVol->getCellSize();
+                    }
                 }
                 
                 componentsArray.push_back(componentJson);
@@ -2891,6 +2911,25 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     if (componentJson.contains("enabled")) {
                         jointComp->setEnabled(componentJson["enabled"]);
                     }
+                } else if (type == "NavObstacleComponent") {
+                    node->addComponent<NavObstacleComponent>()->start();
+                } else if (type == "NavAgentComponent") {
+                    auto navAgent = node->addComponent<NavAgentComponent>();
+                    if (componentJson.contains("speed")) {
+                        navAgent->setSpeed(componentJson["speed"]);
+                    }
+                    if (componentJson.contains("turnSpeed")) {
+                        navAgent->setTurnSpeed(componentJson["turnSpeed"]);
+                    }
+                    if (componentJson.contains("assignedVolumeNodeName") && componentJson["assignedVolumeNodeName"].is_string()) {
+                        navAgent->setAssignedVolumeNodeName(componentJson["assignedVolumeNodeName"].get<std::string>());
+                    }
+                } else if (type == "NavVolumeComponent") {
+                    auto navVol = node->addComponent<NavVolumeComponent>();
+                    if (componentJson.contains("gridSizeX")) navVol->setGridSizeX(componentJson["gridSizeX"]);
+                    if (componentJson.contains("gridSizeZ")) navVol->setGridSizeZ(componentJson["gridSizeZ"]);
+                    if (componentJson.contains("cellSize")) navVol->setCellSize(componentJson["cellSize"]);
+                    navVol->start();
                 }
             }
         }
