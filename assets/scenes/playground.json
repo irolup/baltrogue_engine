@@ -1500,7 +1500,7 @@
                 "visible": true
               },
               {
-                "active": false,
+                "active": true,
                 "components": [
                   {
                     "angularDamping": 0.0,

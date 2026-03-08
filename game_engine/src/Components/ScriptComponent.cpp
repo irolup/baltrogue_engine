@@ -2207,8 +2207,7 @@ void ScriptComponent::bindCommonFunctions() {
     });
     lua_setglobal(luaState, "getRaycastWorldRay");
 
-    // Raycast in world space from (fromX,fromY,fromZ) to (toX,toY,toZ).
-    // Returns hitNodeName, hitX, hitY, hitZ, normalX, normalY, normalZ, hitDistance.
+    // Raycast in world space from (fromX,fromY,fromZ) to (toX,toY,toZ). Optional 7th arg: excludeNodeName.
     lua_pushcfunction(luaState, ([](lua_State* L) -> int {
         float fromX = luaL_checknumber(L, 1);
         float fromY = luaL_checknumber(L, 2);
@@ -2218,11 +2217,21 @@ void ScriptComponent::bindCommonFunctions() {
         float toZ = luaL_checknumber(L, 6);
         glm::vec3 from(fromX, fromY, fromZ);
         glm::vec3 to(toX, toY, toZ);
+        SceneNode* excludeNode = nullptr;
+        if (lua_gettop(L) >= 7 && lua_type(L, 7) == LUA_TSTRING) {
+            const char* excludeName = lua_tostring(L, 7);
+            auto& engine = GetEngine();
+            auto scene = engine.getSceneManager().getCurrentScene();
+            if (scene && excludeName) {
+                auto node = scene->findNode(excludeName);
+                if (node) excludeNode = node.get();
+            }
+        }
         bool hit = false;
         std::string hitNodeName;
         glm::vec3 hitPoint, hitNormal;
         float hitDistance;
-        bool ok = PhysicsManager::getInstance().raycastFromTo(from, to, -1, hit, hitNodeName, hitPoint, hitNormal, hitDistance);
+        bool ok = PhysicsManager::getInstance().raycastFromTo(from, to, -1, hit, hitNodeName, hitPoint, hitNormal, hitDistance, excludeNode);
         if (!ok || !hit) {
             lua_pushnil(L);
             return 1;

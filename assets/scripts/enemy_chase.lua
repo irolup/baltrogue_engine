@@ -1,12 +1,24 @@
 local M = {}
 
+local vision = nil
+local function ensureVision()
+  if vision then return vision end
+  local ok, mod = pcall(dofile, "assets/scripts/vision.lua")
+  if ok and mod and mod.can_see then
+    vision = mod
+    return vision
+  end
+  return nil
+end
+
 local lastPlayerCell = {}
 local hasSeenPlayer = {}
 local debugTick = 0
 
 function M.updateChase(enemyNodeName, playerNodeName, deltaTime, opts)
   if not Nav or not Nav.get_agent or not getNodePosition then return end
-  if not Vision or type(Vision.can_see) ~= "function" then return end
+  local v = ensureVision()
+  if not v or type(v.can_see) ~= "function" then return end
 
   opts = opts or {}
   local maxDistance = opts.maxDistance or 50.0
@@ -30,13 +42,16 @@ function M.updateChase(enemyNodeName, playerNodeName, deltaTime, opts)
   end
 
   if not hasSeenPlayer[enemyNodeName] then
-    local canSee = Vision.can_see(enemyNodeName, playerNodeName, { max_distance = maxDistance, fov_degrees = 90 })
-    if Vision.debug_vision then
+    local optsVision = {
+      max_distance = maxDistance,
+      fov_degrees = opts.fov_degrees or 360,
+      target_node_names = { playerNodeName, "PlayerCollision" }
+    }
+    local canSee = v.can_see(enemyNodeName, playerNodeName, optsVision)
+    if v.debug_vision then
       debugTick = (debugTick or 0) + 1
       if debugTick % 60 == 0 then
-        local dbg = Vision.debug_vision(enemyNodeName, playerNodeName)
-        local hit = (dbg and dbg.hit_node) and dbg.hit_node or "none"
-        --print(string.format("[vision] can_see=%s ray_hit=%s", tostring(canSee), hit))
+        local dbg = v.debug_vision(enemyNodeName, playerNodeName, optsVision)
       end
     end
     if not canSee then
