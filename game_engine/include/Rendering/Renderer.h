@@ -37,11 +37,13 @@ public:
     void shutdown();
     
     void beginFrame();
+    void syncViewportToFramebuffer();
     void endFrame();
     void present();
     
     void renderScene(Scene& scene);
     void renderNode(SceneNode& node, const glm::mat4& parentTransform = glm::mat4(1.0f));
+    void renderFromCamera(Scene& scene, CameraComponent* cam, const glm::vec4& vpNorm);
     
     void renderMesh(const Mesh& mesh, const Material& material, const glm::mat4& modelMatrix);
     void submitRenderCommand(const RenderCommand& command);
@@ -81,6 +83,8 @@ private:
     CameraComponent* activeCamera;
     Scene* currentScene;
     glm::ivec4 viewport;
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
     glm::vec3 clearColor;
     
     std::vector<RenderCommand> renderQueue;
@@ -104,7 +108,7 @@ private:
     void processRenderQueue();
     void setupCamera();
     void applyMaterial(const Material& material);
-    void updateFrustum();
+    void updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projMatrix);
     void renderSkybox(Scene& scene);
     void renderTextNodes(SceneNode& node, const glm::mat4& parentTransform);
     bool isMeshInFrustum(const Mesh& mesh, const glm::mat4& modelMatrix) const;

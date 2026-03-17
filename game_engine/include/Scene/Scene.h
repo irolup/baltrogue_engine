@@ -41,7 +41,8 @@ public:
     std::shared_ptr<SceneNode> getActiveCamera() const { return activeCamera.lock(); }
     void setActiveCamera(std::shared_ptr<SceneNode> cameraNode);
     std::shared_ptr<SceneNode> getActiveGameCamera() const;
-    
+    std::vector<std::shared_ptr<SceneNode>> getActiveGameCameras() const;
+    void setCameraActive(std::shared_ptr<SceneNode> cameraNode, bool active);
     std::shared_ptr<SceneNode> getActiveSkybox() const { return activeSkybox.lock(); }
     void setActiveSkybox(std::shared_ptr<SceneNode> skyboxNode);
     

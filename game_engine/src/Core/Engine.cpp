@@ -283,7 +283,11 @@ void Engine::setWindowTitle(const std::string& title) {
 
 glm::ivec2 Engine::getWindowSize() const {
 #ifdef LINUX_BUILD
-    return glm::ivec2(VITA_WIDTH, VITA_HEIGHT);
+    if (window) {
+        int w = VITA_WIDTH, h = VITA_HEIGHT;
+        glfwGetFramebufferSize(window, &w, &h);
+        return glm::ivec2(w, h);
+    }
 #endif
     return glm::ivec2(VITA_WIDTH, VITA_HEIGHT);
 }

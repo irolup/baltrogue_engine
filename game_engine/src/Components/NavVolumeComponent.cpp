@@ -24,7 +24,7 @@ NavVolumeComponent::~NavVolumeComponent() {
 void NavVolumeComponent::start() {
     if (!owner) return;
     if (!grid_) {
-        grid_ = std::make_unique<NavGrid>();
+        grid_ = std::unique_ptr<NavGrid>(new NavGrid());
         NavGridRegistry::get().addGrid(grid_.get());
     }
     syncToNavGrid();
@@ -39,7 +39,7 @@ void NavVolumeComponent::destroy() {
 void NavVolumeComponent::syncToNavGrid() {
     if (!owner) return;
     if (!grid_) {
-        grid_ = std::make_unique<NavGrid>();
+        grid_ = std::unique_ptr<NavGrid>(new NavGrid());
         NavGridRegistry::get().addGrid(grid_.get());
     }
     glm::vec3 origin = glm::vec3(owner->getWorldMatrix() * glm::vec4(owner->getTransform().getPosition(), 1.0f));

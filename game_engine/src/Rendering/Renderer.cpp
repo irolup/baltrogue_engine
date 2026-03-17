@@ -13,6 +13,7 @@
 #include "Rendering/Material.h"
 #include "Physics/PhysicsManager.h"
 #include "Core/Engine.h"
+#include "Platform.h"
 #include <algorithm>
 #include <iostream>
 #include <iomanip>
@@ -23,12 +24,14 @@ namespace GameEngine {
 Renderer::Renderer()
     : activeCamera(nullptr)
     , currentScene(nullptr)
-    , viewport(0, 0, 800, 600)
+    , viewport(0, 0, VITA_WIDTH, VITA_HEIGHT)
+    , framebufferWidth(VITA_WIDTH)
+    , framebufferHeight(VITA_HEIGHT)
     , clearColor(0.2f, 0.3f, 0.3f)
     , wireframeEnabled(false)
     , depthTestEnabled(true)
-    , cullFaceEnabled(true)  // Enabled by default for better performance
-    , frustumCullingEnabled(true)  // Enabled by default, but can be disabled for debugging
+    , cullFaceEnabled(true)
+    , frustumCullingEnabled(true)
     , matricesCached(false)
     , frustumPlanes(6)
 {
@@ -54,7 +57,27 @@ bool Renderer::initialize() {
 void Renderer::shutdown() {
 }
 
+void Renderer::syncViewportToFramebuffer() {
+    int w = VITA_WIDTH;
+    int h = VITA_HEIGHT;
+#ifdef LINUX_BUILD
+    if (window) {
+        glfwGetFramebufferSize(window, &w, &h);
+    }
+#endif
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    if (framebufferWidth != w && framebufferHeight != h) {
+        framebufferWidth = w;
+        framebufferHeight = h;
+        viewport = glm::ivec4(0, 0, w, h);
+        glViewport(0, 0, w, h);
+    }
+}
+
 void Renderer::beginFrame() {
+    syncViewportToFramebuffer();
     stats.reset();
     renderQueue.clear();
 }
@@ -72,7 +95,7 @@ void Renderer::renderScene(Scene& scene) {
     setupCamera();
     
     if (activeCamera) {
-        updateFrustum();
+        updateFrustum(activeCamera->getViewMatrix(), activeCamera->getProjectionMatrix());
     }
     
     renderQueue.clear();
@@ -88,7 +111,6 @@ void Renderer::renderScene(Scene& scene) {
         renderTextNodes(*scene.getRootNode(), glm::mat4(1.0f));
     }
     
-    // In-game collision shape debug draw with lua
     if (PhysicsManager::getInstance().isDebugDrawEnabled() && activeCamera) {
         glm::mat4 viewMat = activeCamera->getViewMatrix();
         glm::mat4 projMat = activeCamera->getProjectionMatrix();
@@ -169,6 +191,65 @@ void Renderer::renderNode(SceneNode& node, const glm::mat4& parentTransform) {
             renderNode(*child, worldTransform);
         }
     }
+}
+
+void Renderer::renderFromCamera(Scene& scene, CameraComponent* cam, const glm::vec4& vpNorm) {
+    if (!cam || vpNorm.x < 0.0f || vpNorm.y < 0.0f || vpNorm.z <= 0.0f || vpNorm.w <= 0.0f) return;
+
+    int fbW = framebufferWidth > 0 ? framebufferWidth : viewport.z;
+    int fbH = framebufferHeight > 0 ? framebufferHeight : viewport.w;
+    if (fbW <= 0 || fbH <= 0) return;
+
+    int px = static_cast<int>(vpNorm.x * static_cast<float>(fbW));
+    int py = static_cast<int>(vpNorm.y * static_cast<float>(fbH));
+    int pw = static_cast<int>(vpNorm.z * static_cast<float>(fbW));
+    int ph = static_cast<int>(vpNorm.w * static_cast<float>(fbH));
+    if (pw <= 0 || ph <= 0) return;
+
+    const glm::ivec4 newViewport(px, py, pw, ph);
+
+    // Save state
+    const glm::ivec4 oldViewport = viewport;
+    CameraComponent* oldCamera = activeCamera;
+
+    // Change viewport ONLY if needed
+    if (newViewport != viewport) {
+        glViewport(px, py, pw, ph);
+        viewport = newViewport;
+    }
+
+    // Update aspect ratio ONLY if changed
+    const float newAspect = static_cast<float>(pw) / static_cast<float>(ph);
+    if (cam->getAspectRatio() != newAspect) {
+        cam->setAspectRatio(newAspect);
+    }
+
+    activeCamera = cam;
+
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    glm::mat4 view = cam->getViewMatrix();
+    glm::mat4 proj = cam->getProjectionMatrix();
+    updateFrustum(view, proj);
+
+    currentScene = &scene;
+    renderQueue.clear();
+    if (scene.getRootNode()) renderNode(*scene.getRootNode(), glm::mat4(1.0f));
+    renderSkybox(scene);
+    cachedViewMatrix = view;
+    cachedProjectionMatrix = proj;
+    matricesCached = true;
+    processRenderQueue();
+    if (scene.getRootNode()) renderTextNodes(*scene.getRootNode(), glm::mat4(1.0f));
+
+    currentScene = nullptr;
+
+    // Restore previous viewport ONLY if needed
+    if (oldViewport != viewport) {
+        glViewport(oldViewport.x, oldViewport.y, oldViewport.z, oldViewport.w);
+        viewport = oldViewport;
+    }
+    activeCamera = oldCamera;
 }
 
 void Renderer::renderTextNodes(SceneNode& node, const glm::mat4& parentTransform) {
@@ -271,14 +352,15 @@ void Renderer::processRenderQueue() {
         });
     
     glm::vec3 cameraPos(0.0f);
-    if (activeCamera) {
+    if (activeCamera && !matricesCached) {
         cachedViewMatrix = activeCamera->getViewMatrix();
         cachedProjectionMatrix = activeCamera->getProjectionMatrix();
-        cameraPos = extractCameraPosition(cachedViewMatrix);
         matricesCached = true;
-        
     }
-    
+    if (matricesCached) {
+        cameraPos = extractCameraPosition(cachedViewMatrix);
+    }
+
     for (const auto& command : renderQueue) {
         if (!command.mesh) continue;
         
@@ -389,6 +471,7 @@ void Renderer::processRenderQueue() {
     }
     
     matricesCached = false;
+    renderQueue.clear();
 }
 
 void Renderer::setupCamera() {
@@ -409,14 +492,11 @@ glm::vec3 Renderer::extractCameraPosition(const glm::mat4& viewMatrix) {
     return glm::vec3(invView[3]);
 }
 
-void Renderer::updateFrustum() {
+void Renderer::updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projMatrix) {
     if (!activeCamera) {
         frustumPlanes.clear();
         return;
     }
-    
-    glm::mat4 viewMatrix = activeCamera->getViewMatrix();
-    glm::mat4 projMatrix = activeCamera->getProjectionMatrix();
     
     glm::mat4 viewProj = projMatrix * viewMatrix;
     

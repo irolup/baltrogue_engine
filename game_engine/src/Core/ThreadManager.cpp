@@ -20,12 +20,12 @@ ThreadManager& ThreadManager::getInstance() {
 
 #ifdef LINUX_BUILD
 ThreadHandle ThreadManager::createThread(const std::string& name, std::function<void()> func) {
-    auto thread = std::make_unique<std::thread>([name, func]() {
+    auto thread = std::unique_ptr<std::thread>(new std::thread([name, func]() {
         #ifdef __linux__
             pthread_setname_np(pthread_self(), name.c_str());
         #endif
         func();
-    });
+    }));
     
     ThreadHandle handle = std::move(*thread);
     threads.push_back(std::move(thread));

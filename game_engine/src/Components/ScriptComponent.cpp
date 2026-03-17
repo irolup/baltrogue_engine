@@ -25,6 +25,7 @@
 #include "Input/InputManager.h"
 #include "Physics/PhysicsManager.h"
 #include "Rendering/Renderer.h"
+#include "Components/CameraComponent.h"
 #include "Core/Transform.h"
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/euler_angles.hpp>
@@ -3171,8 +3172,122 @@ void ScriptComponent::bindCommonFunctions() {
         return 1;
     });
     lua_setglobal(luaState, "isNodeActive");
+
+    // setCameraViewport(nodeName, x, y, width, height)
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float x = luaL_checknumber(L, 2);
+        float y = luaL_checknumber(L, 3);
+        float w = luaL_checknumber(L, 4);
+        float h = luaL_checknumber(L, 5);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto cameraComp = node->getComponent<CameraComponent>();
+                    if (cameraComp) {
+                        auto clamp01 = [](float v) {
+                            if (v < 0.0f) return 0.0f;
+                            if (v > 1.0f) return 1.0f;
+                            return v;
+                        };
+                        x = clamp01(x);
+                        y = clamp01(y);
+                        w = clamp01(w);
+                        h = clamp01(h);
+                        cameraComp->setViewport(x, y, w, h);
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+
+        return 0;
+    });
+    lua_setglobal(luaState, "setCameraViewport");
+
+    // getCameraViewport(nodeName) -> x, y, width, height
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto cameraComp = node->getComponent<CameraComponent>();
+                    if (cameraComp) {
+                        glm::vec4 vp = cameraComp->getViewport();
+                        lua_pushnumber(L, vp.x);
+                        lua_pushnumber(L, vp.y);
+                        lua_pushnumber(L, vp.z);
+                        lua_pushnumber(L, vp.w);
+                        return 4;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        //Default values
+        lua_pushnumber(L, 0.0f);
+        lua_pushnumber(L, 0.0f);
+        lua_pushnumber(L, 1.0f);
+        lua_pushnumber(L, 1.0f);
+        return 4;
+    });
+    lua_setglobal(luaState, "getCameraViewport");
+
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+
+        const char* nodeName = luaL_checkstring(L, 1);
+        bool active = lua_toboolean(L, 2);
     
-    // Get active camera position function - gets the currently active camera's world position
+    #ifndef VITA_BUILD
+        try {
+    #endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto scene = sceneManager.getCurrentScene();
+    
+            if (scene && nodeName) {
+    
+                auto node = scene->findNode(nodeName);
+    
+                if (node) {
+    
+                    auto camera = node->getComponent<CameraComponent>();
+    
+                    if (camera) {
+                        camera->setActive(active);
+                    }
+                }
+            }
+    
+    #ifndef VITA_BUILD
+        } catch (...) {}
+    #endif
+    
+        return 0;
+    });
+    lua_setglobal(luaState, "setCameraActive");
+
+    // Get active camera position function
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
 #ifndef VITA_BUILD
         try {
@@ -3184,7 +3299,6 @@ void ScriptComponent::bindCommonFunctions() {
             if (activeScene) {
                 auto activeCamera = activeScene->getActiveCamera();
                 if (activeCamera) {
-                    // Get the world matrix to get the actual world position
                     auto worldMatrix = activeCamera->getWorldMatrix();
                     glm::vec3 worldPosition = glm::vec3(worldMatrix[3]);
                     

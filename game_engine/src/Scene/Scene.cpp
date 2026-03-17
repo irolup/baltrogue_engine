@@ -120,15 +120,26 @@ void Scene::destroy() {
 }
 
 void Scene::render(Renderer& renderer) {
-    auto activeGameCamera = getActiveGameCamera();
-    if (activeGameCamera) {
-        auto cameraComponent = activeGameCamera->getComponent<CameraComponent>();
-        if (cameraComponent) {
-            renderer.setActiveCamera(cameraComponent);
-        }
+    auto cameras = getActiveGameCameras();
+    if (cameras.empty()) return;
+    if (cameras.size() == 1) {
+        auto cam = cameras[0]->getComponent<CameraComponent>(); 
+        glm::ivec4 viewport = cam->getViewport();
+        renderer.renderFromCamera(*this, cam, viewport);
+        return;
     }
-    
-    renderer.renderScene(*this);
+
+    for (auto& cameraNode : cameras) {
+        if (!cameraNode) continue;
+
+        auto cameraComponent = cameraNode->getComponent<CameraComponent>();
+        if (!cameraComponent || !cameraComponent->isActive()) continue;
+
+        auto vp = cameraComponent->getViewport();
+        if (vp.z <= 0.0f || vp.w <= 0.0f) continue;
+
+        renderer.renderFromCamera(*this, cameraComponent, vp);
+    }
 }
 
 void Scene::setActiveCamera(std::shared_ptr<SceneNode> cameraNode) {
@@ -158,6 +169,19 @@ void Scene::setActiveCamera(std::shared_ptr<SceneNode> cameraNode) {
         renderer.setActiveCamera(cameraComponent);
         
         cameraComponent->setActive(true);
+    }
+}
+
+void Scene::setCameraActive(std::shared_ptr<SceneNode> cameraNode, bool active) {
+    if (!cameraNode) return;
+    auto cameraComp = cameraNode->getComponent<CameraComponent>();
+    if (!cameraComp) return;
+
+    cameraComp->setActive(active);
+
+    if (active) {
+        auto& renderer = GetEngine().getRenderer();
+        renderer.setActiveCamera(cameraComp);
     }
 }
 
@@ -240,6 +264,33 @@ std::shared_ptr<SceneNode> Scene::getActiveGameCamera() const {
         };
     
     return findActiveCamera(rootNode);
+}
+
+std::vector<std::shared_ptr<SceneNode>> Scene::getActiveGameCameras() const {
+    std::vector<std::shared_ptr<SceneNode>> cameras;
+
+    if (!rootNode)
+        return cameras;
+
+    std::function<void(std::shared_ptr<SceneNode>)> findCameras =
+        [&](std::shared_ptr<SceneNode> node)
+    {
+        if (!node)
+            return;
+
+        auto cameraComponent = node->getComponent<CameraComponent>();
+        if (cameraComponent && cameraComponent->isActive()) {
+            cameras.push_back(node);
+        }
+
+        for (size_t i = 0; i < node->getChildCount(); i++) {
+            findCameras(node->getChild(i));
+        }
+    };
+
+    findCameras(rootNode);
+
+    return cameras;
 }
 
 void Scene::setActiveSkybox(std::shared_ptr<SceneNode> skyboxNode) {
