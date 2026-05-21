@@ -18,6 +18,9 @@ local playerModelNodeName = "PlayerModel"
 local gunMeshNodeName = "GunMesh"
 local equippedTextNodeName = "equiped_objet"
 
+local INTERACT_ACTION = "Interact"
+local INTERACT_RAYCAST_NODE = "PlayerRaycast"
+
 local WEAPON_PISTOL = 1
 local WEAPON_MELEE = 2
 local WEAPON_GRAVITY = 3
@@ -37,6 +40,12 @@ local gravityGun = nil
 local impulsePistol = nil
 local meleeWeapon = nil
 local gravityPrism = nil
+
+--Player stats
+local playerHealth = 100
+local playerMaxHealth = 100
+local playerArmor = 0
+local playerMaxArmor = 100
 
 _G.GameEnemies = _G.GameEnemies or { ["enemy"] = "CapsuleCollision" }
 
@@ -163,6 +172,48 @@ local function handleMovement(deltaTime, currentTime)
     if setNodeRotation then setNodeRotation(cameraName, -cameraPitch, 0.0, 0.0) end
 end
 
+local function tryInteract()
+    if not input or not input.isActionPressed or not input.isActionPressed(INTERACT_ACTION) then return end
+    if type(raycastFromNode) ~= "function" then return end
+    if type(callNodeScriptFunction) ~= "function" then return end
+
+    local hitNodeName = select(1, raycastFromNode(INTERACT_RAYCAST_NODE))
+    if not hitNodeName or type(hitNodeName) ~= "string" then return end
+
+    --draw a little sphere at the hit point for debugging:
+    -- local base = "Ball_"
+    -- local ballName = scene.createNode(base, "Root")
+    -- if ballName then
+    --     setNodePosition(ballName, hitX, hitY, hitZ)
+    --     local meshChild = scene.createNode(base .. "_Mesh", ballName)
+    --     if meshChild then
+    --         scene.addMeshToNode(meshChild, "sphere", 0.1)
+    --     end
+    --     local collisionChild = scene.createNode(base .. "_Collision", ballName)
+    --     if collisionChild then
+    --         scene.addPhysicsToNode(collisionChild, "dynamic", "sphere", 0.1, 0.0)
+    --     end
+    --     table.insert(spawnedBalls, ballName)
+    --     print("Spawned debug ball at: " .. hitX .. ", " .. hitY .. ", " .. hitZ)
+    -- end
+
+
+    -- Convention for modularity:
+    -- raycast hits the collision node; the interactable's ScriptComponent is on the parent node.
+    local nodeToTry = hitNodeName
+    for _ = 1, 2 do
+        callNodeScriptFunction(nodeToTry, "interact")
+        local parent = getNodeParentName and getNodeParentName(nodeToTry) or nil
+        if not parent then break end
+        nodeToTry = parent
+    end
+end
+
+function die()
+    -- if we cal this function the health is 0 or below, for the moment we will respwan the player and or reset the scene
+
+end
+
 function start()
     lastJumpTime = getTime()
     lastFireTime = getTime()
@@ -187,6 +238,7 @@ function update(deltaTime)
     if isGamePaused and isGamePaused() then return end
     local currentTime = getTime()
 
+    tryInteract()
     handleWeaponInput()
 
     if gravityGun then

@@ -75,8 +75,7 @@ function update(deltaTime)
     if debugPosTick % 60 == 0 and getNodePosition and ename then
         local ex, ey, ez = getNodePosition(ename)
         local hasAgent = (Nav and Nav.get_agent) and Nav.get_agent(ename) or nil
-        print(string.format("[enemy] name=%s pos(%.2f,%.2f,%.2f) agent=%s dead=%s",
-            tostring(ename), ex or 0, ey or 0, ez or 0, hasAgent and "yes" or "no", tostring(myDead)))
+        --print(string.format("[enemy] name=%s pos(%.2f,%.2f,%.2f) agent=%s dead=%s",tostring(ename), ex or 0, ey or 0, ez or 0, hasAgent and "yes" or "no", tostring(myDead)))
     end
     if myDead then
         if _G.Enemies and _G.Enemies[ename] then

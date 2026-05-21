@@ -241,38 +241,6 @@
           },
           {
             "active": true,
-            "components": [
-              {
-                "height": 1.0,
-                "monitorMode": true,
-                "radius": 0.5,
-                "shapeType": "CAPSULE",
-                "showDebugShape": true,
-                "type": "Area3DComponent"
-              }
-            ],
-            "name": "PlayerArea3D",
-            "transform": {
-              "position": [
-                0.0,
-                0.0,
-                -1.0
-              ],
-              "rotation": [
-                0.0,
-                -0.0,
-                0.0
-              ],
-              "scale": [
-                1.0,
-                1.0,
-                1.0
-              ]
-            },
-            "visible": true
-          },
-          {
-            "active": true,
             "children": [
               {
                 "active": true,
@@ -605,6 +573,45 @@
                     0.0,
                     0.0,
                     0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "collisionMask": -1,
+                    "from": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "showDebugLine": true,
+                    "to": [
+                      0.0,
+                      0.0,
+                      -3.5
+                    ],
+                    "type": "RaycastComponent"
+                  }
+                ],
+                "name": "PlayerRaycast",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    -0.2776451110839844
                   ],
                   "rotation": [
                     0.0,
@@ -2043,7 +2050,7 @@
           {
             "cellSize": 1.0,
             "gridSizeX": 6,
-            "gridSizeZ": 16,
+            "gridSizeZ": 6,
             "type": "NavVolumeComponent"
           }
         ],
@@ -2277,12 +2284,331 @@
               ]
             },
             "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "material": {
+                      "blendMode": "Opaque",
+                      "color": [
+                        1.0,
+                        0.5,
+                        0.20000000298023224
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
+                    },
+                    "meshType": "CUBE",
+                    "type": "MeshRenderer"
+                  }
+                ],
+                "name": "piston_button_mesh_1",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "angularDamping": 0.0,
+                    "bodyType": "KINEMATIC",
+                    "collisionShapeType": "BOX",
+                    "friction": 0.5,
+                    "gravityEnabled": true,
+                    "linearDamping": 0.0,
+                    "mass": 0.0,
+                    "restitution": 0.0,
+                    "shapeDimensions": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "showCollisionShape": true,
+                    "type": "PhysicsComponent"
+                  }
+                ],
+                "name": "piston_button_collision",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "components": [
+              {
+                "pauseExempt": false,
+                "scriptPath": "assets/scripts/interactables/piston_button.lua",
+                "type": "ScriptComponent"
+              }
+            ],
+            "name": "piston_button",
+            "transform": {
+              "position": [
+                -3.9999799728393555,
+                0.0,
+                10.5
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "material": {
+                      "blendMode": "Opaque",
+                      "color": [
+                        0.7352941036224365,
+                        0.7352941036224365,
+                        0.7352941036224365
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
+                    },
+                    "meshType": "CUBE",
+                    "type": "MeshRenderer"
+                  }
+                ],
+                "name": "button_wall_mesh",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "angularDamping": 0.0,
+                    "bodyType": "KINEMATIC",
+                    "collisionShapeType": "BOX",
+                    "friction": 0.5,
+                    "gravityEnabled": true,
+                    "linearDamping": 0.0,
+                    "mass": 0.0,
+                    "restitution": 0.0,
+                    "shapeDimensions": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "showCollisionShape": true,
+                    "type": "PhysicsComponent"
+                  }
+                ],
+                "name": "button_wall_mesh_collion",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "name": "button_wall",
+            "transform": {
+              "position": [
+                -4.0,
+                0.0,
+                10.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                3.0,
+                3.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "children": [
+              {
+                "active": true,
+                "components": [
+                  {
+                    "angularDamping": 0.0,
+                    "bodyType": "KINEMATIC",
+                    "collisionShapeType": "BOX",
+                    "friction": 0.5,
+                    "gravityEnabled": true,
+                    "linearDamping": 0.0,
+                    "mass": 0.0,
+                    "restitution": 0.0,
+                    "shapeDimensions": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ],
+                    "showCollisionShape": true,
+                    "type": "PhysicsComponent"
+                  }
+                ],
+                "name": "pushing_wall_collision",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              },
+              {
+                "active": true,
+                "components": [
+                  {
+                    "material": {
+                      "blendMode": "Opaque",
+                      "color": [
+                        0.5196078419685364,
+                        0.5196078419685364,
+                        0.5196078419685364
+                      ],
+                      "metallic": 0.0,
+                      "reflectionStrength": 0.0,
+                      "roughness": 0.5
+                    },
+                    "meshType": "CUBE",
+                    "type": "MeshRenderer"
+                  }
+                ],
+                "name": "pushing_wall_mesh",
+                "transform": {
+                  "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                  ],
+                  "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                  ]
+                },
+                "visible": true
+              }
+            ],
+            "name": "pushing_wall",
+            "transform": {
+              "position": [
+                3.0,
+                3.5,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                3.0,
+                5.0
+              ]
+            },
+            "visible": true
           }
         ],
         "name": "enemies_platform",
         "transform": {
           "position": [
-            16.0,
+            15.999979972839355,
             -0.8007685542106628,
             -5.0
           ],
@@ -2295,6 +2621,208 @@
             1.0,
             1.0,
             1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    0.19999998807907104,
+                    0.411764919757843,
+                    1.0
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "dynamic_cube_mesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "angularDamping": 0.0,
+                "bodyType": "DYNAMIC",
+                "collisionShapeType": "BOX",
+                "friction": 0.75,
+                "gravityEnabled": true,
+                "linearDamping": 0.0,
+                "mass": 1.0,
+                "restitution": 0.0,
+                "shapeDimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "showCollisionShape": true,
+                "type": "PhysicsComponent"
+              }
+            ],
+            "name": "dynamic_cube_collision",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "dynamic_cube",
+        "transform": {
+          "position": [
+            15.0,
+            2.0,
+            -5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "children": [
+          {
+            "active": true,
+            "components": [
+              {
+                "dimensions": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "monitorMode": true,
+                "shapeType": "BOX",
+                "showDebugShape": true,
+                "type": "Area3DComponent"
+              }
+            ],
+            "name": "LavArea3D",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "material": {
+                  "blendMode": "Opaque",
+                  "color": [
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  "metallic": 0.0,
+                  "reflectionStrength": 0.0,
+                  "roughness": 0.5
+                },
+                "meshType": "CUBE",
+                "type": "MeshRenderer"
+              }
+            ],
+            "name": "LavaMesh",
+            "transform": {
+              "position": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          }
+        ],
+        "name": "Lava",
+        "transform": {
+          "position": [
+            -15.0,
+            -2.299999952316284,
+            -3.4000000953674316
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            5.0,
+            1.0,
+            5.0
           ]
         },
         "visible": true
