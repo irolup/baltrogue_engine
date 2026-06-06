@@ -13,6 +13,7 @@ Cross-platform game engine for **PS Vita** and **Linux**, with a visual editor o
 - [x] PBR (with normal map)
 - [x] Multi-light Lighting System (Directional, Point, Spot)
 - [x] Custom Shader Support (Lit and Unlit, GLSL + CG templates)
+- [ ] **Vulkan Backend (WIP, Linux only)** — mesh and text rendering only; skyboxes, full PBR/lighting, skeletal animation, and editor support not yet ported
 
 ### Audio
 - [x] 2D Audio
@@ -60,6 +61,8 @@ first_game/
 ├── src/                  # Game entry points (vita_main, game_main, Platform)
 ├── include/              # Game headers
 ├── assets/               # Scenes, shaders, textures, models
+│   ├── shaders/          # OpenGL/CG shaders (Vita + Linux OpenGL path)
+│   └── vulkan/           # GLSL sources for Vulkan backend (compiled to .spv)
 └── Makefile
 ```
 
@@ -76,13 +79,26 @@ In `assets/scenes/`:
 ### Linux
 
 ```bash
-make install-deps          # dependencies (libglfw, glew, lua5.3, etc.)
-make install-editor-deps  # editor deps (ImGui is in vendor/)
-make linux                 # build game
-make editor                # build editor
+make install-deps          # dependencies (libglfw, glew, lua5.3, libvulkan-dev, etc.)
+make install-editor-deps   # editor deps (ImGui is in vendor/)
+make linux                 # build game (Vulkan enabled by default)
+make linux USE_VULKAN=0    # build game without Vulkan (OpenGL only)
+make editor                # build editor (OpenGL; no Vulkan)
 make run                   # run game
 make run-editor            # run editor
+make help                  # list all targets
 ```
+
+**Vulkan (Linux game build)**
+
+The Linux game target compiles the Vulkan backend by default (`USE_VULKAN=1`). You need:
+
+- **System packages** — installed by `make install-deps` (`libvulkan-dev`, `vulkan-headers`)
+- **`glslc`** — from the [Vulkan SDK](https://vulkan.lunarg.com/) (or set `VULKAN_SDK` so `$(VULKAN_SDK)/bin/glslc` is found)
+
+Shaders in `assets/vulkan/` are compiled to SPIR-V (`.spv`) automatically during `make linux`. `make clean` removes generated `.spv` files.
+
+This backend is **work in progress**. It currently renders **meshes** and **text** (screen-space and world-space) only. The OpenGL path still provides the full feature set above; use `USE_VULKAN=0` if you do not have Vulkan installed or want the legacy renderer.
 
 ### PS Vita
 
@@ -99,7 +115,7 @@ Then:
 make vita
 ```
 
-Output: `build/first_game.vpk`.
+Output: `build/first_game_demo.vpk`.
 
 **Running the homebrew**
 
@@ -118,12 +134,16 @@ Output: `build/first_game.vpk`.
 | Target | Description |
 |--------|--------------|
 | `make vita` | PS Vita build |
-| `make linux` | Linux game |
+| `make linux` | Linux game (Vulkan on by default) |
+| `make linux USE_VULKAN=0` | Linux game without Vulkan |
 | `make editor` | Linux editor |
 | `make run` | Run Linux game |
 | `make run-editor` | Run editor |
 | `make debug-linux` / `make debug-editor` | Debug builds |
-| `make clean` | Clean all |
+| `make lua-vita` | Build Lua 5.3 static library for PS Vita |
+| `make build-bullet` | Bullet Physics build instructions |
+| `make clean` | Clean all build dirs and compiled Vulkan shaders (`.spv`) |
+| `make help` | List all targets |
 
 ## Editor
 
