@@ -3,10 +3,10 @@
 
 #include <string>
 #include <typeinfo>
-
 namespace GameEngine {
 
 class SceneNode;
+class IRenderer;
 class Renderer;
 
 class Component {
@@ -19,7 +19,7 @@ public:
     virtual void update(float deltaTime) {} // Every frame
     virtual void fixedUpdate(float deltaTime) {} // Fixed rate (60 Hz)
     virtual void lateUpdate(float deltaTime) {} // Every frame after physics
-    virtual void render(Renderer& renderer) {}
+    virtual void render(IRenderer& renderer) {}
     virtual void destroy() {}
     
     // Properties

@@ -15,7 +15,7 @@ public:
     
     COMPONENT_TYPE(MeshRenderer)
     
-    virtual void render(Renderer& renderer) override;
+    virtual void render(IRenderer& renderer) override;
     
     void setMesh(std::shared_ptr<Mesh> mesh);
     std::shared_ptr<Mesh> getMesh() const { return mesh; }

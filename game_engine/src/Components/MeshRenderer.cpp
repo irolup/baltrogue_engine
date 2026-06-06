@@ -26,7 +26,7 @@ MeshRenderer::MeshRenderer()
 MeshRenderer::~MeshRenderer() {
 }
 
-void MeshRenderer::render(Renderer& renderer) {
+void MeshRenderer::render(IRenderer& renderer) {
     if (!mesh || !material || !owner) {
         return;
     }

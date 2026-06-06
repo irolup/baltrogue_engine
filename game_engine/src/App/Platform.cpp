@@ -104,9 +104,14 @@
             return false;
         }
         
+        // Vulkan path must not create an OpenGL context.
+    #ifdef ENABLE_VULKAN
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    #else
         // Set OpenGL version (use 2.1 for maximum VitaGL compatibility)
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+    #endif
         
         #ifdef EDITOR_BUILD
         window = glfwCreateWindow(VITA_WIDTH, VITA_HEIGHT, "Editor", nullptr, nullptr);
@@ -120,8 +125,10 @@
             return false;
         }
         
-        // Make context current
+    #ifndef ENABLE_VULKAN
+        // Make context current for the OpenGL path only.
         glfwMakeContextCurrent(window);
+    #endif
         
         // Set key callback
         glfwSetKeyCallback(window, keyCallback);
@@ -130,15 +137,17 @@
             glViewport(0, 0, width, height);
         });
         
-        // Initialize GLEW
+#ifndef ENABLE_VULKAN
+        // Initialize GLEW for OpenGL only.
         if (glewInit() != GLEW_OK) {
             glfwTerminate();
             return false;
         }
-        
+
         int fbWidth, fbHeight;
         glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
         glViewport(0, 0, fbWidth, fbHeight);
+#endif
         
         return true;
     }

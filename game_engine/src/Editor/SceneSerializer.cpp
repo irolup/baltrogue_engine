@@ -341,6 +341,7 @@ int main() {
                     std::string diffusePath = material->getDiffuseTexturePath();
                     std::string normalPath = material->getNormalTexturePath();
                     std::string armPath = material->getARMTexturePath();
+                    std::string environmentPath = material->getEnvironmentTexturePath();
                     
                     if (!diffusePath.empty()) {
                         content += "    auto diffuseTexture" + std::to_string(shapeCounter) + " = textureManager.getTexture(\"" + diffusePath + "\");\n";
@@ -355,6 +356,11 @@ int main() {
                     if (!armPath.empty()) {
                         content += "    auto armTexture" + std::to_string(shapeCounter) + " = textureManager.getTexture(\"" + armPath + "\");\n";
                         content += "    if (armTexture" + std::to_string(shapeCounter) + ") material" + std::to_string(shapeCounter) + "->setARMTexture(armTexture" + std::to_string(shapeCounter) + ");\n";
+                    }
+
+                    if (!environmentPath.empty()) {
+                        content += "    auto environmentTexture" + std::to_string(shapeCounter) + " = textureManager.getTexture(\"" + environmentPath + "\");\n";
+                        content += "    if (environmentTexture" + std::to_string(shapeCounter) + ") material" + std::to_string(shapeCounter) + "->setEnvironmentTexture(environmentTexture" + std::to_string(shapeCounter) + ");\n";
                     }
                 }
                 
@@ -1932,6 +1938,12 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                                 std::string armPath = material->getARMTexturePath();
                                 if (!armPath.empty()) {
                                     materialJson["armTexture"] = armPath;
+                                }
+                            }
+                            if (material->hasEnvironmentTexture()) {
+                                std::string environmentPath = material->getEnvironmentTexturePath();
+                                if (!environmentPath.empty()) {
+                                    materialJson["environmentTexture"] = environmentPath;
                                 }
                             }
                             

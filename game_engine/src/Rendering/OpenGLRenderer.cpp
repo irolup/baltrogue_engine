@@ -1,4 +1,4 @@
-#include "Rendering/Renderer.h"
+#include "Rendering/OpenGLRenderer.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneNode.h"
 #include "Components/CameraComponent.h"
@@ -14,14 +14,12 @@
 #include "Physics/PhysicsManager.h"
 #include "Core/Engine.h"
 #include "Platform.h"
-#include <algorithm>
 #include <iostream>
 #include <iomanip>
-#include <limits>
 
 namespace GameEngine {
 
-Renderer::Renderer()
+OpenGLRenderer::OpenGLRenderer()
     : activeCamera(nullptr)
     , currentScene(nullptr)
     , viewport(0, 0, VITA_WIDTH, VITA_HEIGHT)
@@ -37,11 +35,11 @@ Renderer::Renderer()
 {
 }
 
-Renderer::~Renderer() {
-    shutdown();
-}
+// OpenGLRenderer::~Renderer() {
+//     shutdown();
+// }
 
-bool Renderer::initialize() {
+bool OpenGLRenderer::initialize()  {
     if (depthTestEnabled) {
         glEnable(GL_DEPTH_TEST);
     }
@@ -54,10 +52,10 @@ bool Renderer::initialize() {
     return true;
 }
 
-void Renderer::shutdown() {
+void OpenGLRenderer::shutdown() {
 }
 
-void Renderer::syncViewportToFramebuffer() {
+void OpenGLRenderer::syncViewportToFramebuffer() {
     int w = VITA_WIDTH;
     int h = VITA_HEIGHT;
 #ifdef LINUX_BUILD
@@ -76,21 +74,21 @@ void Renderer::syncViewportToFramebuffer() {
     }
 }
 
-void Renderer::beginFrame() {
+void OpenGLRenderer::beginFrame() {
     syncViewportToFramebuffer();
     stats.reset();
     renderQueue.clear();
 }
 
-void Renderer::endFrame() {
+void OpenGLRenderer::endFrame() {
     processRenderQueue();
 }
 
-void Renderer::present() {
+void OpenGLRenderer::present() {
     platformSwapBuffers();
 }
 
-void Renderer::renderScene(Scene& scene) {
+void OpenGLRenderer::renderScene(Scene& scene) {
     currentScene = &scene;
     setupCamera();
     
@@ -165,7 +163,7 @@ void Renderer::renderScene(Scene& scene) {
     }
 }
 
-void Renderer::renderNode(SceneNode& node, const glm::mat4& parentTransform) {
+void OpenGLRenderer::renderNode(SceneNode& node, const glm::mat4& parentTransform) {
     if (!node.isVisible() || !node.isActive()) return;
     
     glm::mat4 worldTransform = parentTransform * node.getLocalMatrix();
@@ -193,7 +191,7 @@ void Renderer::renderNode(SceneNode& node, const glm::mat4& parentTransform) {
     }
 }
 
-void Renderer::renderFromCamera(Scene& scene, CameraComponent* cam, const glm::vec4& vpNorm) {
+void OpenGLRenderer::renderFromCamera(Scene& scene, CameraComponent* cam, const glm::vec4& vpNorm) {
     if (!cam || vpNorm.x < 0.0f || vpNorm.y < 0.0f || vpNorm.z <= 0.0f || vpNorm.w <= 0.0f) return;
 
     int fbW = framebufferWidth > 0 ? framebufferWidth : viewport.z;
@@ -252,7 +250,7 @@ void Renderer::renderFromCamera(Scene& scene, CameraComponent* cam, const glm::v
     activeCamera = oldCamera;
 }
 
-void Renderer::renderTextNodes(SceneNode& node, const glm::mat4& parentTransform) {
+void OpenGLRenderer::renderTextNodes(SceneNode& node, const glm::mat4& parentTransform) {
     if (!node.isVisible() || !node.isActive()) return;
     glm::mat4 worldTransform = parentTransform * node.getLocalMatrix();
     auto textComponent = node.getComponent<TextComponent>();
@@ -267,7 +265,7 @@ void Renderer::renderTextNodes(SceneNode& node, const glm::mat4& parentTransform
     }
 }
 
-void Renderer::renderMesh(const Mesh& mesh, const Material& material, const glm::mat4& modelMatrix) {
+void OpenGLRenderer::renderMesh(const Mesh& mesh, const Material& material, const glm::mat4& modelMatrix) {
     RenderCommand command;
     command.mesh = std::shared_ptr<Mesh>(const_cast<Mesh*>(&mesh), [](Mesh*){});
     command.material = std::shared_ptr<Material>(const_cast<Material*>(&material), [](Material*){});
@@ -277,15 +275,15 @@ void Renderer::renderMesh(const Mesh& mesh, const Material& material, const glm:
     submitRenderCommand(command);
 }
 
-void Renderer::submitRenderCommand(const RenderCommand& command) {
+void OpenGLRenderer::submitRenderCommand(const RenderCommand& command) {
     renderQueue.push_back(command);
 }
 
-void Renderer::setActiveCamera(CameraComponent* camera) {
+void OpenGLRenderer::setActiveCamera(CameraComponent* camera) {
     activeCamera = camera;
 }
 
-void Renderer::setViewport(int x, int y, int width, int height) {
+void OpenGLRenderer::setViewport(int x, int y, int width, int height) {
     viewport = glm::ivec4(x, y, width, height);
     glViewport(x, y, width, height);
     
@@ -294,20 +292,20 @@ void Renderer::setViewport(int x, int y, int width, int height) {
     }
 }
 
-void Renderer::setClearColor(const glm::vec3& color) {
+void OpenGLRenderer::setClearColor(const glm::vec3& color) {
     clearColor = color;
     glClearColor(color.r, color.g, color.b, 1.0f);
 }
 
-void Renderer::setClearColor(float r, float g, float b) {
+void OpenGLRenderer::setClearColor(float r, float g, float b) {
     setClearColor(glm::vec3(r, g, b));
 }
 
-void Renderer::clear() {
+void OpenGLRenderer::clear() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void Renderer::setWireframe(bool enabled) {
+void OpenGLRenderer::setWireframe(bool enabled) {
     wireframeEnabled = enabled;
     if (enabled) {
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -316,7 +314,7 @@ void Renderer::setWireframe(bool enabled) {
     }
 }
 
-void Renderer::setDepthTest(bool enabled) {
+void OpenGLRenderer::setDepthTest(bool enabled) {
     depthTestEnabled = enabled;
     if (enabled) {
         glEnable(GL_DEPTH_TEST);
@@ -325,7 +323,7 @@ void Renderer::setDepthTest(bool enabled) {
     }
 }
 
-void Renderer::setCullFace(bool enabled) {
+void OpenGLRenderer::setCullFace(bool enabled) {
     cullFaceEnabled = enabled;
     if (enabled) {
         glEnable(GL_CULL_FACE);
@@ -334,7 +332,7 @@ void Renderer::setCullFace(bool enabled) {
     }
 }
 
-void Renderer::processRenderQueue() {
+void OpenGLRenderer::processRenderQueue() {
     std::sort(renderQueue.begin(), renderQueue.end(),
         [](const RenderCommand& a, const RenderCommand& b) {
             if (!a.material && !b.material) return false;
@@ -474,25 +472,25 @@ void Renderer::processRenderQueue() {
     renderQueue.clear();
 }
 
-void Renderer::setupCamera() {
+void OpenGLRenderer::setupCamera() {
     if (!activeCamera) return;
 }
 
-void Renderer::applyMaterial(const Material& material) {
+void OpenGLRenderer::applyMaterial(const Material& material) {
     material.apply();
 }
 
-void Renderer::updateLightingUniforms() {
+void OpenGLRenderer::updateLightingUniforms() {
     auto& lightingManager = LightingManager::getInstance();
     lightingManager.update();
 }
 
-glm::vec3 Renderer::extractCameraPosition(const glm::mat4& viewMatrix) {
+glm::vec3 OpenGLRenderer::extractCameraPosition(const glm::mat4& viewMatrix) {
     glm::mat4 invView = glm::inverse(viewMatrix);
     return glm::vec3(invView[3]);
 }
 
-void Renderer::updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projMatrix) {
+void OpenGLRenderer::updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projMatrix) {
     if (!activeCamera) {
         frustumPlanes.clear();
         return;
@@ -540,7 +538,7 @@ void Renderer::updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projM
     }
 }
 
-bool Renderer::isMeshInFrustum(const Mesh& mesh, const glm::mat4& modelMatrix) const {
+bool OpenGLRenderer::isMeshInFrustum(const Mesh& mesh, const glm::mat4& modelMatrix) const {
     if (frustumPlanes.empty() || frustumPlanes.size() != 6) {
         return true;
     }
@@ -555,7 +553,7 @@ bool Renderer::isMeshInFrustum(const Mesh& mesh, const glm::mat4& modelMatrix) c
     return isAABBInFrustum(boundsMin, boundsMax, modelMatrix);
 }
 
-bool Renderer::isAABBInFrustum(const glm::vec3& min, const glm::vec3& max, const glm::mat4& transform) const {
+bool OpenGLRenderer::isAABBInFrustum(const glm::vec3& min, const glm::vec3& max, const glm::mat4& transform) const {
     if (frustumPlanes.empty() || frustumPlanes.size() != 6) {
         return true;
     }
@@ -594,7 +592,7 @@ bool Renderer::isAABBInFrustum(const glm::vec3& min, const glm::vec3& max, const
     return true;
 }
 
-void Renderer::renderSkybox(Scene& scene) {
+void OpenGLRenderer::renderSkybox(Scene& scene) {
     auto activeSkyboxNode = scene.getActiveSkybox();
     if (!activeSkyboxNode) return;
     
@@ -645,4 +643,4 @@ void Renderer::renderSkybox(Scene& scene) {
     stats.triangles += skyboxMesh->getTriangleCount();
 }
 
-} // namespace GameEngine
+}

@@ -1,5 +1,5 @@
 #include "Core/MenuManager.h"
-#include "Rendering/Renderer.h"
+#include "Rendering/IRenderer.h"
 #include "Components/TextComponent.h"
 #include "Core/Engine.h"
 #include "Core/Time.h"
@@ -346,7 +346,7 @@ void MenuManager::update(float deltaTime) {
     }
 }
 
-void MenuManager::render(Renderer& renderer) {
+void MenuManager::render(IRenderer& renderer) {
     if (!initialized) {
         return;
     }
@@ -450,10 +450,10 @@ void MenuManager::callMenuCallback(const std::string& callbackName, const std::s
     }
 }
 
-void MenuManager::renderMenuBackground(Renderer& renderer, const Menu& menu) {
+void MenuManager::renderMenuBackground(IRenderer& renderer, const Menu& menu) {
 }
 
-void MenuManager::renderMenuItems(Renderer& renderer, const Menu& menu) {
+void MenuManager::renderMenuItems(IRenderer& renderer, const Menu& menu) {
 }
 
 bool MenuManager::isAnyMenuVisible() const {

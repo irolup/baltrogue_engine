@@ -48,12 +48,16 @@ void Mesh::setIndices(const std::vector<unsigned int>& newIndices) {
 }
 
 void Mesh::upload() {
+#ifndef ENABLE_VULKAN
     if (uploaded) {
         cleanupBuffers();
     }
-    
+
     setupBuffers();
     uploaded = true;
+#else
+    uploaded = true;
+#endif
 }
 
 void Mesh::uploadAndClearCPUData() {
@@ -71,15 +75,21 @@ void Mesh::uploadAndClearCPUData() {
 }
 
 void Mesh::bind() const {
+#ifndef ENABLE_VULKAN
     if (!uploaded) {
         const_cast<Mesh*>(this)->upload();
     }
-    
+
     glBindVertexArray(VAO);
+#else
+    (void)VAO;
+#endif
 }
 
 void Mesh::unbind() const {
+#ifndef ENABLE_VULKAN
     glBindVertexArray(0);
+#endif
 }
 
 size_t Mesh::getMemoryUsageBytes() const {
@@ -91,64 +101,76 @@ size_t Mesh::getMemoryUsageBytes() const {
 }
 
 void Mesh::draw() const {
+#ifndef ENABLE_VULKAN
     if (!uploaded) {
         const_cast<Mesh*>(this)->upload();
     }
-    
+
     bind();
-    
+
     size_t indexCount = cpuDataCleared ? cachedIndexCount : indices.size();
     size_t vertexCount = cpuDataCleared ? cachedVertexCount : vertices.size();
-    
+
     if (indexCount > 0) {
         glDrawElements(renderMode, indexCount, GL_UNSIGNED_INT, 0);
     } else {
         glDrawArrays(renderMode, 0, vertexCount);
     }
-    
+
     unbind();
+#else
+    (void)uploaded; (void)cpuDataCleared; (void)cachedIndexCount; (void)cachedVertexCount;
+#endif
 }
 
 void Mesh::draw(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) const {
     // Both Linux and Vita builds now use the lighting shader system
     // The material.apply() should have already set up the lighting shader
     
+#ifndef ENABLE_VULKAN
     if (!uploaded) {
         // Upload mesh data if not already uploaded
         const_cast<Mesh*>(this)->upload();
     }
-    
+
     bind();
-    
+
     size_t indexCount = cpuDataCleared ? cachedIndexCount : indices.size();
     size_t vertexCount = cpuDataCleared ? cachedVertexCount : vertices.size();
-    
+
     if (indexCount > 0) {
         glDrawElements(renderMode, indexCount, GL_UNSIGNED_INT, 0);
     } else {
         glDrawArrays(renderMode, 0, vertexCount);
     }
-    
+
     unbind();
+#else
+    (void)modelMatrix; (void)viewMatrix; (void)projectionMatrix;
+#endif
 }
 
 void Mesh::draw(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, const Material& material) const {
+#ifndef ENABLE_VULKAN
     if (!uploaded) {
         const_cast<Mesh*>(this)->upload();
     }
-    
+
     bind();
-    
+
     size_t indexCount = cpuDataCleared ? cachedIndexCount : indices.size();
     size_t vertexCount = cpuDataCleared ? cachedVertexCount : vertices.size();
-    
+
     if (indexCount > 0) {
         glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
     } else {
         glDrawArrays(GL_TRIANGLES, 0, vertexCount);
     }
-    
+
     unbind();
+#else
+    (void)modelMatrix; (void)viewMatrix; (void)projectionMatrix; (void)material;
+#endif
 }
 
 std::shared_ptr<Mesh> Mesh::createQuad() {
@@ -539,39 +561,42 @@ void Mesh::calculateTangents() {
 }
 
 void Mesh::setupBuffers() {
+#ifndef ENABLE_VULKAN
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
     glGenBuffers(1, &EBO);
-    
+
     glBindVertexArray(VAO);
-    
+
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
-    
+
     if (!indices.empty()) {
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
     }
-    
+
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
-    
+
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-    
+
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, texCoords));
-    
+
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, tangent));
-    
+
     glEnableVertexAttribArray(4);
     glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, boneWeights));
-    
+
     glEnableVertexAttribArray(5);
     glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, boneIndices));
-    
+
     glBindVertexArray(0);
+#else
+#endif
 }
 
 void Mesh::drawDirectCube(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, const glm::vec3& color) const {
@@ -855,6 +880,7 @@ std::shared_ptr<Mesh> Mesh::createBeam() {
 }
 
 void Mesh::cleanupBuffers() {
+#ifndef ENABLE_VULKAN
     if (VAO) {
         glDeleteVertexArrays(1, &VAO);
         VAO = 0;
@@ -868,6 +894,10 @@ void Mesh::cleanupBuffers() {
         EBO = 0;
     }
     uploaded = false;
+#else
+    // Vulkan: nothing to delete from GL side
+    uploaded = false;
+#endif
 }
 
 } // namespace GameEngine

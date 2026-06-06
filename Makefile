@@ -18,14 +18,60 @@ BULLET_VITA_LIBS := -Lvendor/bullet/lib_vita/lib -lBulletDynamics -lBulletCollis
 OPENAL_INCLUDE := vendor/openal-soft/install_linux/include
 OPENAL_LINUX_LIBS := -Lvendor/openal-soft/install_linux/lib -Wl,-rpath,$(shell pwd)/vendor/openal-soft/install_linux/lib -lopenal
 
+# Vulkan paths
+VULKAN_INCLUDE_FLAGS := -I$(VULKAN_SDK)/include $(shell pkg-config --cflags vulkan 2>/dev/null)
+LINUX_VULKAN_LIBS := $(shell pkg-config --libs vulkan 2>/dev/null)
+
+# Allow opting out of Vulkan at make time: `make linux USE_VULKAN=0`
+USE_VULKAN ?= 1
+
+ifeq ($(USE_VULKAN),1)
+ifeq ($(strip $(LINUX_VULKAN_LIBS)),)
+	$(error Vulkan not found. Install: sudo apt install libvulkan-dev vulkan-validationlayers)
+endif
+endif
+
 # Vita-specific libraries
 VITA_LIBS = -lvitaGL -lSceLibKernel_stub -lSceAppMgr_stub -lSceAppUtil_stub -lSceIofilemgr_stub -lmathneon \
     -lc -lSceCommonDialog_stub -lm -lSceGxm_stub -lSceDisplay_stub -lSceSysmodule_stub \
     -lvitashark -lSceShaccCg_stub -lSceKernelDmacMgr_stub -lstdc++ -lSceCtrl_stub \
     -lSceAudio_stub -ltoloader -lSceShaccCgExt -ltaihen_stub -lm -L$(VENDOR_SOURCES)/lua/lib -llua -lz
 
-# Linux-specific libraries
+# Linux-specific libraries (LINUX_VULKAN_LIBS set below when Vulkan sources exist)
+ifeq ($(USE_VULKAN),1)
+LINUX_LIBS = -lGL -lGLU -lglfw -lGLEW -lm -lpng -lz -lstdc++ -llua5.3 $(OPENAL_LINUX_LIBS) $(LINUX_VULKAN_LIBS)
+else
 LINUX_LIBS = -lGL -lGLU -lglfw -lGLEW -lm -lpng -lz -lstdc++ -llua5.3 $(OPENAL_LINUX_LIBS)
+endif
+
+# Vulkan shader compilation
+GLSLC := $(shell command -v glslc 2>/dev/null)
+
+ifeq ($(strip $(GLSLC)),)
+	ifneq ($(strip $(VULKAN_SDK)),)
+		GLSLC := $(VULKAN_SDK)/bin/glslc
+	endif
+endif
+
+ifeq ($(strip $(GLSLC)),)
+ifeq ($(USE_VULKAN),1)
+	$(error glslc not found. Install Vulkan SDK or ensure PATH is set)
+endif
+endif
+
+# Find all Vulkan shaders automatically
+VULKAN_SHADER_DIR := assets/vulkan
+
+VULKAN_SHADERS := $(shell find $(VULKAN_SHADER_DIR) -type f \( \
+	-name "*.vert" -o \
+	-name "*.frag" -o \
+	-name "*.comp" -o \
+	-name "*.geom" -o \
+	-name "*.tesc" -o \
+	-name "*.tese" \
+\))
+
+VULKAN_SHADER_SPVS := $(addsuffix .spv,$(VULKAN_SHADERS))
 
 # Linux Editor libraries (no external ImGui needed, we compile our own)
 LINUX_EDITOR_LIBS = $(LINUX_LIBS)
@@ -42,6 +88,13 @@ GAME_CPPFILES := $(foreach dir,$(GAME_SOURCES), $(wildcard $(dir)/*.cpp))
 # Engine source files (exclude App - entry points and platform are built separately per target)
 ENGINE_CFILES := $(filter-out game_engine/src/App/%, $(wildcard game_engine/src/*/*.c))
 ENGINE_CPPFILES := $(filter-out game_engine/src/App/%, $(wildcard game_engine/src/*/*.cpp))
+
+# Vulkan backend (only compiled into Linux game build when enabled)
+ifeq ($(USE_VULKAN),1)
+VULKAN_CPPFILES := $(wildcard game_engine/src/Rendering/Vulkan/*.cpp)
+else
+VULKAN_CPPFILES :=
+endif
 
 # Vendor source files (ImGui for editor builds)
 IMGUI_SOURCES := vendor/imgui
@@ -64,7 +117,7 @@ ALL_CPPFILES := game_engine/src/App/vita_main.cpp game_engine/src/App/Platform.c
 # Linux game source files (new game main + engine + platform, excluding editor and old game files)
 # Include SceneSerializer.cpp for JSON scene loading in game builds
 LINUX_GAME_CFILES := $(ENGINE_CFILES)
-LINUX_GAME_CPPFILES := game_engine/src/App/game_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp
+LINUX_GAME_CPPFILES := game_engine/src/App/game_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp $(VULKAN_CPPFILES)
 
 # Editor source files
 EDITOR_SOURCES := game_engine/src/Editor
@@ -99,10 +152,14 @@ ASFLAGS = $(CFLAGS)
 LINUX_CC = gcc
 LINUX_CXX = g++
 LINUX_CFLAGS = -g -O2 -Wall
-LINUX_CXXFLAGS = $(LINUX_CFLAGS) -std=c++17 -DBT_THREADSAFE=1
+LINUX_CXXFLAGS = $(LINUX_CFLAGS) -std=c++20 -DBT_THREADSAFE=1
 
 # Include paths
+ifeq ($(USE_VULKAN),1)
+LINUX_INCLUDES = $(VULKAN_INCLUDE_FLAGS) -I$(INCLUDES) -I$(ENGINE_INCLUDES) -I$(BULLET_INCLUDE) -I$(VENDOR_SOURCES)/stb -I/usr/include/lua5.3 -I$(OPENAL_INCLUDE)
+else
 LINUX_INCLUDES = -I$(INCLUDES) -I$(ENGINE_INCLUDES) -I$(BULLET_INCLUDE) -I$(VENDOR_SOURCES)/stb -I/usr/include/lua5.3 -I$(OPENAL_INCLUDE)
+endif
 VITA_INCLUDES = -I$(INCLUDES) -I$(ENGINE_INCLUDES) -I$(BULLET_INCLUDE) -I$(VENDOR_SOURCES)/stb -I$(VENDOR_SOURCES)/lua/include/lua
 ALL_INCLUDES = $(LINUX_INCLUDES)
 EDITOR_INCLUDES = $(ALL_INCLUDES) -I$(VENDOR_SOURCES)/imgui -I$(VENDOR_SOURCES)/imgui/backends -I$(VENDOR_SOURCES)/imguizmo
@@ -125,7 +182,12 @@ vita: lua-vita $(BUILD_DIR)/$(TARGET).vpk
 
 
 # Linux game build
+ifeq ($(USE_VULKAN),1)
+linux: LINUX_CXXFLAGS += -DENABLE_VULKAN
+linux: $(VULKAN_SHADER_SPVS) $(LINUX_BUILD_DIR)/$(TARGET)
+else
 linux: $(LINUX_BUILD_DIR)/$(TARGET)
+endif
 
 # Linux editor build
 editor: $(EDITOR_BUILD_DIR)/$(EDITOR_TARGET)
@@ -206,6 +268,7 @@ $(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
 		-a assets/scripts/gravity_prism.lua=assets/scripts/gravity_prism.lua \
 		-a assets/scripts/enemy_main.lua=assets/scripts/enemy_main.lua \
 		-a assets/scripts/enemy_chase.lua=assets/scripts/enemy_chase.lua \
+		-a assets/scripts/vision.lua=assets/scripts/vision.lua \
 		-a assets/scenes/main_menu.json=assets/scenes/main_menu.json \
 		-a assets/scenes/first_game_demo.json=assets/scenes/first_game_demo.json \
 		-a assets/scenes/playground.json=assets/scenes/playground.json \
@@ -223,6 +286,36 @@ $(BUILD_DIR)/$(TARGET).elf: $(OBJS) $(TINYGLTF_OBJS) | $(BUILD_DIR)
 # Linux game executable
 $(LINUX_BUILD_DIR)/$(TARGET): $(LINUX_OBJS) $(LINUX_TINYGLTF_OBJS) | $(LINUX_BUILD_DIR)
 	$(LINUX_CXX) $(LINUX_CXXFLAGS) $^ $(LINUX_LIBS) $(BULLET_LINUX_LIBS) -o $@
+
+%.vert.spv: %.vert
+	@echo "[GLSLC] $<"
+	@mkdir -p $(dir $@)
+	$(GLSLC) $< -o $@
+
+%.frag.spv: %.frag
+	@echo "[GLSLC] $<"
+	@mkdir -p $(dir $@)
+	$(GLSLC) $< -o $@
+
+%.comp.spv: %.comp
+	@echo "[GLSLC] $<"
+	@mkdir -p $(dir $@)
+	$(GLSLC) $< -o $@
+
+%.geom.spv: %.geom
+	@echo "[GLSLC] $<"
+	@mkdir -p $(dir $@)
+	$(GLSLC) $< -o $@
+
+%.tesc.spv: %.tesc
+	@echo "[GLSLC] $<"
+	@mkdir -p $(dir $@)
+	$(GLSLC) $< -o $@
+
+%.tese.spv: %.tese
+	@echo "[GLSLC] $<"
+	@mkdir -p $(dir $@)
+	$(GLSLC) $< -o $@
 
 # Linux editor executable
 $(EDITOR_BUILD_DIR)/$(EDITOR_TARGET): $(EDITOR_OBJS) $(EDITOR_TINYGLTF_OBJS) | $(EDITOR_BUILD_DIR)
@@ -281,11 +374,12 @@ $(EDITOR_BUILD_DIR)/vendor/imguizmo/%.o: vendor/imguizmo/%.cpp | $(EDITOR_BUILD_
 # Clean all builds
 clean:
 	@rm -rf $(BUILD_DIR) $(LINUX_BUILD_DIR) $(EDITOR_BUILD_DIR)
+	@find $(VULKAN_SHADER_DIR) -name "*.spv" -delete
 
 # Install Linux dependencies (Ubuntu/Debian)
 install-deps:
 	sudo apt-get update
-	sudo apt-get install -y libglfw3-dev libglew-dev libpng-dev libgl1-mesa-dev liblua5.3-dev
+	sudo apt-get install -y libglfw3-dev libglew-dev libpng-dev libgl1-mesa-dev liblua5.3-dev libvulkan-dev vulkan-headers
 
 # Install editor dependencies (ImGui is compiled from vendor/ folder)
 install-editor-deps: install-deps
@@ -300,7 +394,11 @@ run-editor: editor
 	$(EDITOR_BUILD_DIR)/$(EDITOR_TARGET)
 
 # Debug builds
+ifeq ($(USE_VULKAN),1)
+debug-linux: LINUX_CXXFLAGS += -DENABLE_VULKAN -DDEBUG -O0
+else
 debug-linux: LINUX_CXXFLAGS += -DDEBUG -O0
+endif
 debug-linux: linux
 
 debug-editor: LINUX_CXXFLAGS += -DDEBUG -O0
@@ -310,7 +408,7 @@ debug-editor: editor
 help:
 	@echo "Available targets:"
 	@echo "  vita           - Build for PS Vita (default)"
-	@echo "  linux          - Build game for Linux"
+	@echo "  linux          - Build game for Linux (includes Rendering/Vulkan/*.cpp)"
 	@echo "  editor         - Build editor for Linux"
 	@echo "  run            - Run Linux game build"
 	@echo "  run-editor     - Run Linux editor build"

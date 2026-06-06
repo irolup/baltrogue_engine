@@ -163,8 +163,6 @@ std::vector<std::shared_ptr<Material>> BinaryModel::createMaterials() {
         return materials;
     }
     
-    auto& textureManager = TextureManager::getInstance();
-    
     for (const auto& materialHeader : data.materialHeaders) {
         auto material = std::make_shared<Material>();
         
@@ -173,26 +171,41 @@ std::vector<std::shared_ptr<Material>> BinaryModel::createMaterials() {
         
         if (materialHeader.diffuseTextureIndex < data.textureInfos.size()) {
             const auto& textureInfo = data.textureInfos[materialHeader.diffuseTextureIndex];
+#ifdef ENABLE_VULKAN
+            material->setDiffuseTexturePath(textureInfo.path);
+#else
+            auto& textureManager = TextureManager::getInstance();
             auto texture = textureManager.getTexture(textureInfo.path);
             if (texture) {
                 material->setDiffuseTexture(texture);
             }
+#endif
         }
         
         if (materialHeader.normalTextureIndex < data.textureInfos.size()) {
             const auto& textureInfo = data.textureInfos[materialHeader.normalTextureIndex];
+#ifdef ENABLE_VULKAN
+            material->setNormalTexturePath(textureInfo.path);
+#else
+            auto& textureManager = TextureManager::getInstance();
             auto texture = textureManager.getTexture(textureInfo.path);
             if (texture) {
                 material->setNormalTexture(texture);
             }
+#endif
         }
         
         if (materialHeader.armTextureIndex < data.textureInfos.size()) {
             const auto& textureInfo = data.textureInfos[materialHeader.armTextureIndex];
+#ifdef ENABLE_VULKAN
+            material->setARMTexturePath(textureInfo.path);
+#else
+            auto& textureManager = TextureManager::getInstance();
             auto texture = textureManager.getTexture(textureInfo.path);
             if (texture) {
                 material->setARMTexture(texture, textureInfo.path);
             }
+#endif
         }
         
         materials.push_back(material);

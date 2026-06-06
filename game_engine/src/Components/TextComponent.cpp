@@ -5,9 +5,15 @@
 #include "Rendering/Texture.h"
 #include "Components/CameraComponent.h"
 #include "Scene/SceneNode.h"
+#include "Rendering/Mesh.h"
+#include "Rendering/TextMaterial.h"
 #include <iostream>
 #include <algorithm>
 #include <map>
+
+#ifdef ENABLE_VULKAN
+#include "Rendering/Vulkan/VulkanConfig.h"
+#endif
 
 #ifdef EDITOR_BUILD
 #include <imgui.h>
@@ -56,9 +62,13 @@ void TextComponent::start() {
         // Already initialized, don't initialize again
         return;
     }
-    
+
     initializeFont();
+
+#ifndef ENABLE_VULKAN
     setupBuffers();
+#endif
+    
     isInitialized = true;
     
     // Generate initial mesh data
@@ -67,7 +77,6 @@ void TextComponent::start() {
         needsUpdate = false;
     }
     
-    // TextComponent::start completed
 }
 
 void TextComponent::update(float deltaTime) {
@@ -77,25 +86,64 @@ void TextComponent::update(float deltaTime) {
     }
 }
 
-void TextComponent::render(Renderer& renderer) {
-    if (!isInitialized || text.empty() || !fontAtlasTexture) {
+void TextComponent::render(IRenderer& renderer) {
+#ifdef ENABLE_VULKAN
+    if (!isInitialized || text.empty() || !textMaterial)
+    {
         return;
     }
+#else
+    if (!isInitialized || text.empty() || !fontAtlasTexture)
+    {
+        return;
+    }
+#endif
+#ifdef ENABLE_VULKAN
+
+    TextRenderCommand cmd;
+    cmd.mesh = textMesh;
+    cmd.material = textMaterial;
+    cmd.color = color;
+    cmd.renderMode = renderMode;
+    cmd.modelMatrix = buildClipMatrix(renderer, owner ? owner->getWorldMatrix() : glm::mat4(1.0f));
+    cmd.textComponent = this;
+
+    renderer.submitTextRenderCommand(cmd);
+#else
     
     if (renderMode == TextRenderMode::WORLD_SPACE) {
         renderWorldSpace(renderer);
     } else {
         renderScreenSpace(renderer);
     }
+#endif
 }
 
-void TextComponent::render(Renderer& renderer, const glm::mat4& worldTransform) {
-    // TextComponent::render called
-    
-    if (!isInitialized || text.empty() || !fontAtlasTexture) {
-        // Early return due to missing data
+void TextComponent::render(IRenderer& renderer, const glm::mat4& worldTransform) {
+#ifdef ENABLE_VULKAN
+    if (!isInitialized || text.empty() || !textMaterial)
+    {
         return;
     }
+#else
+    if (!isInitialized || text.empty() || !fontAtlasTexture)
+    {
+        return;
+    }
+#endif
+
+#ifdef ENABLE_VULKAN
+
+    TextRenderCommand cmd;
+    cmd.mesh = textMesh;
+    cmd.material = textMaterial;
+    cmd.color = color;
+    cmd.renderMode = renderMode;
+    cmd.modelMatrix = buildClipMatrix(renderer, worldTransform);
+    cmd.textComponent = this;
+
+    renderer.submitTextRenderCommand(cmd);
+#else
     
     if (renderMode == TextRenderMode::WORLD_SPACE) {
         // Rendering world space text
@@ -104,7 +152,38 @@ void TextComponent::render(Renderer& renderer, const glm::mat4& worldTransform) 
         // Rendering screen space text
         renderScreenSpace(renderer);
     }
+#endif
 }
+
+#ifdef ENABLE_VULKAN
+glm::mat4 TextComponent::buildClipMatrix(IRenderer& renderer, const glm::mat4& worldTransform) const {
+    auto camera = renderer.getActiveCamera();
+    if (!camera) {
+        return worldTransform;
+    }
+
+    if (renderMode == TextRenderMode::SCREEN_SPACE) {
+        const float aspectRatio = camera->getAspectRatio();
+        const float orthoHeight = 2.0f;
+        const float orthoWidth = orthoHeight * aspectRatio;
+
+        const glm::mat4 viewMatrix = glm::mat4(1.0f);
+        glm::mat4 projectionMatrix = glm::ortho(
+            -orthoWidth / 2.0f, orthoWidth / 2.0f,
+            -orthoHeight / 2.0f, orthoHeight / 2.0f,
+            -1.0f, 1.0f);
+        projectionMatrix = fixProjectionForVulkan(projectionMatrix);
+
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        const glm::vec3 screenPos = owner ? owner->getTransform().getPosition() : glm::vec3(0.0f);
+        modelMatrix = glm::translate(modelMatrix, glm::vec3(screenPos.x * 0.1f, screenPos.y * 0.1f, 0.0f));
+        modelMatrix = glm::scale(modelMatrix, glm::vec3(scale));
+        return projectionMatrix * viewMatrix * modelMatrix;
+    }
+
+    return camera->getProjectionMatrix() * camera->getViewMatrix() * worldTransform;
+}
+#endif
 
 void TextComponent::destroy() {
     cleanupBuffers();
@@ -328,12 +407,24 @@ void TextComponent::initializeFont() {
     auto atlas = fontManager.loadFont(fontPath, fontSize, atlasWidth, atlasHeight, charsToInclude, firstCharCodePoint);
     
     if (atlas) {
+    #ifndef ENABLE_VULKAN
         fontAtlasTexture = atlas->texture;
+    #endif
+
         packedChars = atlas->packedChars;
         alignedQuads = atlas->alignedQuads;
-        
-        // Create text shader
         textShader = std::make_shared<Shader>();
+
+    #ifdef ENABLE_VULKAN
+
+        textMaterial = std::make_shared<TextMaterial>();
+        textMaterial->fontAtlas = atlas;
+        textMaterial->color = color;
+
+        return;
+
+    #endif
+        
         #ifdef VITA_BUILD
         // Vita CG shaders need matrices transposed
             textShader->needsTranspose = true;
@@ -348,34 +439,31 @@ void TextComponent::initializeFont() {
             std::string vertexSource = R"(
                 #version 120
                 attribute vec3 aPosition;
-                attribute vec4 aColor;
                 attribute vec2 aTexCoord;
                 
                 uniform mat4 uViewProjectionMat;
                 uniform mat4 uModelMat;
                 
-                varying vec4 color;
                 varying vec2 texCoord;
                 
                 void main()
                 {
                     gl_Position = uViewProjectionMat * uModelMat * vec4(aPosition, 1.0);
-                    color = aColor;
                     texCoord = aTexCoord;
                 }
             )";
             
             std::string fragmentSource = R"(
                 #version 120
-                varying vec4 color;
                 varying vec2 texCoord;
                 
                 uniform sampler2D uFontAtlasTexture;
+                uniform vec4 uColor;
                 
                 void main()
                 {
                     float alpha = texture2D(uFontAtlasTexture, texCoord).r;
-                    gl_FragColor = vec4(color.rgb, color.a * alpha);
+                    gl_FragColor = vec4(uColor.rgb, uColor.a * alpha);
                 }
             )";
             
@@ -388,13 +476,11 @@ void TextComponent::initializeFont() {
             std::string vertexSource = R"(
                 struct VS_INPUT {
                     float3 aPosition : POSITION;
-                    float4 aColor : COLOR;
                     float2 aTexCoord : TEXCOORD0;
                 };
                 
                 struct VS_OUTPUT {
                     float4 Position : POSITION;
-                    float4 color : COLOR;
                     float2 texCoord : TEXCOORD0;
                 };
                 
@@ -404,7 +490,6 @@ void TextComponent::initializeFont() {
                 VS_OUTPUT main(VS_INPUT input) {
                     VS_OUTPUT output;
                     output.Position = mul(uViewProjectionMat, mul(uModelMat, float4(input.aPosition, 1.0)));
-                    output.color = input.aColor;
                     output.texCoord = input.aTexCoord;
                     return output;
                 }
@@ -412,15 +497,15 @@ void TextComponent::initializeFont() {
             
             std::string fragmentSource = R"(
                 struct PS_INPUT {
-                    float4 color : COLOR;
                     float2 texCoord : TEXCOORD0;
                 };
                 
                 sampler2D uFontAtlasTexture;
+                uniform float4 uColor;
                 
                 float4 main(PS_INPUT input) : COLOR {
                     float alpha = tex2D(uFontAtlasTexture, input.texCoord).r;
-                    return float4(input.color.rgb, input.color.a * alpha);
+                    return float4(uColor.rgb, uColor.a * alpha);
                 }
             )";
             
@@ -430,7 +515,6 @@ void TextComponent::initializeFont() {
             }
         }
 #endif
-        
         if (!textShader || !textShader->isValid()) {
             std::cerr << "Failed to create text shader!" << std::endl;
             textShader.reset();
@@ -441,11 +525,20 @@ void TextComponent::initializeFont() {
 }
 
 void TextComponent::updateTextMesh() {
-    generateVertices();
+    generateVertices(renderMode);
+    
+
+#ifndef ENABLE_VULKAN
     updateBuffers();
+#endif
+
+    rebuildMesh();
 }
 
 void TextComponent::setupBuffers() {
+#ifdef ENABLE_VULKAN
+    return;
+#endif
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
     glGenBuffers(1, &ebo);
@@ -462,12 +555,12 @@ void TextComponent::setupBuffers() {
 
     #ifdef LINUX_BUILD
         GLint posLoc   = glGetAttribLocation(textShader->getProgram(), "aPosition");
-        GLint colorLoc = glGetAttribLocation(textShader->getProgram(), "aColor");
         GLint texLoc   = glGetAttribLocation(textShader->getProgram(), "aTexCoord");
     #else
-        GLint posLoc   = 0; // POSITION
-        GLint colorLoc = 1; // COLOR
-        GLint texLoc   = 2; // TEXCOORD0
+        GLint posLoc = glGetAttribLocation(textShader->getProgram(), "aPosition");
+        GLint texLoc = glGetAttribLocation(textShader->getProgram(), "aTexCoord");
+        if (posLoc < 0) posLoc = 0;
+        if (texLoc < 0) texLoc = 1;
     #endif
 
     // Position
@@ -475,13 +568,6 @@ void TextComponent::setupBuffers() {
         glEnableVertexAttribArray((GLuint)posLoc);
         glVertexAttribPointer((GLuint)posLoc, 3, GL_FLOAT, GL_FALSE,
                               sizeof(TextVertex), (void*)0);
-    }
-
-    // Color
-    if (colorLoc >= 0) {
-        glEnableVertexAttribArray((GLuint)colorLoc);
-        glVertexAttribPointer((GLuint)colorLoc, 4, GL_FLOAT, GL_FALSE,
-                              sizeof(TextVertex), (void*)offsetof(TextVertex, color));
     }
 
     // TexCoord
@@ -495,6 +581,12 @@ void TextComponent::setupBuffers() {
 }
 
 void TextComponent::cleanupBuffers() {
+#ifdef ENABLE_VULKAN
+    vao = 0;
+    vbo = 0;
+    ebo = 0;
+    return;
+#endif
     if (vao) {
         glDeleteVertexArrays(1, &vao);
         vao = 0;
@@ -509,7 +601,11 @@ void TextComponent::cleanupBuffers() {
     }
 }
 
-void TextComponent::renderWorldSpace(Renderer& renderer) {
+void TextComponent::renderWorldSpace(IRenderer& renderer) {
+#ifdef ENABLE_VULKAN
+    (void)renderer;
+    return;
+#endif
     if (!textShader || !fontAtlasTexture) return;
     
     // Get camera matrices
@@ -530,6 +626,7 @@ void TextComponent::renderWorldSpace(Renderer& renderer) {
     textShader->setMat4("uViewProjectionMat", viewProjectionMatrix);
     textShader->setMat4("uModelMat", modelMatrix);
     textShader->setInt("uFontAtlasTexture", 0);
+    textShader->setVec4("uColor", color);
     
     // Bind font atlas texture
     glActiveTexture(GL_TEXTURE0);
@@ -553,7 +650,12 @@ void TextComponent::renderWorldSpace(Renderer& renderer) {
     textShader->unuse();
 }
 
-void TextComponent::renderWorldSpace(Renderer& renderer, const glm::mat4& worldTransform) {
+void TextComponent::renderWorldSpace(IRenderer& renderer, const glm::mat4& worldTransform) {
+#ifdef ENABLE_VULKAN
+    (void)renderer;
+    (void)worldTransform;
+    return;
+#endif
     if (!textShader || !fontAtlasTexture) return;
     
     // Get camera matrices
@@ -574,6 +676,7 @@ void TextComponent::renderWorldSpace(Renderer& renderer, const glm::mat4& worldT
     textShader->setMat4("uViewProjectionMat", viewProjectionMatrix);
     textShader->setMat4("uModelMat", modelMatrix);
     textShader->setInt("uFontAtlasTexture", 0);
+    textShader->setVec4("uColor", color);
     
     // Bind font atlas texture
     glActiveTexture(GL_TEXTURE0);
@@ -597,7 +700,11 @@ void TextComponent::renderWorldSpace(Renderer& renderer, const glm::mat4& worldT
     textShader->unuse();
 }
 
-void TextComponent::renderScreenSpace(Renderer& renderer) {
+void TextComponent::renderScreenSpace(IRenderer& renderer) {
+#ifdef ENABLE_VULKAN
+    (void)renderer;
+    return;
+#endif
     if (!textShader || !fontAtlasTexture) return;
     
     // Get camera matrices
@@ -630,6 +737,7 @@ void TextComponent::renderScreenSpace(Renderer& renderer) {
     textShader->setMat4("uViewProjectionMat", viewProjectionMatrix);
     textShader->setMat4("uModelMat", modelMatrix);
     textShader->setInt("uFontAtlasTexture", 0);
+    textShader->setVec4("uColor", color);
     
     glActiveTexture(GL_TEXTURE0);
     fontAtlasTexture->bind();
@@ -660,6 +768,7 @@ void TextComponent::renderWorldSpaceDirectly(const glm::mat4& worldTransform, co
     textShader->setMat4("uViewProjectionMat", projectionMatrix * viewMatrix);
     textShader->setMat4("uModelMat", worldTransform);
     textShader->setInt("uFontAtlasTexture", 0);
+    textShader->setVec4("uColor", color);
     
     glActiveTexture(GL_TEXTURE0);
     fontAtlasTexture->bind();
@@ -705,6 +814,7 @@ void TextComponent::renderScreenSpaceDirectly() {
     textShader->setMat4("uViewProjectionMat", viewProjectionMatrix);
     textShader->setMat4("uModelMat", modelMatrix);
     textShader->setInt("uFontAtlasTexture", 0);
+    textShader->setVec4("uColor", color);
     
     glActiveTexture(GL_TEXTURE0);
     fontAtlasTexture->bind();
@@ -748,7 +858,7 @@ glm::vec2 TextComponent::calculateTextSize() const {
     
     return glm::vec2(maxWidth, totalHeight);
 }
-void TextComponent::generateVertices()
+void TextComponent::generateVertices(TextRenderMode mode)
 {
     vertices.clear();
     indices.clear();
@@ -844,7 +954,6 @@ void TextComponent::generateVertices()
         {
             vertices.emplace_back(
                 glm::vec3(glyphVertices[order[i]], currentPosition.z),
-                color,
                 glyphUVs[order[i]]
             );
         }
@@ -870,6 +979,27 @@ void TextComponent::updateBuffers() {
     glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, sizeof(unsigned int) * indices.size(), indices.data());
     
     glBindVertexArray(0);
+}
+
+void TextComponent::rebuildMesh()
+{
+    if (!textMesh)
+        textMesh = std::make_shared<Mesh>();
+
+    std::vector<Vertex> meshVertices;
+    
+    for (const auto& tv : vertices)
+    {
+        Vertex v{};
+
+        v.position = tv.position;
+        v.texCoords = tv.texCoord;
+
+        meshVertices.push_back(v);
+    }
+
+    textMesh->setVertices(meshVertices);
+    textMesh->setIndices(indices);
 }
 
 void TextComponent::cleanupFontAtlas() {

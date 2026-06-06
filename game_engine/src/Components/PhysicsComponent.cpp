@@ -790,7 +790,7 @@ void PhysicsComponent::glmToBullet(const glm::vec3& glmVec, void* bulletVec) con
     *vec = btVector3(glmVec.x, glmVec.y, glmVec.z);
 }
 
-void PhysicsComponent::render(Renderer& renderer) {
+void PhysicsComponent::render(IRenderer& renderer) {
     if (!showCollisionShape || !collisionShape || !owner) {
         return;
     }

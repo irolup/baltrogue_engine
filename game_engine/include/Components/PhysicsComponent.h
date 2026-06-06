@@ -41,7 +41,7 @@ public:
     virtual void start() override;
     virtual void update(float deltaTime) override;
     virtual void destroy() override;
-    virtual void render(Renderer& renderer) override;
+    virtual void render(IRenderer& renderer) override;
     
     void setCollisionShape(CollisionShapeType shapeType, const glm::vec3& dimensions = glm::vec3(1.0f));
     CollisionShapeType getCollisionShapeType() const { return collisionShapeType; }

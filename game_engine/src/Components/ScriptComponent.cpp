@@ -184,7 +184,7 @@ void ScriptComponent::lateUpdate(float deltaTime) {
     }
 }
 
-void ScriptComponent::render(Renderer& renderer) {
+void ScriptComponent::render(IRenderer& renderer) {
     if (!scriptLoaded || !luaState || !scriptStarted) {
         return;
     }

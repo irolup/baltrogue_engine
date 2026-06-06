@@ -20,7 +20,7 @@ public:
     virtual void update(float deltaTime) override;
     virtual void fixedUpdate(float deltaTime) override;
     virtual void lateUpdate(float deltaTime) override;
-    virtual void render(Renderer& renderer) override;
+    virtual void render(IRenderer& renderer) override;
     virtual void destroy() override;
     
     bool loadScript(const std::string& scriptPath);

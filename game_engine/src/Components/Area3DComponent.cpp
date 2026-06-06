@@ -115,7 +115,7 @@ void Area3DComponent::update(float deltaTime) {
     handleCollisionEvents();
 }
 
-void Area3DComponent::render(Renderer& renderer) {
+void Area3DComponent::render(IRenderer& renderer) {
     // Area3D components are trigger zones - they don't need regular rendering
     // Debug wireframe rendering is handled by EditorSystem::renderNodeDirectly()
 }

@@ -137,6 +137,23 @@ bool Texture::loadSTBImage(const std::string& filepath) {
         std::cerr << "STB Image failed to load: " << filepath << " - " << stbi_failure_reason() << std::endl;
         return false;
     }
+
+#if defined(ENABLE_VULKAN)
+    // Vulkan path: only load CPU-side image metadata. GPU upload is handled by the Vulkan backend.
+    if (channels == 4) {
+        format = TextureFormat::RGBA;
+    } else if (channels == 3) {
+        format = TextureFormat::RGB;
+    } else {
+        std::cerr << "Unsupported channel count: " << channels << std::endl;
+        stbi_image_free(imageData);
+        return false;
+    }
+
+    stbi_image_free(imageData);
+    std::cout << "Successfully loaded texture metadata with STB Image: " << filepath << " (" << width << "x" << height << ")" << std::endl;
+    return true;
+#else
     
     // Determine format based on channel count
     if (channels == 4) {
@@ -169,6 +186,7 @@ bool Texture::loadSTBImage(const std::string& filepath) {
     
     std::cout << "Successfully loaded texture with STB Image: " << filepath << " (" << width << "x" << height << ")" << std::endl;
     return true;
+#endif
 }
 #endif
 
@@ -176,6 +194,9 @@ bool Texture::loadFromFile(const std::string& filepath) {
     this->filepath = filepath;
     
 #ifdef LINUX_BUILD
+#if defined(ENABLE_VULKAN)
+    return loadSTBImage(filepath);
+#else
     if (loadSTBImage(filepath)) {
         return true;
     }
@@ -333,6 +354,7 @@ bool Texture::loadFromFile(const std::string& filepath) {
     
     std::cout << "Successfully loaded texture: " << filepath << " (" << width << "x" << height << ")" << std::endl;
     return true;
+#endif
 #else
     std::string vitaPath = filepath;
     

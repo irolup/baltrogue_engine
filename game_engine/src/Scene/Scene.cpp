@@ -119,7 +119,7 @@ void Scene::destroy() {
     }
 }
 
-void Scene::render(Renderer& renderer) {
+void Scene::render(IRenderer& renderer) {
     auto cameras = getActiveGameCameras();
     if (cameras.empty()) return;
     if (cameras.size() == 1) {

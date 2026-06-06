@@ -8,7 +8,7 @@
 #include "Platform.h"
 #include "Platform/VitaMath.h"
 #include "Scene/SceneManager.h"
-#include "Rendering/Renderer.h"
+#include "Rendering/IRenderer.h"
 #include "Rendering/Material.h"
 #include "Input/InputManager.h"
 #include "Core/Time.h"
@@ -17,6 +17,18 @@
 
 #ifdef EDITOR_BUILD
     #include "Editor/EditorSystem.h"
+#endif
+
+#ifdef ENABLE_VULKAN
+    // Forward declarations for optional Vulkan pieces
+    namespace GameEngine {
+        class VulkanInstance;
+        class VulkanDevice;
+        class VulkanSwapChain;
+        class VulkanResources;
+        class VulkanPipeline;
+        class VulkanFrame;
+    }
 #endif
 
 namespace GameEngine {
@@ -36,7 +48,7 @@ public:
     void shutdown();
     
     SceneManager& getSceneManager() { return *sceneManager; }
-    Renderer& getRenderer(); // Moved to cpp file to handle initialization
+    IRenderer& getRenderer(); // Moved to cpp file to handle initialization
     std::shared_ptr<Material> getOrCreateMaterialByShaderPaths(const std::string& vertexPath, const std::string& fragmentPath);
     InputManager& getInputManager() { return *inputManager; }
     Time& getTime() { return *timeSystem; }
@@ -59,9 +71,19 @@ private:
     float physicsAccumulator;
 
     std::unique_ptr<SceneManager> sceneManager;
-    std::unique_ptr<Renderer> renderer;
+    std::unique_ptr<IRenderer> renderer;
     std::unique_ptr<InputManager> inputManager;
     std::unique_ptr<Time> timeSystem;
+
+#ifdef ENABLE_VULKAN
+    // Optional Vulkan owned objects (only when ENABLE_VULKAN is defined)
+    std::unique_ptr<VulkanInstance> vulkanInstance;
+    std::unique_ptr<VulkanDevice> vulkanDevice;
+    std::unique_ptr<VulkanSwapChain> vulkanSwapChain;
+    std::unique_ptr<VulkanResources> vulkanResources;
+    std::unique_ptr<VulkanPipeline> vulkanPipeline;
+    std::unique_ptr<VulkanFrame> vulkanFrame;
+#endif
     std::unordered_map<std::string, std::shared_ptr<Material>> materialCacheByShaderPaths;
     
 #ifdef EDITOR_BUILD

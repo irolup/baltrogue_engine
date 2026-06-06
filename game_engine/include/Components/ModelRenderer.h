@@ -37,7 +37,7 @@ public:
     
     COMPONENT_TYPE(ModelRenderer)
     
-    virtual void render(Renderer& renderer) override;
+    virtual void render(IRenderer& renderer) override;
     
     bool loadModel(const std::string& modelPath);
     void unloadModel();

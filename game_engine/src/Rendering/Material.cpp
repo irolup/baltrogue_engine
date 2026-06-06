@@ -29,9 +29,11 @@ Material::Material()
     , diffuseTexture(nullptr)
     , normalTexture(nullptr)
     , armTexture(nullptr)
+    , environmentTexture(nullptr)
     , diffuseTexturePath("")
     , normalTexturePath("")
     , armTexturePath("")
+    , environmentTexturePath("")
     , shaderVertexPathLinux("")
     , shaderFragmentPathLinux("")
     , shaderVertexPathVita("")
@@ -49,9 +51,11 @@ Material::Material(std::shared_ptr<Shader> materialShader)
     , diffuseTexture(nullptr)
     , normalTexture(nullptr)
     , armTexture(nullptr)
+    , environmentTexture(nullptr)
     , diffuseTexturePath("")
     , normalTexturePath("")
     , armTexturePath("")
+    , environmentTexturePath("")
     , shaderVertexPathLinux("")
     , shaderFragmentPathLinux("")
     , shaderVertexPathVita("")
@@ -60,6 +64,15 @@ Material::Material(std::shared_ptr<Shader> materialShader)
 }
 
 Material::~Material() {
+}
+
+glm::vec3 Material::getColorLinear() const
+{
+    return glm::vec3(
+        std::pow(color.r, 2.2f),
+        std::pow(color.g, 2.2f),
+        std::pow(color.b, 2.2f)
+    );
 }
 
 void Material::setShader(std::shared_ptr<Shader> materialShader) {
@@ -281,6 +294,17 @@ void Material::setARMTexture(std::shared_ptr<Texture> texture, const std::string
     setBool("u_HasARMTexture", texture != nullptr);
 }
 
+void Material::setEnvironmentTexture(std::shared_ptr<Texture> texture, const std::string& path) {
+    environmentTexture = texture;
+    if (texture == nullptr) {
+        environmentTexturePath = "";
+    } else if (!path.empty()) {
+        environmentTexturePath = path;
+    }
+    setTexture("u_EnvironmentTexture", texture);
+    setBool("u_HasEnvironmentTexture", texture != nullptr);
+}
+
 void Material::setCameraPosition(const glm::vec3& cameraPos) {
     vec3Properties["u_CameraPos"] = cameraPos;
 }
@@ -406,6 +430,27 @@ void Material::drawInspector() {
                         texturePath == "u_NormalTexture")) {
                         auto texture = textureManager.getTexture(texturePath);
                         setNormalTexture(texture, texturePath);
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        if (ImGui::BeginCombo("Environment Texture", environmentTexture ? "Loaded" : "None")) {
+            if (ImGui::Selectable("None", !environmentTexture)) {
+                setEnvironmentTexture(nullptr);
+            }
+
+            auto& textureManager = TextureManager::getInstance();
+            auto availableTextures = textureManager.getAvailableTextures();
+
+            for (const auto& texturePath : availableTextures) {
+                if (texturePath.find("env") != std::string::npos ||
+                    texturePath.find("sky") != std::string::npos ||
+                    texturePath.find("reflection") != std::string::npos) {
+                    if (ImGui::Selectable(texturePath.c_str(), environmentTexture && texturePath == environmentTexturePath)) {
+                        auto texture = textureManager.getTexture(texturePath);
+                        setEnvironmentTexture(texture, texturePath);
                     }
                 }
             }

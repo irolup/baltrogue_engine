@@ -47,6 +47,7 @@ public:
         setVec3("diffuseColor", color);
         setVec3("u_Color", color);
     }
+    glm::vec3 getColorLinear() const;
     
     float getMetallic() const { return metallic; }
     void setMetallic(float m) { metallic = m; setFloat("u_Metallic", metallic); }
@@ -71,6 +72,9 @@ public:
     
     std::shared_ptr<Texture> getARMTexture() const { return armTexture; }
     void setARMTexture(std::shared_ptr<Texture> texture, const std::string& path = "");
+
+    std::shared_ptr<Texture> getEnvironmentTexture() const { return environmentTexture; }
+    void setEnvironmentTexture(std::shared_ptr<Texture> texture, const std::string& path = "");
     
     std::string getDiffuseTexturePath() const { return diffuseTexturePath; }
     void setDiffuseTexturePath(const std::string& path) { diffuseTexturePath = path; }
@@ -80,10 +84,14 @@ public:
     
     std::string getARMTexturePath() const { return armTexturePath; }
     void setARMTexturePath(const std::string& path) { armTexturePath = path; }
+
+    std::string getEnvironmentTexturePath() const { return environmentTexturePath; }
+    void setEnvironmentTexturePath(const std::string& path) { environmentTexturePath = path; }
     
     bool hasDiffuseTexture() const { return diffuseTexture != nullptr; }
     bool hasNormalTexture() const { return normalTexture != nullptr; }
     bool hasARMTexture() const { return armTexture != nullptr; }
+    bool hasEnvironmentTexture() const { return environmentTexture != nullptr; }
     
     void setShaderFromPaths(const std::string& vertexPath, const std::string& fragmentPath);
     void setShaderFromPathsForPlatform(const std::string& vertexPath, const std::string& fragmentPath, const std::string& platform);
@@ -136,10 +144,12 @@ private:
     std::shared_ptr<Texture> diffuseTexture;
     std::shared_ptr<Texture> normalTexture;
     std::shared_ptr<Texture> armTexture;
+    std::shared_ptr<Texture> environmentTexture;
     
     std::string diffuseTexturePath;
     std::string normalTexturePath;
     std::string armTexturePath;
+    std::string environmentTexturePath;
     
     std::string shaderVertexPathLinux;
     std::string shaderFragmentPathLinux;

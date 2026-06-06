@@ -13,7 +13,7 @@
 namespace GameEngine {
 
 class Component;
-class Renderer;
+class IRenderer;
 
 class SceneNode {
 public:
@@ -64,7 +64,7 @@ public:
     virtual void update(float deltaTime);
     virtual void fixedUpdate(float deltaTime);
     virtual void lateUpdate(float deltaTime);
-    virtual void render(Renderer& renderer);
+    virtual void render(IRenderer& renderer);
     
     bool isSelected() const { return selected; }
     void setSelected(bool state) { selected = state; }
@@ -92,7 +92,7 @@ protected:
     void updateChildren(float deltaTime);
     void fixedUpdateChildren(float deltaTime);
     void lateUpdateChildren(float deltaTime);
-    void renderChildren(Renderer& renderer);
+    void renderChildren(IRenderer& renderer);
 };
 
 template<typename T, typename... Args>

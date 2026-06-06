@@ -5,6 +5,10 @@
 #include "Core/Time.h"
 #include <iostream>
 
+#ifdef ENABLE_VULKAN
+#include "Rendering/Vulkan/VulkanConfig.h"
+#endif
+
 #ifdef EDITOR_BUILD
     #include "imgui.h"
     #include "Rendering/Mesh.h"
@@ -391,7 +395,11 @@ void CameraComponent::updateProjection() {
     }
     
     projectionDirty = false;
-    
+
+#ifdef ENABLE_VULKAN
+    projectionMatrix = fixProjectionForVulkan(projectionMatrix);
+#endif
+
 #ifdef EDITOR_BUILD
     updateFrustumMesh();
 #endif

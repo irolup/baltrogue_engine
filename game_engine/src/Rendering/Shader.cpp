@@ -491,6 +491,18 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
 }
 
 bool Shader::compileShader(GLuint& shader, GLenum type, const std::string& source) {
+#ifdef ENABLE_VULKAN
+    (void)type;
+    (void)source;
+    shader = 0;
+    static bool warned = false;
+    if (!warned) {
+        std::cerr << "Shader::compileShader called in Vulkan build, skipping OpenGL shader compilation." << std::endl;
+        warned = true;
+    }
+    return false;
+#endif
+
     shader = glCreateShader(type);
     const char* sourceCStr = source.c_str();
     glShaderSource(shader, 1, &sourceCStr, NULL);

@@ -16,7 +16,7 @@ public:
 
     COMPONENT_TYPE(BeamRenderer)
 
-    virtual void render(Renderer& renderer) override;
+    virtual void render(IRenderer& renderer) override;
 
     void setMaterial(std::shared_ptr<Material> mat) { material = mat; }
     std::shared_ptr<Material> getMaterial() const { return material; }

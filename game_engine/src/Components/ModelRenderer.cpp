@@ -52,7 +52,7 @@ ModelRenderer::~ModelRenderer() {
     unloadModel();
 }
 
-void ModelRenderer::render(Renderer& renderer) {
+void ModelRenderer::render(IRenderer& renderer) {
     if (!modelData.isLoaded || !owner) {
         return;
     }
@@ -561,13 +561,26 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
         const auto& textureInfo = gltfMaterial.pbrMetallicRoughness.baseColorTexture;
         const auto& texture = gltfModel.textures[textureInfo.index];
         const auto& image = gltfModel.images[texture.source];
-        
+        std::string texturePath;
+
+        if (!image.uri.empty()) {
+            if (image.uri.substr(0, 4) == "data") {
+                texturePath = "assets/textures/default_diffuse.png";
+            } else {
+                std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
+                texturePath = modelDir + image.uri;
+            }
+        } else {
+            texturePath = "assets/textures/default_diffuse.png";
+        }
+
+#ifdef ENABLE_VULKAN
+        material->setDiffuseTexturePath(texturePath);
+#else
         bool textureLoaded = false;
-        
-        // Handle embedded images (data URI)
         if (image.uri.empty() && !image.image.empty()) {
             auto embeddedTexture = std::make_shared<Texture>();
-            
+
             if (!image.as_is && image.width > 0 && image.height > 0 && image.component > 0) {
                 TextureFormat texFormat = (image.component == 3) ? TextureFormat::RGB : TextureFormat::RGBA;
                 if (embeddedTexture->createFromData(image.image.data(), image.width, image.height, texFormat)) {
@@ -577,7 +590,7 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
             } else if (image.as_is) {
                 int width, height, channels;
                 unsigned char* decodedData = stbi_load_from_memory(
-                    image.image.data(), 
+                    image.image.data(),
                     static_cast<int>(image.image.size()),
                     &width, &height, &channels, 0
                 );
@@ -591,27 +604,15 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
                 }
             }
         }
-        
+
         if (!textureLoaded) {
-            std::string texturePath;
-            
-            if (!image.uri.empty()) {
-                if (image.uri.substr(0, 4) == "data") {
-                    texturePath = "assets/textures/default_diffuse.png";
-                } else {
-                    std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
-                    texturePath = modelDir + image.uri;
-                }
-            } else {
-                texturePath = "assets/textures/default_diffuse.png";
-            }
-            
             auto textureManager = &TextureManager::getInstance();
             auto diffuseTexture = textureManager->getTexture(texturePath);
             if (diffuseTexture) {
-                material->setDiffuseTexture(diffuseTexture);
+                material->setDiffuseTexture(diffuseTexture, texturePath);
             }
         }
+#endif
     }
     
     // Load normal texture if available
@@ -619,13 +620,26 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
         const auto& textureInfo = gltfMaterial.normalTexture;
         const auto& texture = gltfModel.textures[textureInfo.index];
         const auto& image = gltfModel.images[texture.source];
-        
+        std::string texturePath;
+
+        if (!image.uri.empty()) {
+            if (image.uri.substr(0, 4) == "data") {
+                texturePath = "assets/textures/default_normal.png";
+            } else {
+                std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
+                texturePath = modelDir + image.uri;
+            }
+        } else {
+            texturePath = "assets/textures/default_normal.png";
+        }
+
+#ifdef ENABLE_VULKAN
+        material->setNormalTexturePath(texturePath);
+#else
         bool textureLoaded = false;
-        
-        // Handle embedded images (data URI)
         if (image.uri.empty() && !image.image.empty()) {
             auto embeddedTexture = std::make_shared<Texture>();
-            
+
             if (!image.as_is && image.width > 0 && image.height > 0 && image.component > 0) {
                 TextureFormat texFormat = (image.component == 3) ? TextureFormat::RGB : TextureFormat::RGBA;
                 if (embeddedTexture->createFromData(image.image.data(), image.width, image.height, texFormat)) {
@@ -635,7 +649,7 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
             } else if (image.as_is) {
                 int width, height, channels;
                 unsigned char* decodedData = stbi_load_from_memory(
-                    image.image.data(), 
+                    image.image.data(),
                     static_cast<int>(image.image.size()),
                     &width, &height, &channels, 0
                 );
@@ -649,27 +663,15 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
                 }
             }
         }
-        
+
         if (!textureLoaded) {
-            std::string texturePath;
-            
-            if (!image.uri.empty()) {
-                if (image.uri.substr(0, 4) == "data") {
-                    texturePath = "assets/textures/default_normal.png";
-                } else {
-                    std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
-                    texturePath = modelDir + image.uri;
-                }
-            } else {
-                texturePath = "assets/textures/default_normal.png";
-            }
-            
             auto textureManager = &TextureManager::getInstance();
             auto normalTexture = textureManager->getTexture(texturePath);
             if (normalTexture) {
-                material->setNormalTexture(normalTexture);
+                material->setNormalTexture(normalTexture, texturePath);
             }
         }
+#endif
     }
     
     // Load ARM texture if available (Ambient Occlusion, Roughness, Metallic)
@@ -677,13 +679,26 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
         const auto& textureInfo = gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture;
         const auto& texture = gltfModel.textures[textureInfo.index];
         const auto& image = gltfModel.images[texture.source];
-        
+        std::string texturePath;
+
+        if (!image.uri.empty()) {
+            if (image.uri.substr(0, 4) == "data") {
+                texturePath = "assets/textures/default_arm.png";
+            } else {
+                std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
+                texturePath = modelDir + image.uri;
+            }
+        } else {
+            texturePath = "assets/textures/default_arm.png";
+        }
+
+#ifdef ENABLE_VULKAN
+        material->setARMTexturePath(texturePath);
+#else
         bool textureLoaded = false;
-        
-        // Handle embedded images (data URI)
         if (image.uri.empty() && !image.image.empty()) {
             auto embeddedTexture = std::make_shared<Texture>();
-            
+
             if (!image.as_is && image.width > 0 && image.height > 0 && image.component > 0) {
                 TextureFormat texFormat = (image.component == 3) ? TextureFormat::RGB : TextureFormat::RGBA;
                 if (embeddedTexture->createFromData(image.image.data(), image.width, image.height, texFormat)) {
@@ -693,7 +708,7 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
             } else if (image.as_is) {
                 int width, height, channels;
                 unsigned char* decodedData = stbi_load_from_memory(
-                    image.image.data(), 
+                    image.image.data(),
                     static_cast<int>(image.image.size()),
                     &width, &height, &channels, 0
                 );
@@ -707,27 +722,15 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
                 }
             }
         }
-        
+
         if (!textureLoaded) {
-            std::string texturePath;
-            
-            if (!image.uri.empty()) {
-                if (image.uri.substr(0, 4) == "data") {
-                    texturePath = "assets/textures/default_arm.png";
-                } else {
-                    std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
-                    texturePath = modelDir + image.uri;
-                }
-            } else {
-                texturePath = "assets/textures/default_arm.png";
-            }
-            
             auto textureManager = &TextureManager::getInstance();
             auto armTexture = textureManager->getTexture(texturePath);
             if (armTexture) {
-                material->setARMTexture(armTexture);
+                material->setARMTexture(armTexture, texturePath);
             }
         }
+#endif
     }
     
     return material;

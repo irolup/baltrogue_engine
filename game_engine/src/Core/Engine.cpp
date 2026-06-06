@@ -10,6 +10,16 @@
 #include "Audio/AudioManager.h"
 #include <iostream>
 
+#ifdef ENABLE_VULKAN
+    #include "Rendering/Vulkan/VulkanInstance.h"
+    #include "Rendering/Vulkan/VulkanDevice.h"
+    #include "Rendering/Vulkan/VulkanSwapChain.h"
+    #include "Rendering/Vulkan/VulkanResources.h"
+    #include "Rendering/Vulkan/VulkanPipeline.h"
+    #include "Rendering/Vulkan/VulkanRenderer.h"
+    #include "Rendering/Vulkan/VulkanFrame.h"
+#endif
+
 #ifdef EDITOR_BUILD
     #include "Editor/EditorSystem.h"
     #include <GL/glew.h>
@@ -66,8 +76,6 @@ void Engine::run() {
 }
 
 void Engine::shutdown() {
-    if (!running) return;
-    
     running = false;
     
 #ifdef EDITOR_BUILD
@@ -80,9 +88,32 @@ void Engine::shutdown() {
     if (sceneManager) {
         sceneManager.reset();
     }
-    
+
+#ifdef ENABLE_VULKAN
+    if (vulkanDevice) {
+        vulkanDevice->getDevice().waitIdle();
+    }
+
     if (renderer) {
         renderer->shutdown();
+    }
+
+    if (vulkanFrame) {
+        vulkanFrame.reset();
+    }
+
+    vulkanPipeline.reset();
+    vulkanResources.reset();
+    vulkanSwapChain.reset();
+    vulkanDevice.reset();
+    vulkanInstance.reset();
+#else
+    if (renderer) {
+        renderer->shutdown();
+    }
+#endif
+    
+    if (renderer) {
         renderer.reset();
     }
     
@@ -132,9 +163,56 @@ bool Engine::initializeSystems() {
         return false;
     }
     
-    renderer = std::unique_ptr<Renderer>(new Renderer());
+#ifdef ENABLE_VULKAN
+    auto vulkanRenderer = std::make_unique<GameEngine::VulkanRenderer>();
+    renderer = std::unique_ptr<IRenderer>(std::move(vulkanRenderer));
+#else
+    renderer = std::unique_ptr<IRenderer>(new Renderer());
+#endif
     
     sceneManager = std::unique_ptr<SceneManager>(new SceneManager());
+
+#ifdef ENABLE_VULKAN
+    try {
+        vulkanInstance = std::make_unique<VulkanInstance>();
+        vulkanInstance->create(window);
+
+        vulkanDevice = std::make_unique<VulkanDevice>();
+        vulkanDevice->create(*vulkanInstance);
+
+        vulkanSwapChain = std::make_unique<VulkanSwapChain>();
+        vulkanSwapChain->create(*vulkanDevice);
+
+        vulkanResources = std::make_unique<VulkanResources>();
+        vulkanResources->create(*vulkanDevice, *vulkanSwapChain);
+
+        vulkanPipeline = std::make_unique<VulkanPipeline>();
+        vulkanPipeline->create(*vulkanDevice, *vulkanResources, *vulkanSwapChain);
+
+        vulkanFrame = std::make_unique<VulkanFrame>();
+        vulkanFrame->create(*vulkanDevice, *vulkanResources, *vulkanSwapChain, *vulkanPipeline);
+
+        // Wire the live scene and renderer (may be null until a scene is loaded)
+        vulkanFrame->setScene(sceneManager->getCurrentScene().get());
+    #ifdef ENABLE_VULKAN
+        auto* vren = static_cast<GameEngine::VulkanRenderer*>(renderer.get());
+        vren->create(vulkanDevice.get(), vulkanSwapChain.get(), vulkanResources.get(), vulkanPipeline.get());
+        vulkanFrame->setRenderer(renderer.get());
+        vulkanFrame->setVulkanRenderer(vren);
+    #else
+        vulkanFrame->setRenderer(renderer.get());
+    #endif
+    } catch (const std::exception& e) {
+        std::cerr << "Engine: Vulkan initialization failed: " << e.what() << std::endl;
+        // Leave Vulkan pointers null on failure
+        vulkanInstance.reset();
+        vulkanDevice.reset();
+        vulkanSwapChain.reset();
+        vulkanResources.reset();
+        vulkanPipeline.reset();
+        vulkanFrame.reset();
+    }
+#endif
     
     if (!ScriptManager::getInstance().initialize()) {
         return false;
@@ -162,7 +240,7 @@ bool Engine::initializeSystems() {
     return true;
 }
 
-Renderer& Engine::getRenderer() {
+IRenderer& Engine::getRenderer() {
     static bool rendererInitialized = false;
     if (!rendererInitialized) {
         if (renderer->initialize()) {
@@ -239,6 +317,17 @@ void Engine::update() {
 }
 
 void Engine::render() {
+#ifdef ENABLE_VULKAN
+    if (vulkanFrame && renderer) {
+        // Vulkan owns acquire -> record -> submit -> present.
+        vulkanFrame->setScene(sceneManager ? sceneManager->getCurrentScene().get() : nullptr);
+        vulkanFrame->setRenderer(renderer.get());
+        vulkanFrame->setVulkanRenderer(static_cast<GameEngine::VulkanRenderer*>(renderer.get()));
+        vulkanFrame->drawFrame();
+        return;
+    }
+#endif
+
     renderer->beginFrame();
     
 #ifdef EDITOR_BUILD

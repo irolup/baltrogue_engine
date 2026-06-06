@@ -1577,6 +1577,13 @@ void EditorUI::renderProperties() {
                                     } else {
                                         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "ARM: None");
                                     }
+
+                                    auto environmentTexture = material->getEnvironmentTexture();
+                                    if (environmentTexture) {
+                                        ImGui::Text("Environment: %s", environmentTexture->getFilePath().c_str());
+                                    } else {
+                                        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Environment: None");
+                                    }
                                 }
                                 
                                 ImGui::PopID();

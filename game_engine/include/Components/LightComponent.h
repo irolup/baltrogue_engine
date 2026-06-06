@@ -23,7 +23,7 @@ public:
     
     void start() override;
     void update(float deltaTime) override;
-    void render(Renderer& renderer) override;
+    void render(IRenderer& renderer) override;
     void destroy() override;
     
     LightType getType() const { return type; }

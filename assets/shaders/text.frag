@@ -2,17 +2,14 @@
 // Text rendering
 
 struct FragmentInput {
-    float4 color : COLOR;
     float2 texCoord : TEXCOORD0;
 };
 
 // Uniforms
 uniform sampler2D uFontAtlasTexture;
+uniform float4 uColor;
 
 float4 main(FragmentInput input) : COLOR {
-    // Sample alpha from font atlas texture
     float alpha = tex2D(uFontAtlasTexture, input.texCoord).r;
-    
-    // Apply alpha to color
-    return float4(input.color.rgb, input.color.a * alpha);
+    return float4(uColor.rgb, uColor.a * alpha);
 }

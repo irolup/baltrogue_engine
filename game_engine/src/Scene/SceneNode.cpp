@@ -190,7 +190,7 @@ void SceneNode::lateUpdate(float deltaTime) {
     lateUpdateChildren(deltaTime);
 }
 
-void SceneNode::render(Renderer& renderer) {
+void SceneNode::render(IRenderer& renderer) {
     if (!visible || !active) return;
     
     for (auto& component : components) {
@@ -280,7 +280,7 @@ void SceneNode::lateUpdateChildren(float deltaTime) {
     }
 }
 
-void SceneNode::renderChildren(Renderer& renderer) {
+void SceneNode::renderChildren(IRenderer& renderer) {
     for (auto& child : children) {
         child->render(renderer);
     }

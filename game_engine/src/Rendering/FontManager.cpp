@@ -86,12 +86,14 @@ bool FontManager::generateFontAtlas(const std::string& fontPath, float fontSize,
         stbtt_GetPackedQuad(atlas.packedChars.data(), atlasWidth, atlasHeight, i,
                            &unusedX, &unusedY, &atlas.alignedQuads[i], 0);
     }
-    
+    #ifndef ENABLE_VULKAN
     if (!createFontAtlasTexture(atlasData, atlasWidth, atlasHeight, atlas.texture)) {
         std::cerr << "Failed to create font atlas texture" << std::endl;
         return false;
     }
-    
+    #endif
+    atlas.atlasData = std::move(atlasData);
+    atlas.cacheKey = getFontKey(fontPath, fontSize);
     atlas.atlasWidth = atlasWidth;
     atlas.atlasHeight = atlasHeight;
     atlas.fontSize = static_cast<uint32_t>(fontSize);

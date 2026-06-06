@@ -14,6 +14,9 @@ namespace GameEngine {
     class Texture;
     class FontManager;
     class SceneNode;
+    class Mesh;
+    class TextMaterial;
+    class FontAtlas;
 }
 
 #include "../../vendor/stb/stb_truetype.h"
@@ -22,12 +25,11 @@ namespace GameEngine {
 
 struct TextVertex {
     glm::vec3 position;
-    glm::vec4 color;
     glm::vec2 texCoord;
-    
-    TextVertex() : position(0.0f), color(1.0f), texCoord(0.0f) {}
-    TextVertex(const glm::vec3& pos, const glm::vec4& col, const glm::vec2& tex)
-        : position(pos), color(col), texCoord(tex) {}
+
+    TextVertex() : position(0.0f), texCoord(0.0f) {}
+    TextVertex(const glm::vec3& pos, const glm::vec2& tex)
+        : position(pos), texCoord(tex) {}
 };
 
 enum class TextAlignment {
@@ -50,8 +52,8 @@ public:
     
     virtual void start() override;
     virtual void update(float deltaTime) override;
-    virtual void render(Renderer& renderer) override;
-    void render(Renderer& renderer, const glm::mat4& worldTransform);
+    virtual void render(IRenderer& renderer) override;
+    void render(IRenderer& renderer, const glm::mat4& worldTransform);
     virtual void destroy() override;
     
     void renderWorldSpaceDirectly(const glm::mat4& worldTransform, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
@@ -84,7 +86,11 @@ public:
     glm::vec2 getTextBounds() const;
     float getTextWidth() const;
     float getTextHeight() const;
-    
+
+    // Accessors for Vulkan text upload
+    const std::vector<TextVertex>& getCpuTextVertices() const { return vertices; }
+    const std::vector<unsigned int>& getCpuIndices() const { return indices; }
+
     virtual void drawInspector() override;
     
 private:
@@ -100,6 +106,7 @@ private:
     std::vector<stbtt_packedchar> packedChars;
     std::vector<stbtt_aligned_quad> alignedQuads;
     std::shared_ptr<Texture> fontAtlasTexture;
+    std::shared_ptr<FontAtlas> fontAtlas;
     uint32_t atlasWidth;
     uint32_t atlasHeight;
     uint32_t charsToInclude;
@@ -108,6 +115,8 @@ private:
     std::vector<TextVertex> vertices;
     std::vector<unsigned int> indices;
     std::shared_ptr<Shader> textShader;
+    std::shared_ptr<Mesh> textMesh;
+    std::shared_ptr<TextMaterial> textMaterial;
     
     GLuint vao;
     GLuint vbo;
@@ -120,16 +129,22 @@ private:
     void updateTextMesh();
     void setupBuffers();
     void cleanupBuffers();
-    void renderWorldSpace(Renderer& renderer);
-    void renderWorldSpace(Renderer& renderer, const glm::mat4& worldTransform);
-    void renderScreenSpace(Renderer& renderer);
+    void renderWorldSpace(IRenderer& renderer);
+    void renderWorldSpace(IRenderer& renderer, const glm::mat4& worldTransform);
+    void renderScreenSpace(IRenderer& renderer);
     
     glm::vec2 calculateTextSize() const;
-    void generateVertices();
+    void generateVertices(TextRenderMode mode);
     void updateBuffers();
+
+#ifdef ENABLE_VULKAN
+    glm::mat4 buildClipMatrix(IRenderer& renderer, const glm::mat4& worldTransform) const;
+#endif
     
-    bool generateFontAtlas();
+    void rebuildMesh();
     void cleanupFontAtlas();
+
+
 };
 
 } // namespace GameEngine

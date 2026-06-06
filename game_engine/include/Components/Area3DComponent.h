@@ -33,7 +33,7 @@ public:
     
     virtual void start() override;
     virtual void update(float deltaTime) override;
-    virtual void render(Renderer& renderer) override;
+    virtual void render(IRenderer& renderer) override;
     virtual void destroy() override;
     
     COMPONENT_TYPE(Area3DComponent);

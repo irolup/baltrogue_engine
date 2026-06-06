@@ -27,7 +27,7 @@ LightComponent::LightComponent()
     , constant(1.0f)
     , linear(0.09f)
     , quadratic(0.032f)
-    , showGizmo(true)
+    , showGizmo(false)
     , gizmoMesh(nullptr)
     , gizmoMaterial(nullptr)
 {
@@ -57,7 +57,7 @@ void LightComponent::update(float deltaTime) {
     }
 }
 
-void LightComponent::render(Renderer& renderer) {
+void LightComponent::render(IRenderer& renderer) {
     // Render gizmo in editor mode
 #ifdef EDITOR_BUILD
     if (showGizmo && gizmoMesh && gizmoMaterial) {

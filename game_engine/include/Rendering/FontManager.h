@@ -17,7 +17,12 @@ namespace GameEngine {
 namespace GameEngine {
 
 struct FontAtlas {
-    std::shared_ptr<Texture> texture;
+    std::shared_ptr<Texture> texture; //OpenGL seulement
+
+    std::vector<uint8_t> atlasData; //For Vulkan
+
+    std::string cacheKey;
+
     std::vector<stbtt_packedchar> packedChars;
     std::vector<stbtt_aligned_quad> alignedQuads;
     uint32_t atlasWidth;

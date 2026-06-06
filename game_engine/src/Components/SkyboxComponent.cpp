@@ -44,7 +44,7 @@ void SkyboxComponent::start() {
 void SkyboxComponent::update(float deltaTime) {
 }
 
-void SkyboxComponent::render(Renderer& renderer) {
+void SkyboxComponent::render(IRenderer& renderer) {
     if (!isActiveSkybox || !skyboxMesh || !skyboxMaterial || !cubemapTexture) {
         return;
     }

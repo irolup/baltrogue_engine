@@ -25,7 +25,7 @@ BeamRenderer::BeamRenderer()
 BeamRenderer::~BeamRenderer() {
 }
 
-void BeamRenderer::render(Renderer& renderer) {
+void BeamRenderer::render(IRenderer& renderer) {
     if (!beamMesh || !material || !owner) {
         return;
     }

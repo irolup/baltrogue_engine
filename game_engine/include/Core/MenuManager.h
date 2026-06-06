@@ -10,7 +10,7 @@
 #include <algorithm>
 
 namespace GameEngine {
-    class Renderer;
+    class IRenderer;
     class SceneNode;
     class TextComponent;
 }
@@ -100,7 +100,7 @@ public:
     bool isGamePaused() const { return gamePaused; }
     
     void update(float deltaTime);
-    void render(Renderer& renderer);
+    void render(IRenderer& renderer);
     
     void bindToLua(lua_State* L);
     
@@ -122,8 +122,8 @@ private:
     
     void callMenuCallback(const std::string& callbackName, const std::string& menuId);
     
-    void renderMenuBackground(Renderer& renderer, const Menu& menu);
-    void renderMenuItems(Renderer& renderer, const Menu& menu);
+    void renderMenuBackground(IRenderer& renderer, const Menu& menu);
+    void renderMenuItems(IRenderer& renderer, const Menu& menu);
     
     lua_State* luaState;
     bool initialized;

@@ -6,6 +6,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include "Scene/SceneNode.h"
+#include "Rendering/IRenderer.h"
 
 namespace GameEngine {
 
@@ -32,7 +33,7 @@ public:
     void update(float deltaTime);
     void fixedUpdate(float deltaTime);
     void lateUpdate(float deltaTime);
-    void render(Renderer& renderer);
+    void render(IRenderer& renderer);
     void destroy();
     
     const std::string& getName() const { return name; }
