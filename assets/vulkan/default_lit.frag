@@ -7,10 +7,21 @@ layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec3 inWorldPos;
 layout(location = 3) in vec3 inWorldTangent;
 
-layout(set = 0, binding = 0) uniform FrameUniforms {
+struct Light {
+    vec4 position;
+    vec4 direction;
+    vec4 color;
+    vec4 params;
+    vec4 attenuation;
+};
+
+layout(std140, set = 0, binding = 0) uniform FrameUniforms {
     mat4 view;
     mat4 proj;
     vec4 cameraPosition;
+    int numLights;
+    int _pad0, _pad1, _pad2;
+    Light lights[16];
 } uFrame;
 
 layout(set = 1, binding = 0) uniform sampler2D uDiffuseTexture;
@@ -163,6 +174,47 @@ layout(location = 0) out vec4 outColor;
 //     return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
 // }
 
+// Lighting calculation functions
+vec3 calculateDirectionalLight(Light light, vec3 normal, vec3 viewDir) {
+    vec3 lightDir = normalize(-light.direction.xyz);
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = light.color.rgb * light.direction.w * diff;
+    return diffuse;
+}
+
+vec3 calculatePointLight(Light light, vec3 normal, vec3 viewDir, vec3 worldPos) {
+    vec3 lightDir = normalize(light.position.xyz - worldPos);
+    float diff = max(dot(normal, lightDir), 0.0);
+    
+    // Calculate distance and attenuation
+    float distance = length(light.position.xyz - worldPos);
+    if (distance > light.color.w) return vec3(0.0); // Beyond range
+    
+    float attenuation = 1.0 / (light.params.z + light.params.w * distance + light.attenuation.x * distance * distance);
+    
+    vec3 diffuse = light.color.rgb * light.direction.w * diff * attenuation;
+    return diffuse;
+}
+
+vec3 calculateSpotLight(Light light, vec3 normal, vec3 viewDir, vec3 worldPos) {
+    vec3 lightDir = normalize(light.position.xyz - worldPos);
+    float diff = max(dot(normal, lightDir), 0.0);
+    
+    // Calculate distance and attenuation
+    float distance = length(light.position.xyz - worldPos);
+    if (distance > light.color.w) return vec3(0.0); // Beyond range
+    
+    float attenuation = 1.0 / (light.params.z + light.params.w * distance + light.attenuation.x * distance * distance);
+    
+    // Calculate spot light cone
+    float theta = dot(lightDir, normalize(-light.direction.xyz));
+    float epsilon = light.params.x - light.params.y;
+    float intensity = clamp((theta - light.params.y) / epsilon, 0.0, 1.0);
+    
+    vec3 diffuse = light.color.rgb * light.direction.w * diff * attenuation * intensity;
+    return diffuse;
+}
+
 // // Calculate PBR lighting using Cook-Torrance BRDF
 // vec3 CalculateLightingPBR(Light light, vec3 N, vec3 V, vec3 fragPos, vec3 albedo, float metallic, float roughness, float ao)
 // {
@@ -243,7 +295,7 @@ layout(location = 0) out vec4 outColor;
 void main() {
     vec3 albedo = uMaterial.baseColor.rgb;
     if (uMaterial.textureFlags.x > 0.5) {
-        albedo *= texture(uDiffuseTexture, inTexCoord).rgb;
+        albedo = texture(uDiffuseTexture, inTexCoord).rgb;
     }
 
     vec3 normal = normalize(inNormal);
@@ -255,9 +307,25 @@ void main() {
         normal = normalize(tbn * normalSample);
     }
 
-    vec3 lightDir = normalize(vec3(0.35, 0.75, 0.25));
-    float lambert = max(dot(normal, lightDir), 0.15);
-    vec3 color = albedo * lambert;
+    vec3 viewDir = normalize(uFrame.cameraPosition.xyz - inWorldPos);
+    vec3 result = vec3(0.0);
+
+    for (int i = 0; i < uFrame.numLights; i++) {
+        Light light = uFrame.lights[i];
+        float lightType = light.position.w;
+        if (lightType == 0.0)
+            result += calculateDirectionalLight(light, normal, viewDir);
+        else if (lightType == 1.0)
+            result += calculatePointLight(light, normal, viewDir, inWorldPos);
+        else if (lightType == 2.0)
+            result += calculateSpotLight(light, normal, viewDir, inWorldPos);
+    }
+    float ao = 1.0;
+    if (uMaterial.textureFlags.z > 0.5)
+        ao = texture(uARMTexture, inTexCoord).r;
+    vec3 ambient = vec3(0.1) * albedo * ao;
+    vec3 color = ambient + result * albedo;
+    //vec3 color = result * albedo;
 
     if (uMaterial.textureFlags.w > 0.5 && uMaterial.reflectionStrength > 0.0) {
         vec3 viewDir = normalize(uFrame.cameraPosition.xyz - inWorldPos);

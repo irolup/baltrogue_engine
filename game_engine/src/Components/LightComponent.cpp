@@ -38,9 +38,11 @@ LightComponent::~LightComponent() {
 }
 
 void LightComponent::start() {
+    #ifdef EDITOR_BUILD
     if (showGizmo) {
         createGizmo();
     }
+    #endif
 }
 
 void LightComponent::update(float deltaTime) {
@@ -52,9 +54,11 @@ void LightComponent::update(float deltaTime) {
     }
     
     // Update gizmo if needed
+    #ifdef EDITOR_BUILD
     if (showGizmo && gizmoMesh) {
         updateGizmo();
     }
+    #endif
 }
 
 void LightComponent::render(IRenderer& renderer) {

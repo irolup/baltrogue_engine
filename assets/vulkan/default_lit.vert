@@ -7,10 +7,21 @@ layout(location = 3) in vec3 inTangent;
 layout(location = 4) in vec4 inBoneWeights;
 layout(location = 5) in vec4 inBoneIndices;
 
-layout(set = 0, binding = 0) uniform FrameUniforms {
+struct Light {
+    vec4 position;
+    vec4 direction;
+    vec4 color;
+    vec4 params;
+    vec4 attenuation;
+};
+
+layout(std140, set = 0, binding = 0) uniform FrameUniforms {
     mat4 view;
     mat4 proj;
     vec4 cameraPosition;
+    int numLights;
+    int _pad0, _pad1, _pad2;
+    Light lights[16];
 } uFrame;
 
 layout(push_constant) uniform PushConstants {

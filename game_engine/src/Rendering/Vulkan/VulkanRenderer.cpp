@@ -1,6 +1,7 @@
 #include "Rendering/Vulkan/VulkanRenderer.h"
 #include "Scene/Scene.h"
 #include "Components/CameraComponent.h"
+#include "Rendering/LightingManager.h"
 #include "Rendering/Material.h"
 #include "Rendering/TextMaterial.h"
 #include "Rendering/FontManager.h"
@@ -39,6 +40,19 @@ void VulkanRenderer::renderFromCamera(Scene& scene, CameraComponent* cam, const 
     ubo.proj = cam->getProjectionMatrix();
     glm::vec3 camPos = extractCameraPosition(ubo.view);
     ubo.cameraPosition = glm::vec4(camPos, 0.0f);
+    
+    auto& lightingManager = LightingManager::getInstance();
+    lightingManager.update(); //remove light if not enabled
+
+    ubo.numLights = static_cast<int32_t>(lightingManager.getActiveLightCount());
+    auto lightData = lightingManager.getLightDataArray();
+    for (size_t i = 0; i < lightData.size() && i < lightingManager.MAX_LIGHTS; ++i) {
+        ubo.lights[i].position    = lightData[i].position;
+        ubo.lights[i].direction   = lightData[i].direction;
+        ubo.lights[i].color       = lightData[i].color;
+        ubo.lights[i].params      = lightData[i].params;
+        ubo.lights[i].attenuation = lightData[i].attenuation;
+    }
 
     // Map and copy to uniform buffer for current image
     if (resources_->getUniformBufferSize() > 0) {
@@ -247,6 +261,10 @@ void VulkanRenderer::renderMesh(const Mesh& mesh, const Material& material, cons
     cmd.material = std::make_shared<Material>(material);
     cmd.modelMatrix = modelMatrix;
     submitRenderCommand(cmd);
+}
+
+void VulkanRenderer::updateLightingUniforms(){
+    LightingManager::getInstance().update();
 }
 
 }

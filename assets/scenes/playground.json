@@ -20,16 +20,16 @@
             "components": [
               {
                 "material": {
-                  "armTexture": "assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_arm_1k.png",
+                  "armTexture": "assets/textures/red_brick/red_brick_arm_1k.png",
                   "blendMode": "Opaque",
                   "color": [
                     1.0,
                     0.5,
                     0.20000000298023224
                   ],
-                  "diffuseTexture": "assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_diff_1k.png",
+                  "diffuseTexture": "assets/textures/red_brick/red_brick_diff_1k.png",
                   "metallic": 0.0,
-                  "normalTexture": "assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_nor_gl_1k.png",
+                  "normalTexture": "assets/textures/red_brick/red_brick_nor_gl_1k.png",
                   "reflectionStrength": 0.0,
                   "roughness": 0.5
                 },
@@ -138,52 +138,6 @@
           ],
           "rotation": [
             0.0,
-            -0.0,
-            0.0
-          ],
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        },
-        "visible": true
-      },
-      {
-        "active": true,
-        "components": [
-          {
-            "color": [
-              1.0,
-              1.0,
-              1.0
-            ],
-            "constant": 1.0,
-            "cutOff": 0.21816615760326385,
-            "direction": [
-              0.0,
-              -0.9659258127212524,
-              -0.2588191330432892
-            ],
-            "intensity": 1.5750000476837158,
-            "lightType": "DIRECTIONAL",
-            "linear": 0.0,
-            "outerCutOff": 0.30543261766433716,
-            "quadratic": 0.0,
-            "range": 1000.0,
-            "showGizmo": true,
-            "type": "LightComponent"
-          }
-        ],
-        "name": "Light_0",
-        "transform": {
-          "position": [
-            -1.0,
-            18.665189743041992,
-            0.0
-          ],
-          "rotation": [
-            15.000005722045898,
             -0.0,
             0.0
           ],
@@ -2823,6 +2777,52 @@
             5.0,
             1.0,
             5.0
+          ]
+        },
+        "visible": true
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "color": [
+              1.0,
+              0.800000011920929,
+              0.6000000238418579
+            ],
+            "constant": 1.1169999837875366,
+            "cutOff": 0.21816615760326385,
+            "direction": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "intensity": 7.797999858856201,
+            "lightType": "POINT",
+            "linear": 0.19499999284744263,
+            "outerCutOff": 0.30543261766433716,
+            "quadratic": 0.03200000151991844,
+            "range": 42.595001220703125,
+            "showGizmo": true,
+            "type": "LightComponent"
+          }
+        ],
+        "name": "PointLight",
+        "transform": {
+          "position": [
+            0.0,
+            5.500683784484863,
+            1.5225540399551392
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
           ]
         },
         "visible": true

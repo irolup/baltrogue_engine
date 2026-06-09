@@ -1180,6 +1180,8 @@ bool EditorSystem::saveSceneToFile(const std::string& filepath) {
 }
 
 bool EditorSystem::loadSceneFromFile(const std::string& filepath) {
+    LightingManager::getInstance().clearLights();
+
     auto loadedScene = SceneSerializer::loadSceneFromFile(filepath);
     if (loadedScene) {
         setActiveScene(loadedScene);

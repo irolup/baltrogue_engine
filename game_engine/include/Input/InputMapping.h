@@ -79,6 +79,7 @@ private:
     
     std::string hotReloadFilePath;
     bool hotReloadEnabled;
+    bool shutdownCalled = false;
     time_t lastFileModificationTime;
     
     const InputMapping* findMapping(const std::string& actionName) const;

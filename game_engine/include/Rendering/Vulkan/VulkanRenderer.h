@@ -54,8 +54,8 @@ public:
     void setFrustumCulling(bool enabled) override {}
     bool isFrustumCullingEnabled() const override { return false; }
 
-    void updateLightingUniforms() override {}
-    glm::vec3 extractCameraPosition(const glm::mat4& viewMatrix) override { return glm::vec3(0.0f); }
+    void updateLightingUniforms() override;
+    glm::vec3 extractCameraPosition(const glm::mat4& viewMatrix) override { return glm::vec3(glm::inverse(viewMatrix)[3]); }
 
     const RenderStats& getStats() const override { return stats; }
     void resetStats() override { stats.reset(); }

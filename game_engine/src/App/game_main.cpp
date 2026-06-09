@@ -43,18 +43,6 @@ int main() {
     auto& sceneManager = engine.getSceneManager();
     auto gameScene = sceneManager.createScene("Game Scene");
     
-    // Add default directional light
-    auto lightNode = gameScene->createNode("Default Light");
-    auto lightComponent = lightNode->addComponent<LightComponent>();
-    lightComponent->setType(LightType::DIRECTIONAL);
-    lightComponent->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
-    lightComponent->setIntensity(1.0f);
-    lightComponent->setRange(100.0f);
-    lightComponent->setShowGizmo(false);
-    lightNode->getTransform().setPosition(glm::vec3(0.0f, 10.0f, 0.0f));
-    lightNode->getTransform().setEulerAngles(glm::vec3(-45.0f, 0.0f, 0.0f));
-    gameScene->getRootNode()->addChild(lightNode);
-    lightComponent->start();
 
     // Create Main Camera as a child of Player (so it moves with PlayerRoot -> Player)
     // Scene structure: PlayerRoot (empty, move this) -> Player (PhysicsComponent) -> Main Camera

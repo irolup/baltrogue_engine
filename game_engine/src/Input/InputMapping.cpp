@@ -30,6 +30,8 @@ void InputMappingManager::initialize() {
 #ifdef VITA_BUILD
     printf("InputMappingManager: Initializing...\n");
 #endif
+
+    shutdownCalled = false;
     
     // Check if saved mappings file exists
     std::ifstream savedFile("config/input_mappings.txt");
@@ -59,13 +61,16 @@ void InputMappingManager::initialize() {
 }
 
 void InputMappingManager::shutdown() {
-    // Auto-save mappings on shutdown
+    if (shutdownCalled) {
+        return;
+    }
+    shutdownCalled = true;
 
-    //only save if we are in editor mode
-    #ifdef EDITOR_BUILD
-        saveMappingsToFile("config/input_mappings.txt");
-    #endif
-    
+    // Auto-save mappings on shutdown (editor only).
+#ifdef EDITOR_BUILD
+    saveMappingsToFile("config/input_mappings.txt");
+#endif
+
     mappings.clear();
     actionCallbacks.clear();
 }

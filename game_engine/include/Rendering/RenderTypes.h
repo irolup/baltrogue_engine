@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <vector>
+#include <array>
 #include "../Components/TextComponent.h"
 namespace GameEngine {
 
@@ -41,11 +42,23 @@ struct DeviceCapabilities {
         bool graphicsPipelineLibrary = false;
 };
 
-// Per-frame uniform layout (camera/projection) used by Vulkan
+// std140: each Light = 5 x vec4 = 80 bytes
+struct GpuLight {
+    glm::vec4 position; // w = light type (0=dir, 1=point, 2=spot)
+    glm::vec4 direction; // w = intensity
+    glm::vec4 color; // w = range
+    glm::vec4 params; // cutOff, outerCutOff, constant, linear
+    glm::vec4 attenuation;// x = quadratic
+};
+
+// Need aligment cause we use std140
 struct PerFrameUniforms {
-    glm::mat4 view;
-    glm::mat4 proj;
-    glm::vec4 cameraPosition; // w unused
+    glm::mat4 view; //Offset 0
+    glm::mat4 proj; //Offset 64
+    glm::vec4 cameraPosition; //Offset 128 
+    int32_t numLights; // offset 144
+    int32_t _pad0, _pad1, _pad2; // offset 148–156 (std140 alignment)
+    std::array<GpuLight, 16> lights; //Offset 160 needed to be a multiple of 8 for array for std140
 };
 
 enum DescriptorSetIndex : uint32_t {
