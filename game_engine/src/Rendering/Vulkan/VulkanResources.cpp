@@ -103,20 +103,28 @@ void VulkanResources::createUniformBuffers(vk::DeviceSize size) {
     size_t imageCount = swapChain_->getImages().size();
     uniformBuffers_.clear();
     uniformBuffersMemory_.clear();
+    uniformBuffersMapped_.clear();
     uniformBuffers_.reserve(imageCount);
     uniformBuffersMemory_.reserve(imageCount);
+    uniformBuffersMapped_.reserve(imageCount);
 
     for (size_t i = 0; i < imageCount; ++i) {
         vk::raii::Buffer buffer = nullptr;
         vk::raii::DeviceMemory memory = nullptr;
         createBuffer(size, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer, memory);
-        // zero initialize
         void* data = memory.mapMemory(0, size);
         memset(data, 0, static_cast<size_t>(size));
-        memory.unmapMemory();
         uniformBuffers_.push_back(std::move(buffer));
         uniformBuffersMemory_.push_back(std::move(memory));
+        uniformBuffersMapped_.push_back(data);
     }
+}
+
+void VulkanResources::writeUniformBuffer(uint32_t index, const void* data, vk::DeviceSize size) {
+    if (index >= uniformBuffersMapped_.size() || size > uniformBufferSize_) {
+        return;
+    }
+    memcpy(uniformBuffersMapped_[index], data, static_cast<size_t>(size));
 }
 
 vk::raii::Buffer& VulkanResources::getUniformBuffer(uint32_t index) {
@@ -138,6 +146,77 @@ void VulkanResources::createCommandPool() {
     commandPool_ = vk::raii::CommandPool(device_->getDevice(), poolInfo);
 }
 
+void VulkanResources::ensureUploadResources() {
+    if (uploadCommandBuffer_ != nullptr && uploadFence_ != nullptr) {
+        return;
+    }
+
+    vk::CommandBufferAllocateInfo allocInfo{};
+    allocInfo.commandPool = *commandPool_;
+    allocInfo.level = vk::CommandBufferLevel::ePrimary;
+    allocInfo.commandBufferCount = 1;
+    uploadCommandBuffer_ = std::move(device_->getDevice().allocateCommandBuffers(allocInfo).front());
+
+    vk::FenceCreateInfo fenceInfo{};
+    uploadFence_ = vk::raii::Fence(device_->getDevice(), fenceInfo);
+}
+
+vk::raii::CommandBuffer& VulkanResources::getUploadCommandBuffer() {
+    ensureUploadResources();
+    if (!uploadBatchActive_) {
+        if (uploadInFlight_) {
+            waitForUploads();
+        }
+        uploadCommandBuffer_.reset({});
+        vk::CommandBufferBeginInfo beginInfo{};
+        beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+        uploadCommandBuffer_.begin(beginInfo);
+        uploadBatchActive_ = true;
+    }
+    return uploadCommandBuffer_;
+}
+
+void VulkanResources::flushUploads() {
+    if (!uploadBatchActive_) {
+        return;
+    }
+
+    uploadCommandBuffer_.end();
+    vk::SubmitInfo submitInfo{};
+    submitInfo.commandBufferCount = 1;
+    vk::CommandBuffer commandBuffer = *uploadCommandBuffer_;
+    submitInfo.pCommandBuffers = &commandBuffer;
+    device_->getQueue().submit(submitInfo, *uploadFence_);
+    uploadBatchActive_ = false;
+    uploadInFlight_ = true;
+}
+
+void VulkanResources::waitForUploads() {
+    if (uploadBatchActive_) {
+        flushUploads();
+    }
+    if (!uploadInFlight_) {
+        return;
+    }
+
+    (void)device_->getDevice().waitForFences({*uploadFence_}, VK_TRUE, UINT64_MAX);
+    device_->getDevice().resetFences({*uploadFence_});
+    uploadInFlight_ = false;
+    uploadStagingRetention_.clear();
+}
+
+VulkanResources::RetainedStagingBuffer& VulkanResources::createRetainedStagingBuffer(vk::DeviceSize size) {
+    uploadStagingRetention_.emplace_back();
+    auto& staging = uploadStagingRetention_.back();
+    createBuffer(
+        size,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        staging.buffer,
+        staging.memory);
+    return staging;
+}
+
 void VulkanResources::createColorResources() {
     vk::Format colorFormat = swapChain_->getSurfaceFormat().format;
 
@@ -151,7 +230,7 @@ void VulkanResources::createDepthResources() {
                 vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal, depthImage_, depthImageMemory_);
     depthImageView_ = createImageView(depthImage_, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
 
-    auto commandBuffer = beginSingleTimeCommands();
+    auto& commandBuffer = getUploadCommandBuffer();
     vk::ImageMemoryBarrier barrier{};
     barrier.oldLayout = vk::ImageLayout::eUndefined;
     barrier.newLayout = vk::ImageLayout::eDepthAttachmentOptimal;
@@ -159,8 +238,8 @@ void VulkanResources::createDepthResources() {
     barrier.dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
     barrier.image = depthImage_;
     barrier.subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1};
-    commandBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eEarlyFragmentTests, {}, {}, {}, barrier);
-    endSingleTimeCommands(*commandBuffer);
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eEarlyFragmentTests, {}, {}, {}, barrier);
+    waitForUploads();
 }
 
 vk::Format VulkanResources::findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features) {
@@ -206,6 +285,7 @@ void VulkanResources::createTextureImage(std::string texturePath) {
     copyBufferToImage(stagingBuffer, textureImage_, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
     //transitionImageLayout(textureImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, mipLevels);
     generateMipmaps(textureImage_, vk::Format::eR8G8B8A8Srgb, texWidth, texHeight, mipLevels_);
+    waitForUploads();
 }
 
 const VulkanResources::VulkanTexture& VulkanResources::getOrCreateTexture(const std::string& path) {
@@ -219,16 +299,14 @@ const VulkanResources::VulkanTexture& VulkanResources::getOrCreateTexture(const 
         vk::DeviceSize imageSize = whitePixel.size();
         tex.mipLevels = 1;
 
-        vk::raii::Buffer stagingBuffer = nullptr;
-        vk::raii::DeviceMemory stagingMemory = nullptr;
-        createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingMemory);
-        void* data = stagingMemory.mapMemory(0, imageSize);
+        auto& staging = createRetainedStagingBuffer(imageSize);
+        void* data = staging.memory.mapMemory(0, imageSize);
         memcpy(data, whitePixel.data(), static_cast<size_t>(imageSize));
-        stagingMemory.unmapMemory();
+        staging.memory.unmapMemory();
 
         createImage(1, 1, tex.mipLevels, vk::SampleCountFlagBits::e1, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, tex.image, tex.memory);
         transitionImageLayout(tex.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, tex.mipLevels);
-        copyBufferToImage(stagingBuffer, tex.image, 1, 1);
+        copyBufferToImage(staging.buffer, tex.image, 1, 1);
         generateMipmaps(tex.image, vk::Format::eR8G8B8A8Srgb, 1, 1, tex.mipLevels);
 
         tex.view = createImageView(tex.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, tex.mipLevels);
@@ -264,17 +342,15 @@ const VulkanResources::VulkanTexture& VulkanResources::getOrCreateTexture(const 
     vk::DeviceSize imageSize = texWidth * texHeight * 4;
     tex.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 
-    vk::raii::Buffer stagingBuffer = nullptr;
-    vk::raii::DeviceMemory stagingMemory = nullptr;
-    createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingMemory);
-    void* data = stagingMemory.mapMemory(0, imageSize);
+    auto& staging = createRetainedStagingBuffer(imageSize);
+    void* data = staging.memory.mapMemory(0, imageSize);
     memcpy(data, pixels, static_cast<size_t>(imageSize));
-    stagingMemory.unmapMemory();
+    staging.memory.unmapMemory();
     stbi_image_free(pixels);
 
     createImage(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), tex.mipLevels, vk::SampleCountFlagBits::e1, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, tex.image, tex.memory);
     transitionImageLayout(tex.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, tex.mipLevels);
-    copyBufferToImage(stagingBuffer, tex.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+    copyBufferToImage(staging.buffer, tex.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
     generateMipmaps(tex.image, vk::Format::eR8G8B8A8Srgb, texWidth, texHeight, tex.mipLevels);
 
     tex.view = createImageView(tex.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, tex.mipLevels);
@@ -306,16 +382,14 @@ const VulkanResources::VulkanTexture& VulkanResources::getOrCreateFontAtlasTextu
 
     VulkanTexture tex{};
     vk::DeviceSize imageSize = static_cast<vk::DeviceSize>(atlasData.size());
-    vk::raii::Buffer stagingBuffer = nullptr;
-    vk::raii::DeviceMemory stagingMemory = nullptr;
-    createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingMemory);
-    void* data = stagingMemory.mapMemory(0, imageSize);
+    auto& staging = createRetainedStagingBuffer(imageSize);
+    void* data = staging.memory.mapMemory(0, imageSize);
     memcpy(data, atlasData.data(), static_cast<size_t>(imageSize));
-    stagingMemory.unmapMemory();
+    staging.memory.unmapMemory();
 
     createImage(width, height, 1, vk::SampleCountFlagBits::e1, vk::Format::eR8Unorm, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, tex.image, tex.memory);
     transitionImageLayout(tex.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 1);
-    copyBufferToImage(stagingBuffer, tex.image, width, height);
+    copyBufferToImage(staging.buffer, tex.image, width, height);
     transitionImageLayout( tex.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, 1);
 
     tex.view = createImageView(tex.image, vk::Format::eR8Unorm, vk::ImageAspectFlagBits::eColor, 1);
@@ -332,6 +406,79 @@ const VulkanResources::VulkanTexture& VulkanResources::getOrCreateFontAtlasTextu
     return it2->second;
 }
 
+const VulkanResources::VulkanTexture& VulkanResources::getDefaultCubemapTexture() {
+    return getDefaultCubemap();
+}
+
+std::string VulkanResources::getCubemapCacheKey(const std::vector<std::string>& facePaths) const {
+    return makeCubemapCacheKey(facePaths);
+}
+
+const VulkanResources::VulkanTexture& VulkanResources::getOrCreateCubemapTexture(const std::vector<std::string>& facePaths) {
+
+    if (isInvalidCubemapPaths(facePaths)) {
+        return getDefaultCubemap();
+    }
+
+    auto key = makeCubemapCacheKey(facePaths);
+    auto it = cubemapCache_.find(key);
+    if (it != cubemapCache_.end()) return it->second;
+
+    VulkanTexture tex{};
+    
+    //Load face 0 to obtain each width and height
+    int texWidth = 0, texHeight= 0, channels= 0;
+    stbi_uc* pixels = stbi_load(facePaths[0].c_str(), &texWidth, &texHeight, &channels, STBI_rgb_alpha);
+    if (!pixels || texWidth <= 0 || texHeight <= 0) {
+        stbi_image_free(pixels);
+        return getDefaultCubemap();
+    }
+    stbi_image_free(pixels);
+
+    tex.mipLevels = 1;
+
+    createCubemapImage(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), tex.mipLevels, tex.image, tex.memory);
+    transitionCubeMapLayout(tex.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, tex.mipLevels);
+
+    const vk::DeviceSize faceSize = static_cast<vk::DeviceSize>(texWidth * texHeight * 4);
+
+    for (uint32_t face = 0; face < 6; ++face) {
+        stbi_uc* pixels = stbi_load(facePaths[face].c_str(), &texWidth, &texHeight, &channels, STBI_rgb_alpha);
+        if (!pixels) throw std::runtime_error("failed to load cubemap face: " + facePaths[face]);
+        auto& staging = createRetainedStagingBuffer(faceSize);
+
+        void* data = staging.memory.mapMemory(0, faceSize);
+        memcpy(data, pixels, static_cast<size_t>(faceSize));
+        staging.memory.unmapMemory();
+        stbi_image_free(pixels);
+
+        copyBufferToImageLayer(staging.buffer, tex.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), face);
+    }
+
+    transitionCubeMapLayout(tex.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, tex.mipLevels);
+
+    tex.view = createCubemapImageView(tex.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, tex.mipLevels);
+
+    vk::SamplerCreateInfo samplerInfo{};
+    samplerInfo.magFilter = vk::Filter::eLinear;
+    samplerInfo.minFilter = vk::Filter::eLinear;
+    samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+    samplerInfo.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+    samplerInfo.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+    samplerInfo.anisotropyEnable = VK_TRUE;
+    samplerInfo.maxAnisotropy = 16.0f;
+    samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = static_cast<float>(tex.mipLevels);
+    tex.sampler = vk::raii::Sampler(device_->getDevice(), samplerInfo);
+
+    auto [it2, ok] = cubemapCache_.emplace(key, std::move(tex));
+    return it2->second;
+}
+
 void VulkanResources::generateMipmaps(vk::raii::Image& image, vk::Format imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels) 
 {
     vk::FormatProperties formatProperties = device_->getPhysicalDevice().getFormatProperties(imageFormat);
@@ -340,7 +487,7 @@ void VulkanResources::generateMipmaps(vk::raii::Image& image, vk::Format imageFo
         throw std::runtime_error("texture image format does not support linear blitting!");
     }
 
-    std::unique_ptr<vk::raii::CommandBuffer> commandBuffer = beginSingleTimeCommands();
+    auto& commandBuffer = getUploadCommandBuffer();
 
 	vk::ImageMemoryBarrier barrier = {};
     barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
@@ -365,7 +512,7 @@ void VulkanResources::generateMipmaps(vk::raii::Image& image, vk::Format imageFo
         barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
         barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
 
-        commandBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, barrier);
+        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, barrier);
 
         vk::ArrayWrapper1D<vk::Offset3D, 2> offsets, dstOffsets;
         offsets[0] = vk::Offset3D(0, 0, 0);
@@ -381,14 +528,14 @@ void VulkanResources::generateMipmaps(vk::raii::Image& image, vk::Format imageFo
         blit.srcSubresource = vk::ImageSubresourceLayers( vk::ImageAspectFlagBits::eColor, i - 1, 0, 1);
         blit.dstSubresource = vk::ImageSubresourceLayers( vk::ImageAspectFlagBits::eColor, i, 0, 1);
 
-        commandBuffer->blitImage(image, vk::ImageLayout::eTransferSrcOptimal, image, vk::ImageLayout::eTransferDstOptimal, { blit }, vk::Filter::eLinear);
+        commandBuffer.blitImage(image, vk::ImageLayout::eTransferSrcOptimal, image, vk::ImageLayout::eTransferDstOptimal, { blit }, vk::Filter::eLinear);
 
         barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
         barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
         barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 
-        commandBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
+        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
 
         if (mipWidth > 1) mipWidth /= 2;
         if (mipHeight > 1) mipHeight /= 2;
@@ -399,9 +546,7 @@ void VulkanResources::generateMipmaps(vk::raii::Image& image, vk::Format imageFo
     barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
     barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 
-    commandBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
-
-    endSingleTimeCommands(*commandBuffer);
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
 }
 
 void VulkanResources::createTextureImageView() {
@@ -428,20 +573,6 @@ void VulkanResources::createTextureSampler() {
     textureSampler_ = vk::raii::Sampler(device_->getDevice(), samplerInfo);
 }
 
-vk::raii::ImageView VulkanResources::createImageView(vk::Image const& image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) {
-    vk::ImageViewCreateInfo viewInfo{};
-    viewInfo.image = image;
-    viewInfo.viewType = vk::ImageViewType::e2D;
-    viewInfo.format = format;
-    viewInfo.subresourceRange.aspectMask = aspectFlags;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = mipLevels;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
-
-    return vk::raii::ImageView(device_->getDevice(), viewInfo);
-}
-
 void VulkanResources::createImage(uint32_t width, uint32_t height, uint32_t mipLevels, vk::SampleCountFlagBits numSamples, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage,
                                            vk::MemoryPropertyFlags properties, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory) {
     vk::ImageCreateInfo imageInfo{};
@@ -466,8 +597,92 @@ void VulkanResources::createImage(uint32_t width, uint32_t height, uint32_t mipL
     image.bindMemory(imageMemory, 0);
 }
 
+vk::raii::ImageView VulkanResources::createImageView(vk::Image const& image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) {
+    vk::ImageViewCreateInfo viewInfo{};
+    viewInfo.image = image;
+    viewInfo.viewType = vk::ImageViewType::e2D;
+    viewInfo.format = format;
+    viewInfo.subresourceRange.aspectMask = aspectFlags;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = mipLevels;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    return vk::raii::ImageView(device_->getDevice(), viewInfo);
+}
+
+void VulkanResources::createCubemapImage(uint32_t width, uint32_t height, uint32_t mipLevels, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory) {
+    vk::ImageCreateInfo info{};
+    info.imageType = vk::ImageType::e2D;
+    info.format = vk::Format::eR8G8B8A8Srgb;
+    info.extent = vk::Extent3D{ width, height, 1 };
+    info.mipLevels = mipLevels;
+    info.arrayLayers = 6;
+    info.samples = vk::SampleCountFlagBits::e1;
+    info.tiling = vk::ImageTiling::eOptimal;
+    info.usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
+    info.flags = vk::ImageCreateFlagBits::eCubeCompatible;
+    info.sharingMode = vk::SharingMode::eExclusive;
+    info.initialLayout = vk::ImageLayout::eUndefined;
+
+    image = vk::raii::Image(device_->getDevice(), info);
+    vk::MemoryRequirements memRequirements = image.getMemoryRequirements();
+    vk::MemoryAllocateInfo allocInfo{};
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+    
+    imageMemory = vk::raii::DeviceMemory(device_->getDevice(), allocInfo);
+    image.bindMemory(imageMemory, 0);
+
+}
+
+vk::raii::ImageView VulkanResources::createCubemapImageView(vk::raii::Image& image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels){
+    vk::ImageViewCreateInfo viewInfo{};
+    viewInfo.image = image;
+    viewInfo.viewType = vk::ImageViewType::eCube;
+    viewInfo.format = format;
+    viewInfo.subresourceRange.aspectMask = aspectFlags;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = mipLevels;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 6;
+
+    return vk::raii::ImageView(device_->getDevice(), viewInfo);
+}
+
+void VulkanResources::transitionCubeMapLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, uint32_t mipLevels){
+    auto& commandBuffer = getUploadCommandBuffer();
+
+    vk::ImageMemoryBarrier barrier{};
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.image = image;
+    barrier.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, mipLevels, 0, 6};
+
+    vk::PipelineStageFlags sourceStage;
+    vk::PipelineStageFlags destinationStage;
+
+    if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal) {
+        barrier.srcAccessMask = {};
+        barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+
+        sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
+        destinationStage = vk::PipelineStageFlagBits::eTransfer;
+    } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+        barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+        sourceStage = vk::PipelineStageFlagBits::eTransfer;
+        destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
+    } else {
+        throw std::invalid_argument("unsupported layout transition!");
+    }
+    commandBuffer.pipelineBarrier(sourceStage, destinationStage, {}, {}, nullptr, barrier);
+}
+
+
 void VulkanResources::transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, uint32_t mipLevels) {
-    auto commandBuffer = beginSingleTimeCommands();
+    auto& commandBuffer = getUploadCommandBuffer();
 
     vk::ImageMemoryBarrier barrier{};
     barrier.oldLayout = oldLayout;
@@ -493,12 +708,11 @@ void VulkanResources::transitionImageLayout(const vk::raii::Image& image, vk::Im
     } else {
         throw std::invalid_argument("unsupported layout transition!");
     }
-    commandBuffer->pipelineBarrier(sourceStage, destinationStage, {}, {}, nullptr, barrier);
-    endSingleTimeCommands(*commandBuffer);
+    commandBuffer.pipelineBarrier(sourceStage, destinationStage, {}, {}, nullptr, barrier);
 }
 
 void VulkanResources::copyBufferToImage(const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height) {
-    std::unique_ptr<vk::raii::CommandBuffer> commandBuffer = beginSingleTimeCommands();
+    auto& commandBuffer = getUploadCommandBuffer();
     vk::BufferImageCopy region{};
     region.bufferOffset = 0;
     region.bufferRowLength = 0;
@@ -508,8 +722,15 @@ void VulkanResources::copyBufferToImage(const vk::raii::Buffer& buffer, vk::raii
     region.imageExtent = vk::Extent3D{width, height, 1};
 
 
-    commandBuffer->copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, {region});
-    endSingleTimeCommands(*commandBuffer);
+    commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, {region});
+}
+
+void VulkanResources::copyBufferToImageLayer(const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height, uint32_t layer){
+    auto& commandBuffer = getUploadCommandBuffer();
+    vk::BufferImageCopy region{};
+    region.imageSubresource = { vk::ImageAspectFlagBits::eColor, 0, layer, 1 };
+    region.imageExtent = vk::Extent3D{ width, height, 1 };
+    commandBuffer.copyBufferToImage(buffer, *image, vk::ImageLayout::eTransferDstOptimal, {region});
 }
 
 void VulkanResources::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory) const {
@@ -527,36 +748,15 @@ void VulkanResources::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usa
 }
 
 void VulkanResources::copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size) {
-    vk::CommandBufferAllocateInfo allocInfo{};
-    allocInfo.commandPool = commandPool_;
-    allocInfo.level = vk::CommandBufferLevel::ePrimary;
-    allocInfo.commandBufferCount = 1;
-
-    vk::raii::CommandBuffer commandCopyBuffer = std::move(device_->getDevice().allocateCommandBuffers(allocInfo).front());
-
-    vk::CommandBufferBeginInfo beginInfo{};
-    beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    commandCopyBuffer.begin(beginInfo);
-
+    auto& commandBuffer = getUploadCommandBuffer();
     vk::BufferCopy bufferCopy{};
     bufferCopy.size = size;
-
-    commandCopyBuffer.copyBuffer(*srcBuffer, *dstBuffer, bufferCopy);
-    commandCopyBuffer.end();
-    vk::SubmitInfo submitInfo{};
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &*commandCopyBuffer;
-
-    device_->getQueue().submit(submitInfo, nullptr);
-    device_->getQueue().waitIdle();
+    commandBuffer.copyBuffer(*srcBuffer, *dstBuffer, bufferCopy);
 }
 
 VulkanMeshGpu VulkanResources::uploadMesh(const std::vector<Vertex>& verts, const std::vector<uint32_t>& indices){
     vk::DeviceSize vertexBufferSize = sizeof(Vertex) * verts.size();
     vk::DeviceSize indexBufferSize = sizeof(uint32_t) * indices.size();
-
-    vk::raii::Buffer stagingBuffer = nullptr;
-    vk::raii::DeviceMemory stagingBufferMemory = nullptr;
 
     VulkanMeshGpu meshGpuReturnStruct{};
     meshGpuReturnStruct.vertexCount = static_cast<uint32_t>(verts.size());
@@ -565,28 +765,25 @@ VulkanMeshGpu VulkanResources::uploadMesh(const std::vector<Vertex>& verts, cons
         return meshGpuReturnStruct;
     }
 
-    createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
+    auto& vertexStaging = createRetainedStagingBuffer(vertexBufferSize);
 
-    void* dataStaging = stagingBufferMemory.mapMemory(0, vertexBufferSize);
+    void* dataStaging = vertexStaging.memory.mapMemory(0, vertexBufferSize);
     memcpy(dataStaging, verts.data(), vertexBufferSize);
-    stagingBufferMemory.unmapMemory();
+    vertexStaging.memory.unmapMemory();
     createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, meshGpuReturnStruct.vertexBuffer, meshGpuReturnStruct.vertexBufferMemory);
 
-    copyBuffer(stagingBuffer, meshGpuReturnStruct.vertexBuffer, vertexBufferSize);
+    copyBuffer(vertexStaging.buffer, meshGpuReturnStruct.vertexBuffer, vertexBufferSize);
 
     if (!indices.empty()) {
-        stagingBuffer = nullptr;
-        stagingBufferMemory = nullptr;
+        auto& indexStaging = createRetainedStagingBuffer(indexBufferSize);
 
-        createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
-
-        void* data = stagingBufferMemory.mapMemory(0, indexBufferSize);
+        void* data = indexStaging.memory.mapMemory(0, indexBufferSize);
         memcpy(data, indices.data(), static_cast<size_t>(indexBufferSize));
-        stagingBufferMemory.unmapMemory();
+        indexStaging.memory.unmapMemory();
 
         createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, meshGpuReturnStruct.indexBuffer, meshGpuReturnStruct.indexBufferMemory);
 
-        copyBuffer(stagingBuffer, meshGpuReturnStruct.indexBuffer, indexBufferSize);
+        copyBuffer(indexStaging.buffer, meshGpuReturnStruct.indexBuffer, indexBufferSize);
     }
 
     meshGpuReturnStruct.indexCount = static_cast<uint32_t>(indices.size());
@@ -616,9 +813,6 @@ VulkanTextMeshGpu VulkanResources::uploadTextMesh(const std::vector<TextVertex>&
     vk::DeviceSize vertexBufferSize = sizeof(TextVertex) * verts.size();
     vk::DeviceSize indexBufferSize = sizeof(uint32_t) * indices.size();
 
-    vk::raii::Buffer stagingBuffer = nullptr;
-    vk::raii::DeviceMemory stagingBufferMemory = nullptr;
-
     VulkanTextMeshGpu meshGpuReturnStruct{};
     meshGpuReturnStruct.vertexCount = static_cast<uint32_t>(verts.size());
 
@@ -626,29 +820,25 @@ VulkanTextMeshGpu VulkanResources::uploadTextMesh(const std::vector<TextVertex>&
         return meshGpuReturnStruct;
     }
 
-    createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
+    auto& vertexStaging = createRetainedStagingBuffer(vertexBufferSize);
 
-    void* dataStaging = stagingBufferMemory.mapMemory(0, vertexBufferSize);
+    void* dataStaging = vertexStaging.memory.mapMemory(0, vertexBufferSize);
     memcpy(dataStaging, verts.data(), vertexBufferSize);
-    stagingBufferMemory.unmapMemory();
+    vertexStaging.memory.unmapMemory();
     createBuffer(vertexBufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, meshGpuReturnStruct.vertexBuffer, meshGpuReturnStruct.vertexBufferMemory);
 
-    copyBuffer(stagingBuffer, meshGpuReturnStruct.vertexBuffer, vertexBufferSize);
+    copyBuffer(vertexStaging.buffer, meshGpuReturnStruct.vertexBuffer, vertexBufferSize);
 
-    // Index buffer optional
     if (!indices.empty()) {
-        stagingBuffer = nullptr;
-        stagingBufferMemory = nullptr;
+        auto& indexStaging = createRetainedStagingBuffer(indexBufferSize);
 
-        createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
-
-        void* data = stagingBufferMemory.mapMemory(0, indexBufferSize);
+        void* data = indexStaging.memory.mapMemory(0, indexBufferSize);
         memcpy(data, indices.data(), static_cast<size_t>(indexBufferSize));
-        stagingBufferMemory.unmapMemory();
+        indexStaging.memory.unmapMemory();
 
         createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, meshGpuReturnStruct.indexBuffer, meshGpuReturnStruct.indexBufferMemory);
 
-        copyBuffer(stagingBuffer, meshGpuReturnStruct.indexBuffer, indexBufferSize);
+        copyBuffer(indexStaging.buffer, meshGpuReturnStruct.indexBuffer, indexBufferSize);
     }
 
     meshGpuReturnStruct.indexCount = static_cast<uint32_t>(indices.size());
@@ -677,34 +867,6 @@ void VulkanResources::clearMeshCache() {
 }
 
 
-std::unique_ptr<vk::raii::CommandBuffer> VulkanResources::beginSingleTimeCommands() {
-    vk::CommandBufferAllocateInfo allocInfo{};
-    allocInfo.commandPool = commandPool_;
-    allocInfo.level = vk::CommandBufferLevel::ePrimary;
-    allocInfo.commandBufferCount = 1;
-
-    std::unique_ptr<vk::raii::CommandBuffer> commandBuffer = std::make_unique<vk::raii::CommandBuffer>(std::move(vk::raii::CommandBuffers(device_->getDevice(), allocInfo).front()));
-
-    vk::CommandBufferBeginInfo beginInfo{};
-    beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    commandBuffer->begin(beginInfo);
-
-    return commandBuffer;
-}
-
-void VulkanResources::endSingleTimeCommands(vk::raii::CommandBuffer& commandBuffer) {
-    commandBuffer.end();
-
-    vk::SubmitInfo submitInfo{};
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &*commandBuffer;
-
-    device_->getQueue().submit(submitInfo, nullptr);
-    device_->getQueue().waitIdle();
-}
-
-
-
 uint32_t VulkanResources::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const {
     vk::PhysicalDeviceMemoryProperties memProperties = device_->getPhysicalDevice().getMemoryProperties();
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
@@ -714,6 +876,74 @@ uint32_t VulkanResources::findMemoryType(uint32_t typeFilter, vk::MemoryProperty
     }
 
     throw std::runtime_error("failed to find suitable memory type!");
+}
+
+bool VulkanResources::isInvalidCubemapPaths(const std::vector<std::string>& paths) const{
+    return paths.size() != 6 || paths.empty() ||
+           std::any_of(
+               paths.begin(),
+               paths.end(),
+               [](const std::string& path) {
+                    return path.empty();
+                });
+}
+
+const VulkanResources::VulkanTexture& VulkanResources::getDefaultCubemap(){
+    static const std::string fallbackKey = "__default_cubemap__";
+    if (auto it = cubemapCache_.find(fallbackKey); it != cubemapCache_.end()) {
+        return it->second;
+    }
+
+    VulkanTexture tex{};
+    constexpr uint32_t width = 1;
+    constexpr uint32_t height = 1;
+    tex.mipLevels = 1;
+
+    createCubemapImage(width, height, tex.mipLevels, tex.image, tex.memory);
+    transitionCubeMapLayout(tex.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, tex.mipLevels);
+
+    constexpr std::array<unsigned char, 4> blackPixel = {0, 0, 0, 255};
+    const vk::DeviceSize faceSize = static_cast<vk::DeviceSize>(blackPixel.size());
+
+    auto& staging = createRetainedStagingBuffer(faceSize);
+    void* data = staging.memory.mapMemory(0, faceSize);
+    memcpy(data, blackPixel.data(), static_cast<size_t>(faceSize));
+    staging.memory.unmapMemory();
+
+    for (uint32_t face = 0; face < 6; ++face) {
+        copyBufferToImageLayer(staging.buffer, tex.image, width, height, face);
+    }
+
+    transitionCubeMapLayout(tex.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, tex.mipLevels);
+    tex.view = createCubemapImageView(tex.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, tex.mipLevels);
+
+
+    vk::SamplerCreateInfo samplerInfo{};
+    samplerInfo.magFilter = vk::Filter::eLinear;
+    samplerInfo.minFilter = vk::Filter::eLinear;
+    samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+    samplerInfo.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+    samplerInfo.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = static_cast<float>(tex.mipLevels);
+    tex.sampler = vk::raii::Sampler(device_->getDevice(), samplerInfo);
+
+    auto [it, ok] = cubemapCache_.emplace(fallbackKey, std::move(tex));
+    return it->second;
+ 
+}
+
+std::string VulkanResources::makeCubemapCacheKey(const std::vector<std::string>& facePaths) const{
+    std::string key = "";
+    for (const auto& path : facePaths) {
+        key += path + ",";
+    }
+    return key;
 }
 
 vk::raii::CommandPool& VulkanResources::getCommandPool(){

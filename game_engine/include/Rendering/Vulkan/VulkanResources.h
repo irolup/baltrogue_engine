@@ -28,6 +28,7 @@ public:
 
     // Per-frame uniform buffers (one per swapchain image)
     void createUniformBuffers(vk::DeviceSize size);
+    void writeUniformBuffer(uint32_t index, const void* data, vk::DeviceSize size);
     vk::raii::Buffer& getUniformBuffer(uint32_t index);
     vk::raii::DeviceMemory& getUniformBufferMemory(uint32_t index);
     vk::DeviceSize getUniformBufferSize() const { return uniformBufferSize_; }
@@ -35,9 +36,15 @@ public:
     void createTextureImage(std::string texturePath);
     void createTextureImageView();
     void createTextureSampler();
-    vk::raii::ImageView createImageView(vk::Image const& image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels);
+    
     void createImage(uint32_t width, uint32_t height, uint32_t mipLevels, vk::SampleCountFlagBits numSamples, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage,
                      vk::MemoryPropertyFlags properties, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory);
+    vk::raii::ImageView createImageView(vk::Image const& image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels);                 
+
+    void createCubemapImage(uint32_t width, uint32_t height, uint32_t mipLevels, vk::raii::Image& image, vk::raii::DeviceMemory& imageMemory);
+    vk::raii::ImageView createCubemapImageView(vk::raii::Image& image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels);
+    void transitionCubeMapLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, uint32_t mipLevels);
+
 
     vk::Format findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features);
     vk::Format findDepthFormat();
@@ -46,7 +53,7 @@ public:
     
     void transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, uint32_t mipLevels);
     void copyBufferToImage(const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);
-    
+    void copyBufferToImageLayer(const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height, uint32_t layer);
     
     void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory) const;
     void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
@@ -61,12 +68,10 @@ public:
 
     void clearMeshCache();
 
+    void waitForUploads();
+
     uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 
-    std::unique_ptr<vk::raii::CommandBuffer> beginSingleTimeCommands();
-    void endSingleTimeCommands(vk::raii::CommandBuffer& commandBuffer);
-
-    
     vk::raii::CommandPool& getCommandPool();
     std::vector<vk::raii::CommandBuffer>& getCommandBuffers();
     vk::raii::Image& getColorImage();
@@ -86,6 +91,9 @@ public:
 
     const VulkanTexture& getOrCreateTexture(const std::string& path);
     const VulkanTexture& getOrCreateFontAtlasTexture( const std::vector<uint8_t>& atlasData, uint32_t width, uint32_t height, const std::string& key);
+    const VulkanTexture& getOrCreateCubemapTexture(const std::vector<std::string>& facePaths);
+    const VulkanTexture& getDefaultCubemapTexture();
+    std::string getCubemapCacheKey(const std::vector<std::string>& facePaths) const;
 
     struct MaterialBuffer {
         vk::raii::Buffer buffer{nullptr};
@@ -108,6 +116,7 @@ public:
 
     std::vector<vk::raii::Buffer> uniformBuffers_;
     std::vector<vk::raii::DeviceMemory> uniformBuffersMemory_;
+    std::vector<void*> uniformBuffersMapped_;
     vk::DeviceSize uniformBufferSize_ = 0;
 
 private:
@@ -115,8 +124,23 @@ private:
     VulkanSwapChain* swapChain_ = nullptr;
 
     vk::raii::CommandPool commandPool_ = nullptr;
+    vk::raii::CommandBuffer uploadCommandBuffer_{nullptr};
+    vk::raii::Fence uploadFence_{nullptr};
+    bool uploadBatchActive_ = false;
+    bool uploadInFlight_ = false;
     std::vector<vk::raii::CommandBuffer> commandBuffers_;
     std::vector<vk::raii::CommandBuffer> computeCommandBuffers_;
+
+    void ensureUploadResources();
+    vk::raii::CommandBuffer& getUploadCommandBuffer();
+    void flushUploads();
+
+    struct RetainedStagingBuffer {
+        vk::raii::Buffer buffer{nullptr};
+        vk::raii::DeviceMemory memory{nullptr};
+    };
+    std::vector<RetainedStagingBuffer> uploadStagingRetention_;
+    RetainedStagingBuffer& createRetainedStagingBuffer(vk::DeviceSize size);
 
     vk::raii::Image colorImage_ = nullptr;
     vk::raii::DeviceMemory colorImageMemory_ = nullptr;
@@ -136,8 +160,12 @@ private:
     std::unordered_map<const TextComponent*, VulkanTextMeshGpu> textMeshCache_;
     std::unordered_map<std::string, VulkanTexture> textureCache_;
     std::unordered_map<std::string, VulkanTexture> fontTextureCache_;
+    std::unordered_map<std::string, VulkanTexture> cubemapCache_;
     std::unordered_map<const Material*, MaterialBuffer> materialUniformBuffers_;
     std::unordered_map<const TextMaterial*, TextMaterialBuffer> textMaterialUniformBuffers_;
 
+    bool isInvalidCubemapPaths(const std::vector<std::string>& paths) const;
+    const VulkanTexture& getDefaultCubemap();
+    std::string makeCubemapCacheKey(const std::vector<std::string>& facePaths) const;
 };
 }

@@ -29,7 +29,8 @@ public:
 
     vk::DescriptorSet getDescriptorSet(uint32_t index);
     void recreateDescriptorSets();
-    vk::DescriptorSet getOrCreateMaterialDescriptorSet(const Material* materialKey, const VulkanResources::VulkanTexture& tex);
+    vk::DescriptorSet getOrCreateMaterialDescriptorSet(const Material* materialKey);
+    vk::DescriptorSet getOrUpdateEnvironmentDescriptorSet( const FrameEnvironment& env, const VulkanResources::VulkanTexture& cubemap);
     vk::DescriptorSet getOrCreateTextDescriptorSet(const TextMaterial* material, const VulkanResources::VulkanTexture& atlasTexture);
 
 private:
@@ -58,6 +59,7 @@ private:
     //Owner
     vk::raii::DescriptorSetLayout frameDescriptorSetLayout_ = nullptr;
     vk::raii::DescriptorSetLayout materialDescriptorSetLayout_ = nullptr;
+    vk::raii::DescriptorSetLayout environmentDescriptorSetLayout_ = nullptr;
     vk::raii::DescriptorSetLayout textDescriptorSetLayout_ = nullptr;
 
     vk::raii::PipelineLayout pipelineLayout_ = nullptr;
@@ -72,6 +74,8 @@ private:
     std::vector<vk::raii::DescriptorSet> descriptorSets_;
     std::unordered_map<const Material*, std::unique_ptr<vk::raii::DescriptorSet>> materialDescriptorSets_;
     std::unordered_map<const TextMaterial*, std::unique_ptr<vk::raii::DescriptorSet>> textMaterialDescriptorSets_;
+    std::unique_ptr<vk::raii::DescriptorSet> environmentDescriptorSet_;
+    std::string currentEnvironmentKey_;
 
     void createDescriptorPoolAndSets();
 };

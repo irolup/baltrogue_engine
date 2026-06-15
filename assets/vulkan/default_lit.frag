@@ -20,16 +20,16 @@ layout(std140, set = 0, binding = 0) uniform FrameUniforms {
     mat4 proj;
     vec4 cameraPosition;
     int numLights;
-    int _pad0, _pad1, _pad2;
+    int hasEnvironmentMap;
+    int _pad1, _pad2;
     Light lights[16];
 } uFrame;
 
 layout(set = 1, binding = 0) uniform sampler2D uDiffuseTexture;
 layout(set = 1, binding = 1) uniform sampler2D uNormalTexture;
 layout(set = 1, binding = 2) uniform sampler2D uARMTexture;
-layout(set = 1, binding = 3) uniform sampler2D uEnvironmentTexture;
 
-layout(std140, set = 1, binding = 4) uniform MaterialUniforms {
+layout(std140, set = 1, binding = 3) uniform MaterialUniforms {
     vec4 baseColor;
     float roughness;
     float metallic;
@@ -37,6 +37,8 @@ layout(std140, set = 1, binding = 4) uniform MaterialUniforms {
     float padding;
     vec4 textureFlags;
 } uMaterial;
+
+layout(set = 2, binding = 0) uniform samplerCube uEnvironmentMap;
 
 layout(push_constant) uniform PushConstants {
     mat4 model;
@@ -327,14 +329,10 @@ void main() {
     vec3 color = ambient + result * albedo;
     //vec3 color = result * albedo;
 
-    if (uMaterial.textureFlags.w > 0.5 && uMaterial.reflectionStrength > 0.0) {
-        vec3 viewDir = normalize(uFrame.cameraPosition.xyz - inWorldPos);
-        vec3 reflectionDir = reflect(-viewDir, normalize(normal));
-        vec2 envUV = vec2(
-            atan(reflectionDir.z, reflectionDir.x) / (2.0 * PI) + 0.5,
-            reflectionDir.y * 0.5 + 0.5
-        );
-        vec3 environmentColor = texture(uEnvironmentTexture, envUV).rgb;
+    if (uFrame.hasEnvironmentMap != 0 && uMaterial.reflectionStrength > 0.0) {
+        vec3 I = normalize(inWorldPos - uFrame.cameraPosition.xyz);
+        vec3 R = reflect(I, normal);
+        vec3 environmentColor = texture(uEnvironmentMap, R).rgb;
         color = mix(color, environmentColor, clamp(uMaterial.reflectionStrength, 0.0, 1.0));
     }
 

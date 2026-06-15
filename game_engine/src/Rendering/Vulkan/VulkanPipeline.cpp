@@ -38,18 +38,26 @@ void VulkanPipeline::createDescriptorSetLayout() {
     frameLayoutInfo.pBindings = frameBindings.data();
     frameDescriptorSetLayout_ = vk::raii::DescriptorSetLayout(device_->getDevice(), frameLayoutInfo);
 
-    // Material descriptor layout: binding 0 = diffuse, 1 = normal, 2 = ARM, 3 = environment, 4 = material UBO
+    // Material descriptor layout: binding 0 = diffuse, 1 = normal, 2 = ARM, 3 = material UBO
     std::array materialBindings = {
         vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr),
         vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr),
         vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr),
-        vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr),
-        vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment, nullptr)
+        vk::DescriptorSetLayoutBinding(3, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment, nullptr)
     };
     vk::DescriptorSetLayoutCreateInfo materialLayoutInfo{};
     materialLayoutInfo.bindingCount = static_cast<uint32_t>(materialBindings.size());
     materialLayoutInfo.pBindings = materialBindings.data();
     materialDescriptorSetLayout_ = vk::raii::DescriptorSetLayout(device_->getDevice(), materialLayoutInfo);
+
+    // Environment descriptor layout: binding 0 = skybox cubemap (shared per frame)
+    std::array environmentBindings = {
+        vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr)
+    };
+    vk::DescriptorSetLayoutCreateInfo environmentLayoutInfo{};
+    environmentLayoutInfo.bindingCount = static_cast<uint32_t>(environmentBindings.size());
+    environmentLayoutInfo.pBindings = environmentBindings.data();
+    environmentDescriptorSetLayout_ = vk::raii::DescriptorSetLayout(device_->getDevice(), environmentLayoutInfo);
 }
 
 void VulkanPipeline::createTextDescriptorSetLayout() {
@@ -69,21 +77,23 @@ void VulkanPipeline::createDescriptorPoolAndSets() {
     // create pool for uniform buffers (one per swapchain image)
     uint32_t imageCount = static_cast<uint32_t>(swapChain_->getImages().size());
     uint32_t materialDescriptorCapacity = std::max<uint32_t>(imageCount * 64, imageCount);
-    // Reserve uniform buffers for frame UBOs + material UBOs
+    // Reserve uniform buffers for frame UBOs + material UBOs + one environment set
     std::array poolSizes = {
         vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, imageCount + materialDescriptorCapacity),
-        vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, materialDescriptorCapacity * 4)
+        vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, materialDescriptorCapacity * 3 + 1)
     };
 
     vk::DescriptorPoolCreateInfo poolInfo{};
     poolInfo.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
-    poolInfo.maxSets = imageCount + materialDescriptorCapacity;
+    poolInfo.maxSets = imageCount + materialDescriptorCapacity + 1;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
 
     materialDescriptorSets_.clear();
     textMaterialDescriptorSets_.clear();
     descriptorSets_.clear();
+    environmentDescriptorSet_.reset();
+    currentEnvironmentKey_.clear();
     descriptorPool_ = vk::raii::DescriptorPool(device_->getDevice(), poolInfo);
 
     // allocate descriptor sets
@@ -116,7 +126,7 @@ void VulkanPipeline::createDescriptorPoolAndSets() {
     }
 }
 
-vk::DescriptorSet VulkanPipeline::getOrCreateMaterialDescriptorSet(const Material* material, const VulkanResources::VulkanTexture& tex) {
+vk::DescriptorSet VulkanPipeline::getOrCreateMaterialDescriptorSet(const Material* material) {
     auto it = materialDescriptorSets_.find(material);
     if (it != materialDescriptorSets_.end()) return *it->second;
 
@@ -140,26 +150,26 @@ vk::DescriptorSet VulkanPipeline::getOrCreateMaterialDescriptorSet(const Materia
             material->hasDiffuseTexture() ? 1.0f : 0.0f,
             material->hasNormalTexture() ? 1.0f : 0.0f,
             material->hasARMTexture() ? 1.0f : 0.0f,
-            material->hasEnvironmentTexture() ? 1.0f : 0.0f);
+            0.0f);
         resources_->ensureMaterialUniformBuffer(material, mu);
     }
 
-    vk::DescriptorImageInfo diffuseInfo{};
-    diffuseInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-    diffuseInfo.imageView = *tex.view;
-    diffuseInfo.sampler = *tex.sampler;
-
     const auto& defaultTexture = resources_->getOrCreateTexture("");
 
+    const auto& diffuseTexture = (material && material->hasDiffuseTexture())
+        ? resources_->getOrCreateTexture(material->getDiffuseTexturePath())
+        : defaultTexture;
     const auto& normalTexture = (material && material->hasNormalTexture())
         ? resources_->getOrCreateTexture(material->getNormalTexturePath())
         : defaultTexture;
     const auto& armTexture = (material && material->hasARMTexture())
         ? resources_->getOrCreateTexture(material->getARMTexturePath())
         : defaultTexture;
-    const auto& environmentTexture = (material && material->hasEnvironmentTexture())
-        ? resources_->getOrCreateTexture(material->getEnvironmentTexturePath())
-        : defaultTexture;
+
+    vk::DescriptorImageInfo diffuseInfo{};
+    diffuseInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    diffuseInfo.imageView = *diffuseTexture.view;
+    diffuseInfo.sampler = *diffuseTexture.sampler;
 
     vk::DescriptorImageInfo normalInfo{};
     normalInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -171,14 +181,9 @@ vk::DescriptorSet VulkanPipeline::getOrCreateMaterialDescriptorSet(const Materia
     armInfo.imageView = *armTexture.view;
     armInfo.sampler = *armTexture.sampler;
 
-    vk::DescriptorImageInfo environmentInfo{};
-    environmentInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-    environmentInfo.imageView = *environmentTexture.view;
-    environmentInfo.sampler = *environmentTexture.sampler;
-
     vk::DescriptorBufferInfo bufferInfo = resources_->getMaterialDescriptorBufferInfo(material);
 
-    std::array<vk::WriteDescriptorSet, 5> writes{};
+    std::array<vk::WriteDescriptorSet, 4> writes{};
 
     writes[0].dstSet = *set;
     writes[0].dstBinding = 0;
@@ -204,21 +209,48 @@ vk::DescriptorSet VulkanPipeline::getOrCreateMaterialDescriptorSet(const Materia
     writes[3].dstSet = *set;
     writes[3].dstBinding = 3;
     writes[3].dstArrayElement = 0;
-    writes[3].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    writes[3].descriptorType = vk::DescriptorType::eUniformBuffer;
     writes[3].descriptorCount = 1;
-    writes[3].pImageInfo = &environmentInfo;
+    writes[3].pBufferInfo = &bufferInfo;
 
-    writes[4].dstSet = *set;
-    writes[4].dstBinding = 4;
-    writes[4].dstArrayElement = 0;
-    writes[4].descriptorType = vk::DescriptorType::eUniformBuffer;
-    writes[4].descriptorCount = 1;
-    writes[4].pBufferInfo = &bufferInfo;
-
-    device_->getDevice().updateDescriptorSets({writes[0], writes[1], writes[2], writes[3], writes[4]}, {});
+    device_->getDevice().updateDescriptorSets(writes, {});
 
     materialDescriptorSets_.emplace(material, std::make_unique<vk::raii::DescriptorSet>(std::move(set)));
     return *materialDescriptorSets_[material].get();
+}
+
+vk::DescriptorSet VulkanPipeline::getOrUpdateEnvironmentDescriptorSet( const FrameEnvironment& env, const VulkanResources::VulkanTexture& cubemap){
+    if (!environmentDescriptorSet_) {
+        vk::DescriptorSetAllocateInfo allocInfo{};
+        allocInfo.descriptorPool = *descriptorPool_;
+        vk::DescriptorSetLayout layout = *environmentDescriptorSetLayout_;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = &layout;
+
+        auto sets = device_->getDevice().allocateDescriptorSets(allocInfo);
+        environmentDescriptorSet_ = std::make_unique<vk::raii::DescriptorSet>(std::move(sets.front()));
+        currentEnvironmentKey_.clear();
+    }
+
+    if (env.cacheKey != currentEnvironmentKey_) {
+        vk::DescriptorImageInfo cubemapInfo{};
+        cubemapInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        cubemapInfo.imageView = *cubemap.view;
+        cubemapInfo.sampler = *cubemap.sampler;
+
+        vk::WriteDescriptorSet write{};
+        write.dstSet = **environmentDescriptorSet_;
+        write.dstBinding = 0;
+        write.dstArrayElement = 0;
+        write.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+        write.descriptorCount = 1;
+        write.pImageInfo = &cubemapInfo;
+
+        device_->getDevice().updateDescriptorSets({write}, {});
+        currentEnvironmentKey_ = env.cacheKey;
+    }
+
+    return **environmentDescriptorSet_;
 }
 
 vk::DescriptorSet VulkanPipeline::getOrCreateTextDescriptorSet(const TextMaterial* material, const VulkanResources::VulkanTexture& atlasTexture){
@@ -345,7 +377,11 @@ void VulkanPipeline::createGraphicsPipeline() {
     //pushConstant.size = sizeof(glm::mat4);
     pushConstant.size = sizeof(PushConstants);
 
-    std::array<const vk::DescriptorSetLayout, 2> setLayouts = { *frameDescriptorSetLayout_, *materialDescriptorSetLayout_ };
+    std::array<const vk::DescriptorSetLayout, 3> setLayouts = {
+        *frameDescriptorSetLayout_,
+        *materialDescriptorSetLayout_,
+        *environmentDescriptorSetLayout_
+    };
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
     pipelineLayoutInfo.pSetLayouts = setLayouts.data();

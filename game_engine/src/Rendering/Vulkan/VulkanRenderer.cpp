@@ -1,12 +1,14 @@
 #include "Rendering/Vulkan/VulkanRenderer.h"
 #include "Scene/Scene.h"
 #include "Components/CameraComponent.h"
+#include "Components/SkyboxComponent.h"
 #include "Rendering/LightingManager.h"
 #include "Rendering/Material.h"
 #include "Rendering/TextMaterial.h"
 #include "Rendering/FontManager.h"
+#include "Rendering/Shader.h"
+#include <algorithm>
 #include <limits>
-#include <iostream>
 
 namespace GameEngine {
 
@@ -21,6 +23,7 @@ void VulkanRenderer::beginFrame() {
     if (!device_ || !swapChain_) return;
     renderQueue.clear();
     textRenderQueue.clear();
+    stats.reset();
 }
 
 void VulkanRenderer::renderScene(Scene& scene) {
@@ -40,9 +43,9 @@ void VulkanRenderer::renderFromCamera(Scene& scene, CameraComponent* cam, const 
     ubo.proj = cam->getProjectionMatrix();
     glm::vec3 camPos = extractCameraPosition(ubo.view);
     ubo.cameraPosition = glm::vec4(camPos, 0.0f);
-    
+
     auto& lightingManager = LightingManager::getInstance();
-    lightingManager.update(); //remove light if not enabled
+    lightingManager.update();
 
     ubo.numLights = static_cast<int32_t>(lightingManager.getActiveLightCount());
     auto lightData = lightingManager.getLightDataArray();
@@ -54,20 +57,39 @@ void VulkanRenderer::renderFromCamera(Scene& scene, CameraComponent* cam, const 
         ubo.lights[i].attenuation = lightData[i].attenuation;
     }
 
-    // Map and copy to uniform buffer for current image
+    resolveFrameEnvironment(scene);
+    ubo.hasEnvironmentMap = frameEnvironment_.active ? 1 : 0;
+
+    updateFrustum(ubo.view, ubo.proj);
+
     if (resources_->getUniformBufferSize() > 0) {
-        auto& mem = resources_->getUniformBufferMemory(currentImageIndex);
-        void* data = mem.mapMemory(0, resources_->getUniformBufferSize());
-        memcpy(data, &ubo, static_cast<size_t>(resources_->getUniformBufferSize()));
-        mem.unmapMemory();
+        resources_->writeUniformBuffer(
+            currentImageIndex,
+            &ubo,
+            resources_->getUniformBufferSize());
     }
 
     if (auto root = scene.getRootNode()) {
         root->render(*this);
     }
+
+    prepareRenderResources();
 }
 
 void VulkanRenderer::recordRenderCommands(vk::CommandBuffer cmdBuf, uint32_t imageIndex) {
+    if (!environmentCubemap_ || !pipeline_) {
+        return;
+    }
+
+    vk::DescriptorSet environmentSet = pipeline_->getOrUpdateEnvironmentDescriptorSet(
+        frameEnvironment_, *environmentCubemap_);
+    cmdBuf.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        *pipeline_->getGraphicsPipelineLayout(),
+        static_cast<uint32_t>(SET_ENVIRONMENT),
+        {environmentSet},
+        {});
+
     for (const auto& rc : renderQueue) {
         if (!rc.mesh) continue;
         const Mesh& mesh = *rc.mesh;
@@ -85,11 +107,14 @@ void VulkanRenderer::recordRenderCommands(vk::CommandBuffer cmdBuf, uint32_t ima
             cmdBuf.bindIndexBuffer(static_cast<vk::Buffer>(*vulkanMesh.indexBuffer), 0, vk::IndexType::eUint32);
         }
 
-        // Bind material descriptor set (set 1)
         if (rc.material) {
-            const auto& diffuseTex = resources_->getOrCreateTexture(rc.material->hasDiffuseTexture() ? rc.material->getDiffuseTexturePath() : std::string(""));
-            vk::DescriptorSet matSet = pipeline_->getOrCreateMaterialDescriptorSet(rc.material.get(), diffuseTex);
-            cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipeline_->getGraphicsPipelineLayout(), 1, {matSet}, {});
+            vk::DescriptorSet matSet = pipeline_->getOrCreateMaterialDescriptorSet(rc.material.get());
+            cmdBuf.bindDescriptorSets(
+                vk::PipelineBindPoint::eGraphics,
+                *pipeline_->getGraphicsPipelineLayout(),
+                static_cast<uint32_t>(SET_MATERIAL),
+                {matSet},
+                {});
         }
 
         auto layout = *pipeline_->getGraphicsPipelineLayout();
@@ -102,17 +127,19 @@ void VulkanRenderer::recordRenderCommands(vk::CommandBuffer cmdBuf, uint32_t ima
             vk::ShaderStageFlagBits::eFragment,
             0,
             sizeof(PushConstants),
-            &push
-        );
+            &push);
 
-
-        // Draw indexed when available, otherwise draw as a non-indexed mesh.
         if (vulkanMesh.indexCount > 0) {
             cmdBuf.drawIndexed(vulkanMesh.indexCount, 1, 0, 0, 0);
         } else {
             cmdBuf.draw(vulkanMesh.vertexCount, 1, 0, 0);
         }
+
+        stats.drawCalls++;
+        stats.triangles += static_cast<int>(mesh.getTriangleCount());
+        stats.vertices += static_cast<int>(mesh.getVertexCount());
     }
+
     if (!textRenderQueue.empty()) {
         cmdBuf.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline_->getTextPipeline());
         cmdBuf.bindDescriptorSets(
@@ -133,14 +160,11 @@ void VulkanRenderer::recordRenderCommands(vk::CommandBuffer cmdBuf, uint32_t ima
             }
         }
     }
-
 }
 
 void VulkanRenderer::recordTextRenderCommand(vk::CommandBuffer cmdBuf, const TextRenderCommand& tc){
     if (!tc.mesh && !tc.textComponent)
         return;
-
-    (void)cmdBuf; (void)tc;
 
     uint32_t vertexCount = 0;
     uint32_t indexCount  = 0;
@@ -149,8 +173,6 @@ void VulkanRenderer::recordTextRenderCommand(vk::CommandBuffer cmdBuf, const Tex
     {
         const VulkanTextMeshGpu& textGpu =
             resources_->getOrUploadTextMesh(*tc.textComponent);
-
-        (void)textGpu;
 
         if (textGpu.vertexCount == 0)
             return;
@@ -170,7 +192,6 @@ void VulkanRenderer::recordTextRenderCommand(vk::CommandBuffer cmdBuf, const Tex
 
         vertexCount = textGpu.vertexCount;
         indexCount  = textGpu.indexCount;
-
     }
     else
     {
@@ -222,8 +243,6 @@ void VulkanRenderer::recordTextRenderCommand(vk::CommandBuffer cmdBuf, const Tex
     PushConstants push{};
     push.modelMatrix = tc.modelMatrix;
 
-    (void)vertexCount; (void)indexCount;
-
     cmdBuf.pushConstants(
         *pipeline_->getTextPipelineLayout(),
         vk::ShaderStageFlagBits::eVertex |
@@ -242,9 +261,8 @@ void VulkanRenderer::recordTextRenderCommand(vk::CommandBuffer cmdBuf, const Tex
     }
 }
 
-
 void VulkanRenderer::endFrame() {
-    // Presentation is handled by VulkanFrame renderer does not present here.
+    // Presentation is handled by VulkanFrame; renderer does not present here.
 }
 
 void VulkanRenderer::submitRenderCommand(const RenderCommand& command) {
@@ -265,6 +283,181 @@ void VulkanRenderer::renderMesh(const Mesh& mesh, const Material& material, cons
 
 void VulkanRenderer::updateLightingUniforms(){
     LightingManager::getInstance().update();
+}
+
+void VulkanRenderer::resolveFrameEnvironment(Scene& scene) {
+    static constexpr const char* kDefaultCubemapCacheKey = "__default_cubemap__";
+
+    frameEnvironment_.active = false;
+    frameEnvironment_.cacheKey = kDefaultCubemapCacheKey;
+    environmentCubemap_ = &resources_->getDefaultCubemapTexture();
+
+    if (auto node = scene.getActiveSkybox()) {
+        if (auto* skybox = node->getComponent<SkyboxComponent>(); skybox && skybox->isActive()) {
+            const auto& paths = skybox->getTexturePaths();
+            environmentCubemap_ = &resources_->getOrCreateCubemapTexture(paths);
+            frameEnvironment_.cacheKey = resources_->getCubemapCacheKey(paths);
+            frameEnvironment_.active = true;
+        }
+    }
+}
+
+void VulkanRenderer::prepareRenderResources() {
+    sortRenderQueue();
+    cullRenderQueue();
+
+    for (const auto& rc : renderQueue) {
+        if (rc.mesh) {
+            resources_->getOrUploadMesh(*rc.mesh);
+        }
+        if (rc.material) {
+            pipeline_->getOrCreateMaterialDescriptorSet(rc.material.get());
+        }
+    }
+
+    for (const auto& tc : textRenderQueue) {
+        if (tc.textComponent) {
+            resources_->getOrUploadTextMesh(*tc.textComponent);
+        } else if (tc.mesh) {
+            resources_->getOrUploadMesh(*tc.mesh);
+        }
+        if (tc.material && tc.material->getFontAtlas()) {
+            const auto& atlas = tc.material->getFontAtlas();
+            const auto& atlasTex = resources_->getOrCreateFontAtlasTexture(
+                atlas->atlasData,
+                atlas->atlasWidth,
+                atlas->atlasHeight,
+                atlas->cacheKey);
+            pipeline_->getOrCreateTextDescriptorSet(tc.material.get(), atlasTex);
+        }
+    }
+
+    resources_->waitForUploads();
+}
+
+void VulkanRenderer::sortRenderQueue() {
+    std::sort(renderQueue.begin(), renderQueue.end(),
+        [](const RenderCommand& a, const RenderCommand& b) {
+            if (!a.material && !b.material) return false;
+            if (!a.material) return false;
+            if (!b.material) return true;
+            const bool aOpaque = (a.material->getBlendMode() == BlendMode::Opaque);
+            const bool bOpaque = (b.material->getBlendMode() == BlendMode::Opaque);
+            if (aOpaque != bOpaque) {
+                return aOpaque;
+            }
+            const auto shaderA = a.material->getShader();
+            const auto shaderB = b.material->getShader();
+            if (shaderA != shaderB) {
+                return shaderA.get() < shaderB.get();
+            }
+            return a.material.get() < b.material.get();
+        });
+}
+
+void VulkanRenderer::cullRenderQueue() {
+    if (!frustumCullingEnabled_ || !activeCamera) {
+        return;
+    }
+
+    renderQueue.erase(
+        std::remove_if(renderQueue.begin(), renderQueue.end(),
+            [this](const RenderCommand& command) {
+                if (!command.mesh || command.isBeam) {
+                    return false;
+                }
+
+                const glm::vec3 boundsMin = command.mesh->getBoundsMin();
+                const glm::vec3 boundsMax = command.mesh->getBoundsMax();
+                bool boundsValid = (boundsMin.x < boundsMax.x && boundsMin.y < boundsMax.y && boundsMin.z < boundsMax.z);
+
+                if (boundsValid) {
+                    const float maxVal = std::numeric_limits<float>::max();
+                    const float minVal = std::numeric_limits<float>::lowest();
+                    if (boundsMin.x > maxVal * 0.1f || boundsMax.x < minVal * 0.1f) {
+                        boundsValid = false;
+                    }
+                }
+
+                if (!boundsValid) {
+                    return false;
+                }
+
+                stats.totalObjectsTested++;
+                if (!isAABBInFrustum(boundsMin, boundsMax, command.modelMatrix)) {
+                    stats.culledObjects++;
+                    return true;
+                }
+                return false;
+            }),
+        renderQueue.end());
+}
+
+void VulkanRenderer::updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
+    if (!activeCamera) {
+        return;
+    }
+
+    const glm::mat4 viewProj = projectionMatrix * viewMatrix;
+
+    frustumPlanes_[0].normal = glm::vec3(viewProj[0][3] + viewProj[0][0], viewProj[1][3] + viewProj[1][0], viewProj[2][3] + viewProj[2][0]);
+    frustumPlanes_[0].distance = viewProj[3][3] + viewProj[3][0];
+
+    frustumPlanes_[1].normal = glm::vec3(viewProj[0][3] - viewProj[0][0], viewProj[1][3] - viewProj[1][0], viewProj[2][3] - viewProj[2][0]);
+    frustumPlanes_[1].distance = viewProj[3][3] - viewProj[3][0];
+
+    frustumPlanes_[2].normal = glm::vec3(viewProj[0][3] + viewProj[0][1], viewProj[1][3] + viewProj[1][1], viewProj[2][3] + viewProj[2][1]);
+    frustumPlanes_[2].distance = viewProj[3][3] + viewProj[3][1];
+
+    frustumPlanes_[3].normal = glm::vec3(viewProj[0][3] - viewProj[0][1], viewProj[1][3] - viewProj[1][1], viewProj[2][3] - viewProj[2][1]);
+    frustumPlanes_[3].distance = viewProj[3][3] - viewProj[3][1];
+
+    frustumPlanes_[4].normal = glm::vec3(viewProj[0][3] + viewProj[0][2], viewProj[1][3] + viewProj[1][2], viewProj[2][3] + viewProj[2][2]);
+    frustumPlanes_[4].distance = viewProj[3][3] + viewProj[3][2];
+
+    frustumPlanes_[5].normal = glm::vec3(viewProj[0][3] - viewProj[0][2], viewProj[1][3] - viewProj[1][2], viewProj[2][3] - viewProj[2][2]);
+    frustumPlanes_[5].distance = viewProj[3][3] - viewProj[3][2];
+
+    constexpr float epsilon = 0.0001f;
+    for (auto& plane : frustumPlanes_) {
+        const float length = glm::length(plane.normal);
+        if (length > epsilon) {
+            plane.normal /= length;
+            plane.distance /= length;
+        }
+    }
+}
+
+bool VulkanRenderer::isAABBInFrustum(const glm::vec3& min, const glm::vec3& max, const glm::mat4& transform) const {
+    if (min.x >= max.x || min.y >= max.y || min.z >= max.z) {
+        return true;
+    }
+
+    glm::vec3 corners[8] = {
+        glm::vec3(transform * glm::vec4(min.x, min.y, min.z, 1.0f)),
+        glm::vec3(transform * glm::vec4(max.x, min.y, min.z, 1.0f)),
+        glm::vec3(transform * glm::vec4(min.x, max.y, min.z, 1.0f)),
+        glm::vec3(transform * glm::vec4(max.x, max.y, min.z, 1.0f)),
+        glm::vec3(transform * glm::vec4(min.x, min.y, max.z, 1.0f)),
+        glm::vec3(transform * glm::vec4(max.x, min.y, max.z, 1.0f)),
+        glm::vec3(transform * glm::vec4(min.x, max.y, max.z, 1.0f)),
+        glm::vec3(transform * glm::vec4(max.x, max.y, max.z, 1.0f)),
+    };
+
+    for (const auto& plane : frustumPlanes_) {
+        bool inside = false;
+        constexpr float margin = -0.1f;
+        for (const auto& corner : corners) {
+            if (glm::dot(plane.normal, corner) + plane.distance > margin) {
+                inside = true;
+                break;
+            }
+        }
+        if (!inside) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }

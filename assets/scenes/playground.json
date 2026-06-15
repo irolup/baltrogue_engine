@@ -1789,7 +1789,7 @@
                     0.20000000298023224
                   ],
                   "metallic": 0.0,
-                  "reflectionStrength": 0.0,
+                  "reflectionStrength": 1.0,
                   "roughness": 0.5
                 },
                 "meshType": "CUBE",

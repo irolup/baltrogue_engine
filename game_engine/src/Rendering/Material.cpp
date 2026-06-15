@@ -435,27 +435,6 @@ void Material::drawInspector() {
             }
             ImGui::EndCombo();
         }
-
-        if (ImGui::BeginCombo("Environment Texture", environmentTexture ? "Loaded" : "None")) {
-            if (ImGui::Selectable("None", !environmentTexture)) {
-                setEnvironmentTexture(nullptr);
-            }
-
-            auto& textureManager = TextureManager::getInstance();
-            auto availableTextures = textureManager.getAvailableTextures();
-
-            for (const auto& texturePath : availableTextures) {
-                if (texturePath.find("env") != std::string::npos ||
-                    texturePath.find("sky") != std::string::npos ||
-                    texturePath.find("reflection") != std::string::npos) {
-                    if (ImGui::Selectable(texturePath.c_str(), environmentTexture && texturePath == environmentTexturePath)) {
-                        auto texture = textureManager.getTexture(texturePath);
-                        setEnvironmentTexture(texture, texturePath);
-                    }
-                }
-            }
-            ImGui::EndCombo();
-        }
         
         if (ImGui::BeginCombo("ARM Texture", armTexture ? "Loaded" : "None")) {
             if (ImGui::Selectable("None", !armTexture)) {

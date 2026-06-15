@@ -6,6 +6,8 @@
 #include "Rendering/Vulkan/VulkanResources.h"
 #include "Rendering/Vulkan/VulkanPipeline.h"
 
+#include <array>
+
 namespace GameEngine {
 
 class VulkanRenderer : public IRenderer {
@@ -51,8 +53,8 @@ public:
     void setWireframe(bool enabled) override {}
     void setDepthTest(bool enabled) override {}
     void setCullFace(bool enabled) override {}
-    void setFrustumCulling(bool enabled) override {}
-    bool isFrustumCullingEnabled() const override { return false; }
+    void setFrustumCulling(bool enabled) override { frustumCullingEnabled_ = enabled; }
+    bool isFrustumCullingEnabled() const override { return frustumCullingEnabled_; }
 
     void updateLightingUniforms() override;
     glm::vec3 extractCameraPosition(const glm::mat4& viewMatrix) override { return glm::vec3(glm::inverse(viewMatrix)[3]); }
@@ -63,6 +65,18 @@ public:
     void create(VulkanDevice* device, VulkanSwapChain* swapchain, VulkanResources* resources, VulkanPipeline* pipeline);
 
 private:
+    struct FrustumPlane {
+        glm::vec3 normal{0.0f};
+        float distance = 0.0f;
+    };
+
+    void resolveFrameEnvironment(Scene& scene);
+    void prepareRenderResources();
+    void sortRenderQueue();
+    void cullRenderQueue();
+    void updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
+    bool isAABBInFrustum(const glm::vec3& min, const glm::vec3& max, const glm::mat4& transform) const;
+
     VulkanDevice* device_ = nullptr;
     VulkanSwapChain* swapChain_ = nullptr;
     VulkanResources* resources_ = nullptr;
@@ -70,6 +84,10 @@ private:
 
     uint32_t currentImageIndex = 0;
     CameraComponent* activeCamera = nullptr;
+    FrameEnvironment frameEnvironment_;
+    const VulkanResources::VulkanTexture* environmentCubemap_ = nullptr;
+    bool frustumCullingEnabled_ = true;
+    std::array<FrustumPlane, 6> frustumPlanes_{};
     RenderStats stats;
 };
 

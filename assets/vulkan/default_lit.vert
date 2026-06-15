@@ -20,7 +20,8 @@ layout(std140, set = 0, binding = 0) uniform FrameUniforms {
     mat4 proj;
     vec4 cameraPosition;
     int numLights;
-    int _pad0, _pad1, _pad2;
+    int hasEnvironmentMap;
+    int _pad1, _pad2;
     Light lights[16];
 } uFrame;
 

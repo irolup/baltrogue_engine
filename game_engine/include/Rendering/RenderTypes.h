@@ -57,14 +57,21 @@ struct PerFrameUniforms {
     glm::mat4 proj; //Offset 64
     glm::vec4 cameraPosition; //Offset 128 
     int32_t numLights; // offset 144
-    int32_t _pad0, _pad1, _pad2; // offset 148–156 (std140 alignment)
+    int32_t hasEnvironmentMap; // offset 148, 1 when active skybox cubemap is bound
+    int32_t _pad1, _pad2; // offset 152–156 (std140 alignment)
     std::array<GpuLight, 16> lights; //Offset 160 needed to be a multiple of 8 for array for std140
 };
 
 enum DescriptorSetIndex : uint32_t {
     SET_FRAME = 0,
     SET_MATERIAL = 1,
-    SET_ANIMATION = 2
+    SET_ENVIRONMENT = 2,
+    SET_ANIMATION = 3
+};
+
+struct FrameEnvironment {
+    bool active = false;
+    std::string cacheKey;
 };
 
 struct MaterialUniforms {
