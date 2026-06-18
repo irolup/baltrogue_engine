@@ -3,6 +3,8 @@
 #include "../../vendor/tinygltf/stb_image.h"
 #include <stdexcept>
 #include <iostream>
+#include <vector>
+#include <filesystem>
 
 namespace GameEngine {
 
@@ -288,6 +290,134 @@ void VulkanResources::createTextureImage(std::string texturePath) {
     waitForUploads();
 }
 
+std::string VulkanResources::resolveTexturePath(const std::string& path) {
+    if (path.empty()) {
+        return path;
+    }
+
+    std::string normalized;
+    normalized.reserve(path.size());
+    for (char c : path) {
+        normalized += (c == '\\') ? '/' : c;
+    }
+
+    std::vector<std::string> parts;
+    std::string segment;
+    for (size_t i = 0; i <= normalized.size(); ++i) {
+        const char c = (i < normalized.size()) ? normalized[i] : '/';
+        if (c == '/') {
+            if (!segment.empty() && segment != ".") {
+                if (segment == "..") {
+                    if (!parts.empty() && parts.back() != "..") {
+                        parts.pop_back();
+                    } else {
+                        parts.push_back(segment);
+                    }
+                } else {
+                    parts.push_back(segment);
+                }
+            }
+            segment.clear();
+        } else {
+            segment += c;
+        }
+    }
+
+    std::string resolved;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (i > 0) {
+            resolved += '/';
+        }
+        resolved += parts[i];
+    }
+
+    std::error_code ec;
+    const std::filesystem::path canonical = std::filesystem::weakly_canonical(resolved, ec);
+    if (!ec) {
+        return canonical.generic_string();
+    }
+
+    return resolved;
+}
+
+bool VulkanResources::isEmbeddedTextureKey(const std::string& key) {
+    return key.rfind("embedded:", 0) == 0;
+}
+
+const VulkanResources::VulkanTexture& VulkanResources::getOrCreateTextureFromMemory(
+    const uint8_t* data, uint32_t width, uint32_t height, int channels, const std::string& cacheKey)
+{
+    auto it = textureCache_.find(cacheKey);
+    if (it != textureCache_.end()) {
+        return it->second;
+    }
+
+    if (!data || width == 0 || height == 0 || channels < 1 || channels > 4) {
+        throw std::runtime_error("invalid embedded texture data: " + cacheKey);
+    }
+
+    const vk::DeviceSize pixelCount = static_cast<vk::DeviceSize>(width) * height;
+    const vk::DeviceSize rgbaSize = pixelCount * 4;
+    std::vector<uint8_t> rgba(static_cast<size_t>(rgbaSize));
+
+    if (channels == 4) {
+        memcpy(rgba.data(), data, static_cast<size_t>(rgbaSize));
+    } else if (channels == 3) {
+        for (vk::DeviceSize i = 0; i < pixelCount; ++i) {
+            rgba[static_cast<size_t>(i * 4 + 0)] = data[static_cast<size_t>(i * 3 + 0)];
+            rgba[static_cast<size_t>(i * 4 + 1)] = data[static_cast<size_t>(i * 3 + 1)];
+            rgba[static_cast<size_t>(i * 4 + 2)] = data[static_cast<size_t>(i * 3 + 2)];
+            rgba[static_cast<size_t>(i * 4 + 3)] = 255;
+        }
+    } else {
+        for (vk::DeviceSize i = 0; i < pixelCount; ++i) {
+            const uint8_t gray = data[static_cast<size_t>(i)];
+            rgba[static_cast<size_t>(i * 4 + 0)] = gray;
+            rgba[static_cast<size_t>(i * 4 + 1)] = gray;
+            rgba[static_cast<size_t>(i * 4 + 2)] = gray;
+            rgba[static_cast<size_t>(i * 4 + 3)] = 255;
+        }
+    }
+
+    VulkanTexture tex{};
+    const int texWidth = static_cast<int>(width);
+    const int texHeight = static_cast<int>(height);
+    tex.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
+
+    auto& staging = createRetainedStagingBuffer(rgbaSize);
+    void* stagingData = staging.memory.mapMemory(0, rgbaSize);
+    memcpy(stagingData, rgba.data(), static_cast<size_t>(rgbaSize));
+    staging.memory.unmapMemory();
+
+    createImage(width, height, tex.mipLevels, vk::SampleCountFlagBits::e1, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+                vk::MemoryPropertyFlagBits::eDeviceLocal, tex.image, tex.memory);
+    transitionImageLayout(tex.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, tex.mipLevels);
+    copyBufferToImage(staging.buffer, tex.image, width, height);
+    generateMipmaps(tex.image, vk::Format::eR8G8B8A8Srgb, texWidth, texHeight, tex.mipLevels);
+
+    tex.view = createImageView(tex.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, tex.mipLevels);
+
+    vk::SamplerCreateInfo samplerInfo{};
+    samplerInfo.magFilter = vk::Filter::eLinear;
+    samplerInfo.minFilter = vk::Filter::eLinear;
+    samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
+    samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
+    samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
+    samplerInfo.anisotropyEnable = VK_TRUE;
+    samplerInfo.maxAnisotropy = 16.0f;
+    samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = static_cast<float>(tex.mipLevels);
+    tex.sampler = vk::raii::Sampler(device_->getDevice(), samplerInfo);
+
+    auto [insIt, ok] = textureCache_.try_emplace(cacheKey, std::move(tex));
+    return insIt->second;
+}
+
 const VulkanResources::VulkanTexture& VulkanResources::getOrCreateTexture(const std::string& path) {
     if (path.empty()) {
         static const std::string fallbackKey = "__default_white_texture__";
@@ -331,14 +461,29 @@ const VulkanResources::VulkanTexture& VulkanResources::getOrCreateTexture(const 
         return insIt->second;
     }
 
-    auto it = textureCache_.find(path);
+    if (isEmbeddedTextureKey(path)) {
+        auto embeddedIt = textureCache_.find(path);
+        if (embeddedIt != textureCache_.end()) {
+            return embeddedIt->second;
+        }
+        throw std::runtime_error("embedded texture not loaded: " + path);
+    }
+
+    const std::string resolvedPath = resolveTexturePath(path);
+
+    auto it = textureCache_.find(resolvedPath);
     if (it != textureCache_.end()) return it->second;
 
     VulkanTexture tex{};
 
     int texWidth, texHeight, texChannels;
-    stbi_uc* pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-    if (!pixels) throw std::runtime_error("failed to load texture: " + path);
+    stbi_uc* pixels = stbi_load(resolvedPath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    if (!pixels && resolvedPath != path) {
+        pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    }
+    if (!pixels) {
+        throw std::runtime_error("failed to load texture: " + resolvedPath + " (requested: " + path + ")");
+    }
     vk::DeviceSize imageSize = texWidth * texHeight * 4;
     tex.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 
@@ -371,7 +516,7 @@ const VulkanResources::VulkanTexture& VulkanResources::getOrCreateTexture(const 
     samplerInfo.maxLod = static_cast<float>(tex.mipLevels);
     tex.sampler = vk::raii::Sampler(device_->getDevice(), samplerInfo);
 
-    auto [insIt, ok] = textureCache_.try_emplace(path, std::move(tex));
+    auto [insIt, ok] = textureCache_.try_emplace(resolvedPath, std::move(tex));
     return insIt->second;
 }
 
@@ -807,6 +952,60 @@ const VulkanMeshGpu& VulkanResources::getOrUploadMesh(const Mesh& mesh) {
     }
 
     return meshCache_.try_emplace(&mesh, uploadMesh(mesh)).first->second;
+}
+
+std::vector<Vertex> VulkanResources::createSkyboxVertices() {
+    return {
+        {{-1.0f,  1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f,  1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f,  1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+
+        {{-1.0f, -1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f,  1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f,  1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f,  1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f, -1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+
+        {{ 1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f, -1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f,  1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f,  1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f,  1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+
+        {{-1.0f, -1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f,  1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f,  1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f,  1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f, -1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f, -1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+
+        {{-1.0f,  1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f,  1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f,  1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f,  1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f,  1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f,  1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+
+        {{-1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f, -1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-1.0f, -1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 1.0f, -1.0f,  1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}}
+    };
+}
+
+const VulkanMeshGpu& VulkanResources::getSkyboxMesh() {
+    if (!skyboxMeshUploaded_) {
+        skyboxMeshGpu_ = uploadMesh(createSkyboxVertices(), {});
+        skyboxMeshUploaded_ = true;
+    }
+    return skyboxMeshGpu_;
 }
 
 VulkanTextMeshGpu VulkanResources::uploadTextMesh(const std::vector<TextVertex>& verts, const std::vector<uint32_t>& indices){

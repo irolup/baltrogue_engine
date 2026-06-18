@@ -77,7 +77,21 @@ void VulkanRenderer::renderFromCamera(Scene& scene, CameraComponent* cam, const 
 }
 
 void VulkanRenderer::recordRenderCommands(vk::CommandBuffer cmdBuf, uint32_t imageIndex) {
-    if (!environmentCubemap_ || !pipeline_) {
+    if (!pipeline_) {
+        return;
+    }
+
+    recordSkyboxRenderCommand(cmdBuf, imageIndex);
+
+    cmdBuf.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline_->getGraphicsPipeline());
+    cmdBuf.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        *pipeline_->getGraphicsPipelineLayout(),
+        static_cast<uint32_t>(SET_FRAME),
+        {pipeline_->getDescriptorSet(imageIndex)},
+        {});
+
+    if (!environmentCubemap_) {
         return;
     }
 
@@ -261,6 +275,43 @@ void VulkanRenderer::recordTextRenderCommand(vk::CommandBuffer cmdBuf, const Tex
     }
 }
 
+void VulkanRenderer::recordSkyboxRenderCommand(vk::CommandBuffer cmdBuf, uint32_t imageIndex) {
+    if (!pipeline_ || !frameEnvironment_.active || !environmentCubemap_) {
+        return;
+    }
+
+    const VulkanMeshGpu& skyboxMesh = resources_->getSkyboxMesh();
+    if (skyboxMesh.vertexCount == 0) {
+        return;
+    }
+
+    cmdBuf.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline_->getSkyboxPipeline());
+
+    cmdBuf.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        *pipeline_->getSkyboxPipelineLayout(),
+        static_cast<uint32_t>(SET_FRAME),
+        {pipeline_->getDescriptorSet(imageIndex)},
+        {});
+
+    vk::DescriptorSet environmentSet = pipeline_->getOrUpdateEnvironmentDescriptorSet(
+        frameEnvironment_, *environmentCubemap_);
+    cmdBuf.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        *pipeline_->getSkyboxPipelineLayout(),
+        1,
+        {environmentSet},
+        {});
+
+    vk::Buffer vb = static_cast<vk::Buffer>(*skyboxMesh.vertexBuffer);
+    vk::DeviceSize offsets[] = {0};
+    cmdBuf.bindVertexBuffers(0, 1, &vb, offsets);
+    cmdBuf.draw(skyboxMesh.vertexCount, 1, 0, 0);
+
+    stats.drawCalls++;
+    stats.triangles += 12;
+}
+
 void VulkanRenderer::endFrame() {
     // Presentation is handled by VulkanFrame; renderer does not present here.
 }
@@ -305,6 +356,11 @@ void VulkanRenderer::resolveFrameEnvironment(Scene& scene) {
 void VulkanRenderer::prepareRenderResources() {
     sortRenderQueue();
     cullRenderQueue();
+
+    if (frameEnvironment_.active && environmentCubemap_) {
+        resources_->getSkyboxMesh();
+        pipeline_->getOrUpdateEnvironmentDescriptorSet(frameEnvironment_, *environmentCubemap_);
+    }
 
     for (const auto& rc : renderQueue) {
         if (rc.mesh) {

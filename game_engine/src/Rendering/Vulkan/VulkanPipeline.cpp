@@ -11,6 +11,8 @@ constexpr const char* kDefaultVertexShaderSpvPath = "assets/vulkan/default_lit.v
 constexpr const char* kDefaultFragmentShaderSpvPath = "assets/vulkan/default_lit.frag.spv";
 constexpr const char* kTextVertexShaderSpvPath = "assets/vulkan/text.vert.spv";
 constexpr const char* kTextFragmentShaderSpvPath = "assets/vulkan/text.frag.spv";
+constexpr const char* kSkyboxVertexShaderSpvPath = "assets/vulkan/skybox.vert.spv";
+constexpr const char* kSkyboxFragmentShaderSpvPath = "assets/vulkan/skybox.frag.spv";
 }
 
 void VulkanPipeline::create(VulkanDevice& device, VulkanResources& vulkanResources, VulkanSwapChain& swapchain){
@@ -23,6 +25,7 @@ void VulkanPipeline::create(VulkanDevice& device, VulkanResources& vulkanResourc
 
     createGraphicsPipeline();
     createTextPipeline();
+    createSkyboxPipeline();
 
     createDescriptorPoolAndSets();
     if (ENABLE_PARTICLE_COMPUTE){
@@ -537,6 +540,111 @@ void VulkanPipeline::createTextPipeline(){
     textPipeline_ = vk::raii::Pipeline(device_->getDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 }
 
+void VulkanPipeline::createSkyboxPipeline() {
+    vk::raii::ShaderModule vertexShaderModule = createShaderModule(readFile(kSkyboxVertexShaderSpvPath));
+    vk::raii::ShaderModule fragmentShaderModule = createShaderModule(readFile(kSkyboxFragmentShaderSpvPath));
+
+    vk::PipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.stage = vk::ShaderStageFlagBits::eVertex;
+    vertShaderStageInfo.module = vertexShaderModule;
+    vertShaderStageInfo.pName = "main";
+    
+    vk::PipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.stage = vk::ShaderStageFlagBits::eFragment;
+    fragShaderStageInfo.module = fragmentShaderModule;
+    fragShaderStageInfo.pName = "main";
+
+    vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+    auto bindingDescription = getMeshVertexBindingDescription();
+    auto attributeDescriptions = getMeshVertexAttributeDescriptions();
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
+    vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+    vk::PipelineViewportStateCreateInfo viewportState{};
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    vk::PipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.depthClampEnable = vk::False;
+    rasterizer.rasterizerDiscardEnable = vk::False;
+    rasterizer.polygonMode = vk::PolygonMode::eFill;
+    rasterizer.cullMode = vk::CullModeFlagBits::eNone;
+    rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
+    rasterizer.depthBiasEnable = vk::False;
+    rasterizer.lineWidth = 1.0f;
+
+    vk::PipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+    multisampling.sampleShadingEnable = vk::False;
+
+    vk::PipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.depthTestEnable = vk::True;
+    depthStencil.depthWriteEnable = vk::True;
+    depthStencil.depthCompareOp = vk::CompareOp::eLessOrEqual;
+    depthStencil.depthBoundsTestEnable = vk::False;
+    depthStencil.stencilTestEnable = vk::False;
+
+    vk::PipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.blendEnable = vk::False;
+    colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+
+    vk::PipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.logicOpEnable = vk::False;
+    colorBlending.logicOp = vk::LogicOp::eCopy;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    std::vector<vk::DynamicState> dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+    vk::PipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    std::array<const vk::DescriptorSetLayout, 2> setLayouts = {
+        *frameDescriptorSetLayout_,
+        *environmentDescriptorSetLayout_
+    };
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+    pipelineLayoutInfo.pSetLayouts = setLayouts.data();
+
+    skyboxPipelineLayout_ = vk::raii::PipelineLayout(device_->getDevice(), pipelineLayoutInfo);
+
+    vk::Format depthFormat = resources_->findDepthFormat();
+    vk::Format colorAttachmentFormat = swapChain_->getSurfaceFormat().format;
+
+    vk::GraphicsPipelineCreateInfo pipelineCreateInfo{};
+    pipelineCreateInfo.stageCount = 2;
+    pipelineCreateInfo.pStages = shaderStages;
+    pipelineCreateInfo.pVertexInputState = &vertexInputInfo;
+    pipelineCreateInfo.pInputAssemblyState = &inputAssembly;
+    pipelineCreateInfo.pViewportState = &viewportState;
+    pipelineCreateInfo.pRasterizationState = &rasterizer;
+    pipelineCreateInfo.pMultisampleState = &multisampling;
+    pipelineCreateInfo.pDepthStencilState = &depthStencil;
+    pipelineCreateInfo.pColorBlendState = &colorBlending;
+    pipelineCreateInfo.pDynamicState = &dynamicState;
+    pipelineCreateInfo.layout = skyboxPipelineLayout_;
+    pipelineCreateInfo.renderPass = nullptr;
+
+    vk::PipelineRenderingCreateInfo pipelineRenderingInfo{};
+    pipelineRenderingInfo.colorAttachmentCount = 1;
+    pipelineRenderingInfo.pColorAttachmentFormats = &colorAttachmentFormat;
+    pipelineRenderingInfo.depthAttachmentFormat = depthFormat;
+
+    vk::StructureChain<vk::GraphicsPipelineCreateInfo,vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain{
+        pipelineCreateInfo,
+        pipelineRenderingInfo
+    };
+
+    skyboxPipeline_ = vk::raii::Pipeline(device_->getDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+}
+
 void VulkanPipeline::createParticleGraphicsPipeline() {
     vk::raii::ShaderModule vertexShaderModule = createShaderModule(readFile(kDefaultVertexShaderSpvPath));
     vk::raii::ShaderModule fragmentShaderModule = createShaderModule(readFile(kDefaultFragmentShaderSpvPath));
@@ -709,6 +817,14 @@ vk::raii::PipelineLayout& VulkanPipeline::getTextPipelineLayout(){
 
 vk::raii::Pipeline& VulkanPipeline::getTextPipeline(){
     return textPipeline_;
+}
+
+vk::raii::PipelineLayout& VulkanPipeline::getSkyboxPipelineLayout(){
+    return skyboxPipelineLayout_;
+}
+
+vk::raii::Pipeline& VulkanPipeline::getSkyboxPipeline(){
+    return skyboxPipeline_;
 }
 
 vk::DescriptorSet VulkanPipeline::getDescriptorSet(uint32_t index) {

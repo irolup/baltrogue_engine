@@ -8,12 +8,14 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <cstdint>
 
 namespace tinygltf {
     class Model;
     class Node;
     class Mesh;
     class Primitive;
+    struct Image;
 }
 
 namespace GameEngine {
@@ -83,6 +85,26 @@ private:
     static std::unordered_map<std::string, std::shared_ptr<ModelData>> meshCache;
     static std::shared_ptr<ModelData> getCachedModel(const std::string& modelPath);
     static void clearMeshCache();
+
+#ifdef ENABLE_VULKAN
+    struct DecodedGltfImage {
+        std::vector<uint8_t> rgba;
+        int width = 0;
+        int height = 0;
+        bool valid = false;
+    };
+
+    static DecodedGltfImage decodeGltfImage(const tinygltf::Image& image);
+    static std::string resolveGltfImageFilePath(const std::string& modelPath, const tinygltf::Image& image, const std::string& defaultPath);
+    static void assignVulkanGltfTexture(
+        Material& material,
+        const tinygltf::Image& image,
+        const std::string& modelPath,
+        int materialIndex,
+        const char* slot,
+        const std::string& defaultPath,
+        void (Material::*setPathFn)(const std::string&));
+#endif
 };
 
 } // namespace GameEngine

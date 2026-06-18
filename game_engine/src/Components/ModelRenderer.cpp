@@ -34,6 +34,11 @@
 #include "../../vendor/tinygltf/tiny_gltf.h"
 #include "../../vendor/tinygltf/stb_image.h"
 
+#ifdef ENABLE_VULKAN
+#include "Core/Engine.h"
+#include "Rendering/Vulkan/VulkanResources.h"
+#endif
+
 namespace GameEngine {
 
 std::unordered_map<std::string, std::shared_ptr<ModelData>> ModelRenderer::meshCache;
@@ -409,6 +414,14 @@ std::shared_ptr<Mesh> ModelRenderer::createMeshFromGLTF(const tinygltf::Model& g
             const auto& texBuffer = gltfModel.buffers[texBufferView.buffer];
             texCoords = reinterpret_cast<const float*>(&texBuffer.data[texBufferView.byteOffset + texAccessor.byteOffset]);
         }
+
+        const float* tangents = nullptr;
+        if (primitive.attributes.find("TANGENT") != primitive.attributes.end()) {
+            const auto& tangentAccessor = gltfModel.accessors[primitive.attributes.at("TANGENT")];
+            const auto& tangentBufferView = gltfModel.bufferViews[tangentAccessor.bufferView];
+            const auto& tangentBuffer = gltfModel.buffers[tangentBufferView.buffer];
+            tangents = reinterpret_cast<const float*>(&tangentBuffer.data[tangentBufferView.byteOffset + tangentAccessor.byteOffset]);
+        }
         
         // Get bone weights if available (for skinning)
         const float* boneWeights = nullptr;
@@ -449,16 +462,22 @@ std::shared_ptr<Mesh> ModelRenderer::createMeshFromGLTF(const tinygltf::Model& g
             }
             
             if (texCoords) {
-#ifdef VITA_BUILD
-                // Vita: Don't flip texture coordinates (they're already correct)
+#if defined(VITA_BUILD) || defined(ENABLE_VULKAN)
                 vertex.texCoords = glm::vec2(texCoords[i * 2], texCoords[i * 2 + 1]);
 #else
-                // Linux: GLTF uses flipped V coordinates compared to OpenGL
-                // Flip the V coordinate to match OpenGL's texture coordinate system
                 vertex.texCoords = glm::vec2(texCoords[i * 2], 1.0f - texCoords[i * 2 + 1]);
 #endif
             } else {
                 vertex.texCoords = glm::vec2(0.0f, 0.0f); // Default UV
+            }
+
+            if (tangents) {
+                vertex.tangent = glm::vec3(
+                    tangents[i * 4],
+                    tangents[i * 4 + 1],
+                    tangents[i * 4 + 2]);
+            } else {
+                vertex.tangent = glm::vec3(1.0f, 0.0f, 0.0f);
             }
             
             // Load bone weights and indices for skinning
@@ -555,12 +574,26 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
         );
         material->setColor(color);
     }
+
+    material->setMetallic(static_cast<float>(gltfMaterial.pbrMetallicRoughness.metallicFactor));
+    material->setRoughness(static_cast<float>(gltfMaterial.pbrMetallicRoughness.roughnessFactor));
     
     // Load diffuse texture if available
     if (gltfMaterial.pbrMetallicRoughness.baseColorTexture.index >= 0) {
         const auto& textureInfo = gltfMaterial.pbrMetallicRoughness.baseColorTexture;
         const auto& texture = gltfModel.textures[textureInfo.index];
         const auto& image = gltfModel.images[texture.source];
+
+#ifdef ENABLE_VULKAN
+        assignVulkanGltfTexture(
+            *material,
+            image,
+            modelPath,
+            materialIndex,
+            "diffuse",
+            "assets/textures/default_diffuse.png",
+            &Material::setDiffuseTexturePath);
+#else
         std::string texturePath;
 
         if (!image.uri.empty()) {
@@ -574,9 +607,6 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
             texturePath = "assets/textures/default_diffuse.png";
         }
 
-#ifdef ENABLE_VULKAN
-        material->setDiffuseTexturePath(texturePath);
-#else
         bool textureLoaded = false;
         if (image.uri.empty() && !image.image.empty()) {
             auto embeddedTexture = std::make_shared<Texture>();
@@ -620,6 +650,17 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
         const auto& textureInfo = gltfMaterial.normalTexture;
         const auto& texture = gltfModel.textures[textureInfo.index];
         const auto& image = gltfModel.images[texture.source];
+
+#ifdef ENABLE_VULKAN
+        assignVulkanGltfTexture(
+            *material,
+            image,
+            modelPath,
+            materialIndex,
+            "normal",
+            "assets/textures/default_normal.png",
+            &Material::setNormalTexturePath);
+#else
         std::string texturePath;
 
         if (!image.uri.empty()) {
@@ -633,9 +674,6 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
             texturePath = "assets/textures/default_normal.png";
         }
 
-#ifdef ENABLE_VULKAN
-        material->setNormalTexturePath(texturePath);
-#else
         bool textureLoaded = false;
         if (image.uri.empty() && !image.image.empty()) {
             auto embeddedTexture = std::make_shared<Texture>();
@@ -679,6 +717,17 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
         const auto& textureInfo = gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture;
         const auto& texture = gltfModel.textures[textureInfo.index];
         const auto& image = gltfModel.images[texture.source];
+
+#ifdef ENABLE_VULKAN
+        assignVulkanGltfTexture(
+            *material,
+            image,
+            modelPath,
+            materialIndex,
+            "arm",
+            "assets/textures/default_arm.png",
+            &Material::setARMTexturePath);
+#else
         std::string texturePath;
 
         if (!image.uri.empty()) {
@@ -692,9 +741,6 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
             texturePath = "assets/textures/default_arm.png";
         }
 
-#ifdef ENABLE_VULKAN
-        material->setARMTexturePath(texturePath);
-#else
         bool textureLoaded = false;
         if (image.uri.empty() && !image.image.empty()) {
             auto embeddedTexture = std::make_shared<Texture>();
@@ -930,5 +976,112 @@ void ModelRenderer::clearMeshCache() {
     meshCache.clear();
     std::cout << "ModelRenderer: Mesh cache cleared" << std::endl;
 }
+
+#ifdef ENABLE_VULKAN
+ModelRenderer::DecodedGltfImage ModelRenderer::decodeGltfImage(const tinygltf::Image& image) {
+    DecodedGltfImage result;
+
+    if (image.image.empty()) {
+        return result;
+    }
+
+    if (!image.as_is && image.width > 0 && image.height > 0 && image.component > 0) {
+        result.width = image.width;
+        result.height = image.height;
+        const size_t pixelCount = static_cast<size_t>(image.width * image.height);
+        result.rgba.resize(pixelCount * 4);
+
+        if (image.component == 4) {
+            memcpy(result.rgba.data(), image.image.data(), pixelCount * 4);
+        } else if (image.component == 3) {
+            for (size_t i = 0; i < pixelCount; ++i) {
+                result.rgba[i * 4 + 0] = image.image[i * 3 + 0];
+                result.rgba[i * 4 + 1] = image.image[i * 3 + 1];
+                result.rgba[i * 4 + 2] = image.image[i * 3 + 2];
+                result.rgba[i * 4 + 3] = 255;
+            }
+        } else if (image.component == 1) {
+            for (size_t i = 0; i < pixelCount; ++i) {
+                const uint8_t gray = image.image[i];
+                result.rgba[i * 4 + 0] = gray;
+                result.rgba[i * 4 + 1] = gray;
+                result.rgba[i * 4 + 2] = gray;
+                result.rgba[i * 4 + 3] = 255;
+            }
+        } else {
+            return result;
+        }
+
+        result.valid = true;
+        return result;
+    }
+
+    if (image.as_is) {
+        int width = 0;
+        int height = 0;
+        int channels = 0;
+        unsigned char* decodedData = stbi_load_from_memory(
+            image.image.data(),
+            static_cast<int>(image.image.size()),
+            &width,
+            &height,
+            &channels,
+            STBI_rgb_alpha);
+        if (decodedData) {
+            result.width = width;
+            result.height = height;
+            result.rgba.assign(decodedData, decodedData + static_cast<size_t>(width * height * 4));
+            stbi_image_free(decodedData);
+            result.valid = !result.rgba.empty();
+        }
+    }
+
+    return result;
+}
+
+std::string ModelRenderer::resolveGltfImageFilePath(
+    const std::string& modelPath, const tinygltf::Image& image, const std::string& defaultPath)
+{
+    if (image.uri.empty()) {
+        return defaultPath;
+    }
+    if (image.uri.rfind("data:", 0) == 0) {
+        return defaultPath;
+    }
+
+    const std::string modelDir = modelPath.substr(0, modelPath.find_last_of('/') + 1);
+    return modelDir + image.uri;
+}
+
+void ModelRenderer::assignVulkanGltfTexture(
+    Material& material,
+    const tinygltf::Image& image,
+    const std::string& modelPath,
+    int materialIndex,
+    const char* slot,
+    const std::string& defaultPath,
+    void (Material::*setPathFn)(const std::string&))
+{
+    if (!image.image.empty()) {
+        const DecodedGltfImage decoded = decodeGltfImage(image);
+        if (decoded.valid) {
+            VulkanResources* resources = GetEngine().getVulkanResources();
+            if (resources) {
+                const std::string cacheKey = "embedded:" + modelPath + ":" + std::to_string(materialIndex) + ":" + slot;
+                resources->getOrCreateTextureFromMemory(
+                    decoded.rgba.data(),
+                    static_cast<uint32_t>(decoded.width),
+                    static_cast<uint32_t>(decoded.height),
+                    4,
+                    cacheKey);
+                (material.*setPathFn)(cacheKey);
+                return;
+            }
+        }
+    }
+
+    (material.*setPathFn)(resolveGltfImageFilePath(modelPath, image, defaultPath));
+}
+#endif
 
 } // namespace GameEngine

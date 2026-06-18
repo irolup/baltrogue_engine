@@ -26,6 +26,8 @@ public:
     vk::raii::Pipeline& getGraphicsPipeline();
     vk::raii::PipelineLayout& getTextPipelineLayout();
     vk::raii::Pipeline& getTextPipeline();
+    vk::raii::PipelineLayout& getSkyboxPipelineLayout();
+    vk::raii::Pipeline& getSkyboxPipeline();
 
     vk::DescriptorSet getDescriptorSet(uint32_t index);
     void recreateDescriptorSets();
@@ -39,7 +41,7 @@ private:
     void createTextDescriptorSetLayout();
     void createGraphicsPipeline();
     void createTextPipeline();
-
+    void createSkyboxPipeline();
 
     void createParticleGraphicsPipeline();
 
@@ -66,6 +68,8 @@ private:
     vk::raii::Pipeline graphicsPipeline_ = nullptr;
     vk::raii::PipelineLayout textPipelineLayout_ = nullptr;
     vk::raii::Pipeline textPipeline_ = nullptr;
+    vk::raii::PipelineLayout skyboxPipelineLayout_ = nullptr;
+    vk::raii::Pipeline skyboxPipeline_ = nullptr;
 
     vk::raii::PipelineLayout particlePipelineLayout_ = nullptr;
     vk::raii::Pipeline particlePipeline_ = nullptr;

@@ -88,10 +88,34 @@ public:
     std::string getEnvironmentTexturePath() const { return environmentTexturePath; }
     void setEnvironmentTexturePath(const std::string& path) { environmentTexturePath = path; }
     
-    bool hasDiffuseTexture() const { return diffuseTexture != nullptr; }
-    bool hasNormalTexture() const { return normalTexture != nullptr; }
-    bool hasARMTexture() const { return armTexture != nullptr; }
-    bool hasEnvironmentTexture() const { return environmentTexture != nullptr; }
+    bool hasDiffuseTexture() const {
+    #ifndef ENABLE_VULKAN
+        return diffuseTexture != nullptr;
+    #else
+        return !diffuseTexturePath.empty();
+    #endif
+    }
+    bool hasNormalTexture() const {
+    #ifndef ENABLE_VULKAN
+        return normalTexture != nullptr;
+    #else
+        return !normalTexturePath.empty();
+    #endif
+    }
+    bool hasARMTexture() const {
+    #ifndef ENABLE_VULKAN
+        return armTexture != nullptr;
+    #else
+        return !armTexturePath.empty();
+    #endif
+    }
+    bool hasEnvironmentTexture() const {
+    #ifndef ENABLE_VULKAN
+        return environmentTexture != nullptr;
+    #else
+        return !environmentTexturePath.empty();
+    #endif
+    }
     
     void setShaderFromPaths(const std::string& vertexPath, const std::string& fragmentPath);
     void setShaderFromPathsForPlatform(const std::string& vertexPath, const std::string& fragmentPath, const std::string& platform);

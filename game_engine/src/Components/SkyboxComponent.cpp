@@ -34,10 +34,12 @@ SkyboxComponent::~SkyboxComponent() {
 
 void SkyboxComponent::start() {
     if (texturePaths.size() == 6 && !texturePaths[0].empty()) {
+#ifndef ENABLE_VULKAN
         loadCubemap();
         createSkyboxMesh();
         createSkyboxShader();
         createSkyboxMaterial();
+#endif
     }
 }
 
@@ -91,10 +93,12 @@ bool SkyboxComponent::setTextures(const std::vector<std::string>& paths) {
     texturePaths = paths;
     
     if (isActiveSkybox) {
+#ifndef ENABLE_VULKAN
         loadCubemap();
         createSkyboxMesh();
         createSkyboxShader();
         createSkyboxMaterial();
+#endif
     }
     
     return true;

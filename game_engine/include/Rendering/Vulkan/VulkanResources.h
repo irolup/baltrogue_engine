@@ -64,6 +64,7 @@ public:
     VulkanTextMeshGpu uploadTextMesh(const std::vector<TextVertex>& verts, const std::vector<uint32_t>& indices);
 
     const VulkanMeshGpu& getOrUploadMesh(const Mesh& mesh);
+    const VulkanMeshGpu& getSkyboxMesh();
     const VulkanTextMeshGpu& getOrUploadTextMesh(const TextComponent& text);
 
     void clearMeshCache();
@@ -90,6 +91,8 @@ public:
     };
 
     const VulkanTexture& getOrCreateTexture(const std::string& path);
+    const VulkanTexture& getOrCreateTextureFromMemory(const uint8_t* data, uint32_t width, uint32_t height, int channels, const std::string& cacheKey);
+    static bool isEmbeddedTextureKey(const std::string& key);
     const VulkanTexture& getOrCreateFontAtlasTexture( const std::vector<uint8_t>& atlasData, uint32_t width, uint32_t height, const std::string& key);
     const VulkanTexture& getOrCreateCubemapTexture(const std::vector<std::string>& facePaths);
     const VulkanTexture& getDefaultCubemapTexture();
@@ -163,6 +166,12 @@ private:
     std::unordered_map<std::string, VulkanTexture> cubemapCache_;
     std::unordered_map<const Material*, MaterialBuffer> materialUniformBuffers_;
     std::unordered_map<const TextMaterial*, TextMaterialBuffer> textMaterialUniformBuffers_;
+
+    VulkanMeshGpu skyboxMeshGpu_{};
+    bool skyboxMeshUploaded_ = false;
+
+    static std::vector<Vertex> createSkyboxVertices();
+    static std::string resolveTexturePath(const std::string& path);
 
     bool isInvalidCubemapPaths(const std::vector<std::string>& paths) const;
     const VulkanTexture& getDefaultCubemap();

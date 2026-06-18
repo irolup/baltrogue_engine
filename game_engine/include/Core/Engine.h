@@ -53,6 +53,10 @@ public:
     InputManager& getInputManager() { return *inputManager; }
     Time& getTime() { return *timeSystem; }
     PhysicsManager& getPhysicsManager() { return PhysicsManager::getInstance(); }
+
+#ifdef ENABLE_VULKAN
+    VulkanResources* getVulkanResources() { return vulkanResources.get(); }
+#endif
     
 #ifdef EDITOR_BUILD
     EditorSystem& getEditor() { return *editor; }

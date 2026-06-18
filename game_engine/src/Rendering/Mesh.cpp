@@ -63,6 +63,8 @@ void Mesh::upload() {
 void Mesh::uploadAndClearCPUData() {
     upload();
     
+//Do not clear if VULKAN
+#ifndef ENABLE_VULKAN
     if (uploaded && !cpuDataCleared) {
         cachedVertexCount = vertices.size();
         cachedIndexCount = indices.size();
@@ -72,6 +74,7 @@ void Mesh::uploadAndClearCPUData() {
         indices.shrink_to_fit();
         cpuDataCleared = true;
     }
+#endif
 }
 
 void Mesh::bind() const {
