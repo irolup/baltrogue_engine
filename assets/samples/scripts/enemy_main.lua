@@ -17,7 +17,7 @@ local chase_load_failed = false
 local function ensureChase()
   if enemy_chase then return enemy_chase end
   if chase_load_failed then return nil end
-  local ok, mod = pcall(dofile, "assets/scripts/enemy_chase.lua")
+  local ok, mod = pcall(dofile, "assets/samples/scripts/enemy_chase.lua")
   if ok and mod and mod.updateChase then
     enemy_chase = mod
     return enemy_chase
@@ -60,6 +60,10 @@ function start()
         end,
         isDead = function() return isDeadByEnemy[rootNodeName] or false end,
     }
+
+    _G.GameEnemies = _G.GameEnemies or {}
+    _G.GameEnemies[rootNodeName] =
+        (physicsNodeName and physicsNodeName ~= "") and physicsNodeName or rootNodeName
 end
 
 function update(deltaTime)
@@ -71,15 +75,12 @@ function update(deltaTime)
         healthByEnemy[ename] = health
         isDeadByEnemy[ename] = false
     end
-    debugPosTick = (debugPosTick or 0) + 1
-    if debugPosTick % 60 == 0 and getNodePosition and ename then
-        local ex, ey, ez = getNodePosition(ename)
-        local hasAgent = (Nav and Nav.get_agent) and Nav.get_agent(ename) or nil
-        --print(string.format("[enemy] name=%s pos(%.2f,%.2f,%.2f) agent=%s dead=%s",tostring(ename), ex or 0, ey or 0, ez or 0, hasAgent and "yes" or "no", tostring(myDead)))
-    end
     if myDead then
         if _G.Enemies and _G.Enemies[ename] then
             _G.Enemies[ename] = nil
+        end
+        if _G.GameEnemies then
+            _G.GameEnemies[ename] = nil
         end
         if not hiddenWhenDeadByEnemy[ename] and setNodeVisible and ename then
             setNodeVisible(ename, false)
@@ -101,14 +102,6 @@ function fixedUpdate(deltaTime)
     local chase = ensureChase()
     local hasNav = type(Nav) == "table" and type(Nav.get_agent) == "function"
     local agent = hasNav and Nav.get_agent(ename) or nil
-    if not agent and hasNav then
-      if not _G._enemy_main_no_agent_last then _G._enemy_main_no_agent_last = 0 end
-      local t = (deltaTime or 0) + (_G._enemy_main_no_agent_last or 0)
-      _G._enemy_main_no_agent_last = t
-      if t > 1.0 then
-        _G._enemy_main_no_agent_last = 0
-      end
-    end
     if chase and chase.updateChase and agent then
         wasChasingByEnemy[ename] = (chase.updateChase(ename, PLAYER_NODE_NAME, deltaTime, { maxDistance = 30.0 }) == true)
     else

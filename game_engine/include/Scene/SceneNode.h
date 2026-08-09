@@ -14,6 +14,8 @@ namespace GameEngine {
 
 class Component;
 class IRenderer;
+class Scene;
+class LightComponent;
 
 class SceneNode {
 public:
@@ -32,14 +34,19 @@ public:
     
     SceneNode* getParent() const { return parent; }
     void setParent(SceneNode* newParent) { parent = newParent; }
+
+    Scene* getOwningScene() const { return owningScene; }
+    void setOwningScene(Scene* scene);
     
     Transform& getTransform() { return transform; }
     const Transform& getTransform() const { return transform; }
     glm::mat4 getWorldMatrix() const;
     glm::mat4 getLocalMatrix() const { return transform.getMatrix(); }
+    glm::quat getWorldRotation() const;
+    glm::vec3 getWorldScale() const;
     
     const std::string& getName() const { return name; }
-    void setName(const std::string& newName) { name = newName; }
+    void setName(const std::string& newName);
     
     bool isVisible() const { return visible; }
     void setVisible(bool state) { visible = state; }
@@ -61,6 +68,8 @@ public:
     const std::vector<std::unique_ptr<Component>>& getAllComponents() const { return components; }
     
     virtual void start();
+    virtual void suspend();
+    virtual void resume();
     virtual void update(float deltaTime);
     virtual void fixedUpdate(float deltaTime);
     virtual void lateUpdate(float deltaTime);
@@ -81,6 +90,7 @@ protected:
     std::string name;
     Transform transform;
     SceneNode* parent;
+    Scene* owningScene;
     std::vector<std::shared_ptr<SceneNode>> children;
     std::vector<std::unique_ptr<Component>> components;
     std::vector<std::string> tags;
@@ -92,6 +102,8 @@ protected:
     void updateChildren(float deltaTime);
     void fixedUpdateChildren(float deltaTime);
     void lateUpdateChildren(float deltaTime);
+    void suspendChildren();
+    void resumeChildren();
     void renderChildren(IRenderer& renderer);
 };
 
@@ -100,25 +112,22 @@ T* SceneNode::addComponent(Args&&... args) {
     auto component = std::unique_ptr<T>(new T(std::forward<Args>(args)...));
     T* ptr = component.get();
     component->setOwner(this);
-    
-    if (ptr->getTypeName() == "LightComponent") {
-        auto& lightingManager = LightingManager::getInstance();
-        LightComponent* lightComponent = dynamic_cast<LightComponent*>(ptr);
-        if (lightComponent) {
-            lightingManager.addLight(lightComponent);
-        }
+
+    Component* basePtr = ptr;
+    if (basePtr->getTypeName() == LightComponent::StaticTypeName()) {
+        LightingManager::getInstance().addLight(static_cast<LightComponent*>(basePtr));
     }
-    
+
     components.push_back(std::move(component));
     return ptr;
 }
 
 template<typename T>
 T* SceneNode::getComponent() {
+    const std::string& typeName = T::StaticTypeName();
     for (auto& component : components) {
-        T* casted = dynamic_cast<T*>(component.get());
-        if (casted) {
-            return casted;
+        if (component->getTypeName() == typeName) {
+            return static_cast<T*>(component.get());
         }
     }
     return nullptr;
@@ -126,25 +135,22 @@ T* SceneNode::getComponent() {
 
 template<typename T>
 void SceneNode::removeComponent() {
-    auto it = std::remove_if(components.begin(), components.end(),
-        [](const std::unique_ptr<Component>& component) {
-            return dynamic_cast<T*>(component.get()) != nullptr;
-        });
-    
-    for (auto iter = components.begin(); iter != it; ++iter) {
-        if (dynamic_cast<T*>(iter->get())) {
-            if ((*iter)->getTypeName() == "LightComponent") {
-                auto& lightingManager = LightingManager::getInstance();
-                LightComponent* lightComponent = dynamic_cast<LightComponent*>(iter->get());
-                if (lightComponent) {
-                    lightingManager.removeLight(lightComponent);
-                }
+    const std::string& typeName = T::StaticTypeName();
+    for (auto& component : components) {
+        if (component->getTypeName() == typeName) {
+            if (typeName == LightComponent::StaticTypeName()) {
+                LightingManager::getInstance().removeLight(
+                    static_cast<LightComponent*>(component.get()));
             }
-            break;
         }
     }
-    
-    components.erase(it, components.end());
+
+    components.erase(
+        std::remove_if(components.begin(), components.end(),
+            [&typeName](const std::unique_ptr<Component>& component) {
+                return component->getTypeName() == typeName;
+            }),
+        components.end());
 }
 
 } // namespace GameEngine

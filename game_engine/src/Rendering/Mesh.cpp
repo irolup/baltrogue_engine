@@ -1,5 +1,10 @@
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
+#ifdef ENABLE_VULKAN
+#include "Core/Engine.h"
+#include "Rendering/Vulkan/VulkanResources.h"
+#endif
+#include <array>
 #include <iostream>
 #include <limits>
 #include <glm/gtc/matrix_transform.hpp>
@@ -33,7 +38,61 @@ Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>&
 }
 
 Mesh::~Mesh() {
+#ifdef ENABLE_VULKAN
+    if (Engine* engine = GetEngineIfExists()) {
+        if (auto* resources = engine->getVulkanResources()) {
+            resources->evictMesh(this);
+        }
+    }
+#endif
     cleanupBuffers();
+}
+
+Mesh::Mesh(const Mesh& other)
+    : vertices(other.vertices)
+    , indices(other.indices)
+    , VAO(0)
+    , VBO(0)
+    , EBO(0)
+    , uploaded(false)
+    , cpuDataCleared(other.cpuDataCleared)
+    , cachedVertexCount(other.cachedVertexCount)
+    , cachedIndexCount(other.cachedIndexCount)
+    , boundsMin(other.boundsMin)
+    , boundsMax(other.boundsMax)
+    , meshType(other.meshType)
+    , renderMode(other.renderMode)
+{
+}
+
+Mesh& Mesh::operator=(const Mesh& other) {
+    if (this == &other) {
+        return *this;
+    }
+
+    cleanupBuffers();
+#ifdef ENABLE_VULKAN
+    if (Engine* engine = GetEngineIfExists()) {
+        if (auto* resources = engine->getVulkanResources()) {
+            resources->evictMesh(this);
+        }
+    }
+#endif
+
+    vertices = other.vertices;
+    indices = other.indices;
+    VAO = 0;
+    VBO = 0;
+    EBO = 0;
+    uploaded = false;
+    cpuDataCleared = other.cpuDataCleared;
+    cachedVertexCount = other.cachedVertexCount;
+    cachedIndexCount = other.cachedIndexCount;
+    boundsMin = other.boundsMin;
+    boundsMax = other.boundsMax;
+    meshType = other.meshType;
+    renderMode = other.renderMode;
+    return *this;
 }
 
 void Mesh::setVertices(const std::vector<Vertex>& newVertices) {
@@ -176,7 +235,50 @@ void Mesh::draw(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, const
 #endif
 }
 
+std::unordered_map<std::string, std::shared_ptr<Mesh>>& Mesh::prototypeCache() {
+    static std::unordered_map<std::string, std::shared_ptr<Mesh>> cache;
+    return cache;
+}
+
+std::shared_ptr<Mesh> Mesh::getOrCreatePrototype(
+    const std::string& cacheKey,
+    const std::function<std::shared_ptr<Mesh>()>& builder) {
+    auto& cache = prototypeCache();
+    auto found = cache.find(cacheKey);
+    if (found != cache.end()) {
+        return found->second;
+    }
+
+    auto mesh = builder();
+    cache[cacheKey] = mesh;
+    return mesh;
+}
+
+std::shared_ptr<Mesh> Mesh::getPrimitive(MeshType type) {
+    switch (type) {
+        case MeshType::QUAD:
+            return createQuad();
+        case MeshType::PLANE:
+            return createPlane();
+        case MeshType::CUBE:
+            return createCube();
+        case MeshType::SPHERE:
+            return createSphere(32, 16);
+        case MeshType::CAPSULE:
+            return createCapsule(0.5f, 0.5f);
+        case MeshType::CYLINDER:
+            return createCylinder(0.5f, 0.5f);
+        case MeshType::RAMP:
+            return createRamp();
+        case MeshType::LINE:
+            return createLineSegment();
+        default:
+            return createCube();
+    }
+}
+
 std::shared_ptr<Mesh> Mesh::createQuad() {
+    return getOrCreatePrototype("quad", []() {
     std::vector<Vertex> vertices = {
         {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
         {{ 0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
@@ -193,6 +295,7 @@ std::shared_ptr<Mesh> Mesh::createQuad() {
     mesh->calculateTangents();
     mesh->setMeshType(MeshType::QUAD);
     return mesh;
+    });
 }
 
 std::shared_ptr<Mesh> Mesh::createPlane(float width, float height, int subdivisions) {
@@ -240,6 +343,7 @@ std::shared_ptr<Mesh> Mesh::createPlane(float width, float height, int subdivisi
 }
 
 std::shared_ptr<Mesh> Mesh::createCube() {
+    return getOrCreatePrototype("cube", []() {
     std::vector<Vertex> vertices = {
         {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
         {{-0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f}},
@@ -290,6 +394,60 @@ std::shared_ptr<Mesh> Mesh::createCube() {
     mesh->calculateTangents();
     mesh->setMeshType(MeshType::CUBE);
     return mesh;
+    });
+}
+
+template<size_t N>
+static void appendRampFace(std::vector<Vertex>& vertices, std::vector<unsigned int>& indices,
+                           const std::array<Vertex, N>& face) {
+    unsigned int base = static_cast<unsigned int>(vertices.size());
+    for (size_t i = 0; i < N; ++i) {
+        vertices.push_back(face[i]);
+        indices.push_back(base + static_cast<unsigned int>(i));
+    }
+}
+
+std::shared_ptr<Mesh> Mesh::createRamp() {
+    return getOrCreatePrototype("ramp", []() {
+
+    const float hx = 0.5f, hy = 0.5f, hz = 0.5f;
+
+    auto tri = [](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
+        glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
+        return std::array<Vertex, 3>{
+            Vertex(a, n, {0.0f, 0.0f}),
+            Vertex(b, n, {1.0f, 0.0f}),
+            Vertex(c, n, {0.5f, 1.0f}),
+        };
+    };
+
+    auto quad = [&](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, const glm::vec3& d) {
+        glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
+        return std::array<Vertex, 6>{
+            Vertex(a, n, {0.0f, 0.0f}), Vertex(b, n, {1.0f, 0.0f}), Vertex(c, n, {1.0f, 1.0f}),
+            Vertex(a, n, {0.0f, 0.0f}), Vertex(c, n, {1.0f, 1.0f}), Vertex(d, n, {0.0f, 1.0f}),
+        };
+    };
+
+    const glm::vec3 blb(-hx, -hy, -hz), brb(hx, -hy, -hz);
+    const glm::vec3 brf(hx, -hy,  hz), blf(-hx, -hy,  hz);
+    const glm::vec3 tlb(-hx,  hy, -hz), trb(hx,  hy, -hz);
+
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+
+    appendRampFace(vertices, indices, quad(blb, tlb, trb, brb));
+    appendRampFace(vertices, indices, quad(blb, brb, brf, blf));
+    appendRampFace(vertices, indices, tri(blb, blf, tlb));
+    appendRampFace(vertices, indices, tri(brb, trb, brf));
+    appendRampFace(vertices, indices, tri(tlb, blf, trb));
+    appendRampFace(vertices, indices, tri(blf, brf, trb));
+
+    auto mesh = std::make_shared<Mesh>(vertices, indices);
+    mesh->calculateTangents();
+    mesh->setMeshType(MeshType::RAMP);
+    return mesh;
+    });
 }
 
 std::shared_ptr<Mesh> Mesh::createSphere(int segments, int rings, float radius) {
@@ -480,10 +638,18 @@ std::shared_ptr<Mesh> Mesh::createCylinder(float radius, float halfHeight, int s
             vertices.push_back({glm::vec3(xPos, yPos, zPos), glm::vec3(0, normalY, 0), glm::vec2(u, 0)});
         }
         for (int x = 0; x < segments; x++) {
-            indices.push_back(centerIndex);
-            indices.push_back(centerIndex + x + 1);
-            indices.push_back(centerIndex + x + 2);
-        }
+            if (normalY > 0.0f) {
+                // top
+                indices.push_back(centerIndex);
+                indices.push_back(centerIndex + x + 2);
+                indices.push_back(centerIndex + x + 1);
+            } else {
+                // bottom
+                indices.push_back(centerIndex);
+                indices.push_back(centerIndex + x + 1);
+                indices.push_back(centerIndex + x + 2);
+            }
+        }   
     };
 
     addDisk(halfHeight, 1);
@@ -632,6 +798,31 @@ std::shared_ptr<Mesh> Mesh::createWireframeBox(const glm::vec3& halfExtents) {
     
     auto mesh = std::make_shared<Mesh>(vertices, indices);
     mesh->setMeshType(MeshType::CUBE);
+    mesh->setRenderMode(GL_LINES);
+    return mesh;
+}
+
+std::shared_ptr<Mesh> Mesh::createWireframeRamp(const glm::vec3& halfExtents) {
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+
+    const float x = halfExtents.x, y = halfExtents.y, z = halfExtents.z;
+
+    vertices.push_back({{-x, -y, -z}, {0, 0, 0}, {0, 0}});
+    vertices.push_back({{ x, -y, -z}, {0, 0, 0}, {0, 0}});
+    vertices.push_back({{ x, -y,  z}, {0, 0, 0}, {0, 0}});
+    vertices.push_back({{-x, -y,  z}, {0, 0, 0}, {0, 0}});
+    vertices.push_back({{-x,  y, -z}, {0, 0, 0}, {0, 0}});
+    vertices.push_back({{ x,  y, -z}, {0, 0, 0}, {0, 0}});
+
+    indices.insert(indices.end(), {0, 1, 1, 2, 2, 3, 3, 0});
+    indices.insert(indices.end(), {0, 4, 1, 5, 4, 5});
+    indices.insert(indices.end(), {0, 3, 4, 3});
+    indices.insert(indices.end(), {1, 2, 5, 2});
+    indices.insert(indices.end(), {4, 5, 5, 2, 2, 3, 3, 4});
+
+    auto mesh = std::make_shared<Mesh>(vertices, indices);
+    mesh->setMeshType(MeshType::RAMP);
     mesh->setRenderMode(GL_LINES);
     return mesh;
 }

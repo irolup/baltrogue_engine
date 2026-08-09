@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <memory>
+#include <cstdint>
 #include <glm/glm.hpp>
 #include "Components/LightComponent.h"
 
@@ -18,14 +19,20 @@ public:
     
     const std::vector<LightComponent*>& getLights() const { return lights; }
     
-    std::vector<LightComponent::LightData> getLightDataArray() const;
+    const std::vector<LightComponent::LightData>& getLightDataArray() const;
     
     static constexpr size_t MAX_LIGHTS = 16;
     size_t getActiveLightCount() const { return std::min(lights.size(), MAX_LIGHTS); }
     size_t getLightCount() const { return lights.size(); }
-    
+
     void update();
-    
+
+    void beginPass() { ++passStamp; }
+    uint32_t getPassStamp() const { return passStamp; }
+
+    bool isShadowMapBound() const { return shadowMapBound; }
+    void setShadowMapBound(bool bound) { shadowMapBound = bound; }
+
 private:
     LightingManager() = default;
     ~LightingManager() = default;
@@ -33,6 +40,9 @@ private:
     LightingManager& operator=(const LightingManager&) = delete;
     
     std::vector<LightComponent*> lights;
+    mutable std::vector<LightComponent::LightData> lightDataScratch;
+    uint32_t passStamp = 1;
+    bool shadowMapBound = false;
 };
 
 } // namespace GameEngine

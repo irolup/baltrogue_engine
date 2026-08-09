@@ -14,6 +14,9 @@ uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
 uniform mat3 normalMatrix;
 
+uniform vec2 u_UVScale;
+uniform vec2 u_UVOffset;
+
 // Bone animation uniforms
 uniform mat4 u_BoneMatrices[100];  // Maximum 100 bones
 uniform int u_NumBones;
@@ -97,7 +100,8 @@ void main() {
     vBitangent = normalize(cross(vNormal, vTangent));
 
     // Texture coordinate (flip Y to match Vita)
-    vTexCoord = vec2(texCoord.x, 1.0 - texCoord.y);
+    vec2 flippedTexCoord = vec2(texCoord.x, 1.0 - texCoord.y);
+    vTexCoord = flippedTexCoord * u_UVScale + u_UVOffset;
 
     // Clip-space position
     gl_Position = projectionMatrix * viewPos;

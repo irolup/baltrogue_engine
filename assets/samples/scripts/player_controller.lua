@@ -217,6 +217,7 @@ end
 function start()
     lastJumpTime = getTime()
     lastFireTime = getTime()
+    angularFactorSet = false
     if setNodeVisible then
         setNodeVisible(playerModelNodeName, false)
         setNodeVisible(gunMeshNodeName, true)
@@ -224,13 +225,13 @@ function start()
     if input and input.setMouseCapture then input.setMouseCapture(true) end
     updateEquippedText()
 
-    local ok, mod = pcall(dofile, "assets/scripts/gravity_gun.lua")
+    local ok, mod = pcall(dofile, "assets/samples/scripts/gravity_gun.lua")
     if ok and mod and mod.update then gravityGun = mod end
-    ok, mod = pcall(dofile, "assets/scripts/impulse_pistol.lua")
+    ok, mod = pcall(dofile, "assets/samples/scripts/impulse_pistol.lua")
     if ok and mod and mod.fire then impulsePistol = mod end
-    ok, mod = pcall(dofile, "assets/scripts/melee.lua")
+    ok, mod = pcall(dofile, "assets/samples/scripts/melee.lua")
     if ok and mod and mod.fire then meleeWeapon = mod end
-    ok, mod = pcall(dofile, "assets/scripts/gravity_prism.lua")
+    ok, mod = pcall(dofile, "assets/samples/scripts/gravity_prism.lua")
     if ok and mod and mod.place then gravityPrism = mod end
 end
 
@@ -248,7 +249,10 @@ function update(deltaTime)
         gravityPrism.update(deltaTime)
     end
 
-    if setNodeAngularFactor then setNodeAngularFactor("PlayerCollision", 0, 0, 0) end
+    if not angularFactorSet and setNodeAngularFactor then
+        setNodeAngularFactor("PlayerCollision", 0, 0, 0)
+        angularFactorSet = true
+    end
     handleMovement(deltaTime, currentTime)
 end
 

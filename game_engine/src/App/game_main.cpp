@@ -14,6 +14,7 @@
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Rendering/TextureManager.h"
+#include "Editor/BuildSettings.h"
 #include <iostream>
 
 using namespace GameEngine;
@@ -28,7 +29,9 @@ int main() {
         return -1;
     }
     
-    engine.setWindowTitle("Game Engine - Linux Game Build");
+    BuildSettings buildSettings;
+    buildSettings.load();
+    engine.setWindowTitle(buildSettings.pc.title);
     
     // Enable editor mode for keyboard and mouse input
 #ifndef VITA_BUILD

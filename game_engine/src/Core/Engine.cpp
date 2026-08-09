@@ -3,6 +3,7 @@
 #include "Rendering/Renderer.h"
 #include "Rendering/Material.h"
 #include "Rendering/Shader.h"
+#include "Rendering/ShadowMap.h"
 #include "Input/InputManager.h"
 #include "Core/Time.h"
 #include "Core/MenuManager.h"
@@ -86,6 +87,7 @@ void Engine::shutdown() {
 #endif
     
     if (sceneManager) {
+        sceneManager->flushDeferredGpuRelease();
         sceneManager.reset();
     }
 
@@ -162,7 +164,9 @@ bool Engine::initializeSystems() {
     if (!PhysicsManager::getInstance().initialize()) {
         return false;
     }
-    
+
+    ShadowManager::getInstance().loadSettings();
+
 #ifdef ENABLE_VULKAN
     auto vulkanRenderer = std::make_unique<GameEngine::VulkanRenderer>();
     renderer = std::unique_ptr<IRenderer>(std::move(vulkanRenderer));
@@ -271,6 +275,10 @@ void Engine::update() {
     timeSystem->update();
     
     inputManager->update();
+
+    if (sceneManager) {
+        sceneManager->processPendingSceneLoad();
+    }
     
 #ifdef LINUX_BUILD
     if (inputManager->shouldExit()) {
@@ -301,6 +309,10 @@ void Engine::update() {
             physicsAccumulator -= fixedDt;
             ++steps;
         }
+
+        if (physicsAccumulator > fixedDt * maxPhysicsSteps) {
+            physicsAccumulator = fixedDt * maxPhysicsSteps;
+        }
         if (sceneManager->getCurrentScene()) {
             sceneManager->update(dt);
             sceneManager->lateUpdate(dt);
@@ -325,6 +337,10 @@ void Engine::render() {
         vulkanFrame->setVulkanRenderer(static_cast<GameEngine::VulkanRenderer*>(renderer.get()));
         vulkanFrame->drawFrame();
         return;
+    }
+#else
+    if (sceneManager) {
+        sceneManager->flushDeferredGpuRelease();
     }
 #endif
 
@@ -364,9 +380,9 @@ void Engine::handleEvents() {
 
 void Engine::setWindowTitle(const std::string& title) {
 #ifdef LINUX_BUILD
-    // Window title setting is handled by the platform
-    // For now, just print the title
-    std::cout << "Setting window title: " << title << std::endl;
+    if (window) {
+        glfwSetWindowTitle(window, title.c_str());
+    }
 #endif
 }
 
@@ -383,6 +399,23 @@ glm::ivec2 Engine::getWindowSize() const {
 
 Engine& GetEngine() {
     return *s_engineInstance;
+}
+
+Engine* GetEngineIfExists() {
+    return s_engineInstance;
+}
+
+void Engine::waitForGpuIdle() {
+#ifdef ENABLE_VULKAN
+    if (vulkanFrame) {
+        vulkanFrame->waitUntilIdle();
+    }
+    if (vulkanResources) {
+        vulkanResources->waitForGpuIdle();
+    }
+#else
+    platformWaitForGpuIdle();
+#endif
 }
 
 } // namespace GameEngine

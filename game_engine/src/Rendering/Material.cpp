@@ -4,6 +4,7 @@
 #include "Rendering/Texture.h"
 #include "Rendering/TextureManager.h"
 #include "Rendering/LightingManager.h"
+#include "Rendering/ShadowMap.h"
 #include <algorithm>
 #include <iostream>
 #include <vector>
@@ -39,6 +40,8 @@ Material::Material()
     , shaderVertexPathVita("")
     , shaderFragmentPathVita("")
 {
+    setVec2("u_UVScale", uvScale);
+    setVec2("u_UVOffset", uvOffset);
 }
 
 Material::Material(std::shared_ptr<Shader> materialShader)
@@ -61,9 +64,30 @@ Material::Material(std::shared_ptr<Shader> materialShader)
     , shaderVertexPathVita("")
     , shaderFragmentPathVita("")
 {
+    setVec2("u_UVScale", uvScale);
+    setVec2("u_UVOffset", uvOffset);
 }
 
 Material::~Material() {
+}
+
+void Material::setBlendMode(BlendMode mode) {
+    blendMode = mode;
+    depthWrite = (mode == BlendMode::Opaque);
+}
+
+void Material::setOpacity(float o) {
+    if (o < 0.0f) o = 0.0f;
+    else if (o > 1.0f) o = 1.0f;
+    opacity = o;
+    setFloat("u_Opacity", opacity);
+}
+
+void Material::setAlphaCutoff(float cutoff) {
+    if (cutoff < 0.0f) cutoff = 0.0f;
+    else if (cutoff > 1.0f) cutoff = 1.0f;
+    alphaCutoff = cutoff;
+    setFloat("u_AlphaCutoff", alphaCutoff);
 }
 
 glm::vec3 Material::getColorLinear() const
@@ -176,6 +200,65 @@ bool Material::isUsingCustomShader() const {
     return !shaderVertexPathLinux.empty() && !shaderFragmentPathLinux.empty();
 #endif
 }
+
+#ifdef ENABLE_VULKAN
+namespace {
+std::string extractShaderBaseName(const std::string& path) {
+    const auto slash = path.find_last_of("/\\");
+    std::string file = slash != std::string::npos ? path.substr(slash + 1) : path;
+    const auto dot = file.find_last_of('.');
+    return dot != std::string::npos ? file.substr(0, dot) : file;
+}
+}
+
+bool Material::isBeamMaterial() const {
+    if (!isUsingCustomShader()) {
+        return false;
+    }
+    return extractShaderBaseName(getShaderVertexPath()) == "beam";
+}
+
+VulkanShaderPipelineKind Material::getVulkanShaderPipelineKind() const {
+    if (!isUsingCustomShader()) {
+        return VulkanShaderPipelineKind::DefaultLit;
+    }
+    if (isBeamMaterial()) {
+        return VulkanShaderPipelineKind::Beam;
+    }
+    return VulkanShaderPipelineKind::Custom;
+}
+
+std::string Material::getVulkanVertexSpvPath() const {
+    if (!isUsingCustomShader()) {
+        return "assets/vulkan/default_lit.vert.spv";
+    }
+    return "assets/vulkan/" + extractShaderBaseName(getShaderVertexPath()) + ".vert.spv";
+}
+
+std::string Material::getVulkanFragmentSpvPath() const {
+    if (!isUsingCustomShader()) {
+        return "assets/vulkan/default_lit.frag.spv";
+    }
+    return "assets/vulkan/" + extractShaderBaseName(getShaderFragmentPath()) + ".frag.spv";
+}
+
+std::string Material::getVulkanShaderPipelineKey() const {
+    return getVulkanVertexSpvPath() + "|" + getVulkanFragmentSpvPath();
+}
+
+std::string Material::getCustomTexturePathByUniformName(const std::string& uniformName) const {
+    for (const auto& entry : customTextureUniforms) {
+        if (entry.first == uniformName) {
+            return entry.second;
+        }
+    }
+    return "";
+}
+
+bool Material::hasCustomTextureUniform(const std::string& uniformName) const {
+    return !getCustomTexturePathByUniformName(uniformName).empty();
+}
+#endif
 
 void Material::useDefaultLitShader() {
     shader = Shader::getLightingShader();
@@ -384,12 +467,18 @@ void Material::drawInspector() {
         if (ImGui::SliderFloat("Reflection Strength", &reflectionStrength, 0.0f, 1.0f)) {
             setReflectionStrength(reflectionStrength);
         }
+
+        if (ImGui::SliderFloat("Opacity", &opacity, 0.0f, 1.0f)) {
+            setOpacity(opacity);
+        }
         
         const char* blendModeNames[] = { "Opaque", "Alpha", "Additive" };
         int currentBlend = static_cast<int>(blendMode);
         if (ImGui::Combo("Blend Mode", &currentBlend, blendModeNames, 3)) {
             setBlendMode(static_cast<BlendMode>(currentBlend));
         }
+
+        ImGui::Checkbox("Depth Write", &depthWrite);
         
         ImGui::Separator();
         ImGui::Text("Textures");
@@ -455,6 +544,24 @@ void Material::drawInspector() {
                 }
             }
             ImGui::EndCombo();
+        }
+        
+        ImGui::Text("UV Scale");
+        if (ImGui::DragFloat2("##UVScale", &uvScale.x, 0.01f)) {
+            setUVScale(uvScale);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset##UVScale")) {
+            setUVScale(glm::vec2(1.0f, 1.0f));
+        }
+        
+        ImGui::Text("UV Offset");
+        if (ImGui::DragFloat2("##UVOffset", &uvOffset.x, 0.01f)) {
+            setUVOffset(uvOffset);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset##UVOffset")) {
+            setUVOffset(glm::vec2(0.0f, 0.0f));
         }
         
         ImGui::Separator();
@@ -769,6 +876,8 @@ void Material::applyProperties() const {
     shader->setVec3("u_DiffuseColor", color);
     shader->setVec3("diffuseColor", color);
     shader->setVec3("u_Color", color);
+    shader->setFloat("u_Opacity", opacity);
+    shader->setFloat("u_AlphaCutoff", alphaCutoff);
     
     auto& shaderManager = ShaderManager::getInstance();
     bool isLit = (shader == Shader::getLightingShader()) || shaderManager.isLitShader(shader);
@@ -818,45 +927,62 @@ void Material::applyProperties() const {
         shader->setMat4(prop.first, prop.second);
     }
     
-    int textureUnit = 0;
+    // Fixed units for the lit shader's samplers. GLSL sampler uniforms default
+    // to unit 0, if samplerCube (u_EnvironmentMap) and a sampler2D both point
+    // at unit 0, the draw fails with GL_INVALID_OPERATION and the mesh vanishes.
+    // This shows up in the editor on scenes with a skybox (cubemap exists) when
+    // ModelRenderer draws without injecting the env map, MeshRenderer was fine
+    // because it always bound the cubemap onto a later unit
+    constexpr int kDiffuseUnit = 0;
+    constexpr int kNormalUnit = 1;
+    constexpr int kArmUnit = 2;
+    constexpr int kEnvironmentUnit = 3;
+
+    shader->setInt("u_DiffuseTexture", kDiffuseUnit);
+    shader->setInt("u_NormalTexture", kNormalUnit);
+    shader->setInt("u_ARMTexture", kArmUnit);
+    shader->setInt("u_EnvironmentMap", kEnvironmentUnit);
+    shader->setInt("u_ShadowMap", kShadowMapTextureUnit);
     
     if (diffuseTexture) {
-        diffuseTexture->bind(textureUnit);
-        shader->setInt("u_DiffuseTexture", textureUnit);
+        diffuseTexture->bind(kDiffuseUnit);
         shader->setBool("u_HasDiffuseTexture", true);
-        textureUnit++;
     } else {
         shader->setBool("u_HasDiffuseTexture", false);
     }
     
     if (normalTexture) {
-        normalTexture->bind(textureUnit);
-        shader->setInt("u_NormalTexture", textureUnit);
+        normalTexture->bind(kNormalUnit);
         shader->setBool("u_HasNormalTexture", true);
-        textureUnit++;
     } else {
         shader->setBool("u_HasNormalTexture", false);
     }
     
     if (armTexture) {
-        armTexture->bind(textureUnit);
-        shader->setInt("u_ARMTexture", textureUnit);
+        armTexture->bind(kArmUnit);
         shader->setBool("u_HasARMTexture", true);
-        textureUnit++;
     } else {
         shader->setBool("u_HasARMTexture", false);
     }
+
+    auto envIt = textureProperties.find("u_EnvironmentMap");
+    if (envIt != textureProperties.end() && envIt->second && envIt->second->isCubemap()) {
+        envIt->second->bindCubemap(kEnvironmentUnit);
+    }
     
+    // (0-3 textures, 4 shadow atlas).
+    int textureUnit = kShadowMapTextureUnit + 1;
+
     for (const auto& prop : textureProperties) {
-        if (prop.second) {
-            if ((prop.first == "skybox" || prop.first == "u_EnvironmentMap") && prop.second->isCubemap()) {
-                prop.second->bindCubemap(textureUnit);
-            } else {
-                prop.second->bind(textureUnit);
-            }
-            shader->setInt(prop.first, textureUnit);
-            textureUnit++;
+        if (!prop.second) continue;
+        if (prop.first == "u_EnvironmentMap") continue; // already on unit 3
+        if ((prop.first == "skybox") && prop.second->isCubemap()) {
+            prop.second->bindCubemap(textureUnit);
+        } else {
+            prop.second->bind(textureUnit);
         }
+        shader->setInt(prop.first, textureUnit);
+        textureUnit++;
     }
 }
 
@@ -867,28 +993,70 @@ void Material::setupLightingUniforms() const {
         shader->setFloat("Kd", 1.0f);
     }
     
-    auto& lightingManager = LightingManager::getInstance();
-    auto lightDataArray = lightingManager.getLightDataArray();
-    
-    shader->setInt("u_NumLights", static_cast<int>(lightingManager.getActiveLightCount()));
-    
-    for (size_t i = 0; i < lightDataArray.size(); ++i) {
-        const auto& lightData = lightDataArray[i];
-        std::string lightIndex = "u_Lights[" + std::to_string(i) + "]";
-        
-        shader->setVec4(lightIndex + ".position", lightData.position);
-        shader->setVec4(lightIndex + ".direction", lightData.direction);
-        shader->setVec4(lightIndex + ".color", lightData.color);
-        shader->setVec4(lightIndex + ".params", lightData.params);
-        shader->setVec4(lightIndex + ".attenuation", lightData.attenuation);
-    }
-    
     auto cameraPosIt = vec3Properties.find("u_CameraPos");
     if (cameraPosIt != vec3Properties.end()) {
         shader->setVec3("u_CameraPos", cameraPosIt->second);
     } else {
         shader->setVec3("u_CameraPos", glm::vec3(0.0f, 0.0f, 5.0f));
     }
+
+    auto& lightingManager = LightingManager::getInstance();
+
+    const uint32_t passStamp = lightingManager.getPassStamp();
+    if (shader->lightingPassStamp == passStamp) {
+        return;
+    }
+    shader->lightingPassStamp = passStamp;
+
+    const auto& lightDataArray = lightingManager.getLightDataArray();
+
+    shader->setInt("u_NumLights", static_cast<int>(lightingManager.getActiveLightCount()));
+
+    struct LightUniformNames {
+        std::string position, direction, color, params, attenuation;
+    };
+    static const std::vector<LightUniformNames> uniformNames = [] {
+        std::vector<LightUniformNames> names;
+        names.reserve(LightingManager::MAX_LIGHTS);
+        for (size_t i = 0; i < LightingManager::MAX_LIGHTS; ++i) {
+            const std::string base = "u_Lights[" + std::to_string(i) + "]";
+            names.push_back({base + ".position", base + ".direction", base + ".color",
+                             base + ".params", base + ".attenuation"});
+        }
+        return names;
+    }();
+
+    const size_t lightCount = std::min(lightDataArray.size(), uniformNames.size());
+    for (size_t i = 0; i < lightCount; ++i) {
+        const auto& lightData = lightDataArray[i];
+        const auto& names = uniformNames[i];
+
+        shader->setVec4(names.position, lightData.position);
+        shader->setVec4(names.direction, lightData.direction);
+        shader->setVec4(names.color, lightData.color);
+        shader->setVec4(names.params, lightData.params);
+        shader->setVec4(names.attenuation, lightData.attenuation);
+    }
+
+    setupShadowUniforms();
+}
+
+void Material::setupShadowUniforms() const {
+    if (!shader->hasUniform("u_NumShadowViews")) {
+        return;
+    }
+
+    const auto& shadowManager = ShadowManager::getInstance();
+    const std::vector<glm::mat4>& shadowMatrices = shadowManager.getViewMatrices();
+
+    if (shadowMatrices.empty() || !LightingManager::getInstance().isShadowMapBound()) {
+        shader->setInt("u_NumShadowViews", 0);
+        return;
+    }
+
+    shader->setInt("u_NumShadowViews", static_cast<int>(shadowMatrices.size()));
+    shader->setVec4("u_ShadowParams", shadowManager.getShaderParams());
+    shader->setMat4Array("u_ShadowMatrices", shadowMatrices.data(), shadowMatrices.size());
 }
 
 } // namespace GameEngine

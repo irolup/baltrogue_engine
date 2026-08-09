@@ -23,8 +23,16 @@ public:
 
     void createCommandPool();
 
-    void createColorResources();
     void createDepthResources();
+
+    bool ensureShadowAtlas(uint32_t width, uint32_t height);
+    bool hasShadowAtlas() const { return shadowAtlasWidth_ > 0; }
+    vk::raii::ImageView& getShadowAtlasImageView() { return shadowAtlasImageView_; }
+    vk::Image getShadowAtlasImage() const { return *shadowAtlasImage_; }
+    vk::Sampler getShadowAtlasSampler() const { return *shadowAtlasSampler_; }
+    vk::Format getShadowAtlasFormat() const { return shadowAtlasFormat_; }
+    uint32_t getShadowAtlasWidth() const { return shadowAtlasWidth_; }
+    uint32_t getShadowAtlasHeight() const { return shadowAtlasHeight_; }
 
     // Per-frame uniform buffers (one per swapchain image)
     void createUniformBuffers(vk::DeviceSize size);
@@ -66,8 +74,19 @@ public:
     const VulkanMeshGpu& getOrUploadMesh(const Mesh& mesh);
     const VulkanMeshGpu& getSkyboxMesh();
     const VulkanTextMeshGpu& getOrUploadTextMesh(const TextComponent& text);
+    const VulkanTextMeshGpu* findTextMesh(const TextComponent& text) const;
 
     void clearMeshCache();
+
+    void evictMesh(const Mesh* mesh);
+    void evictTextMesh(const TextComponent* text);
+
+    void waitForGpuIdle();
+    void clearSceneGpuCaches();
+    // Wait for GPU work to finish, then drop scene owned mesh/text/material GPU caches
+    void releaseSceneGpuResources();
+    // Destroy retired mesh buffers after the GPU has finished all submitted work
+    void drainRetiredGpuResources();
 
     void waitForUploads();
 
@@ -75,8 +94,6 @@ public:
 
     vk::raii::CommandPool& getCommandPool();
     std::vector<vk::raii::CommandBuffer>& getCommandBuffers();
-    vk::raii::Image& getColorImage();
-    vk::raii::ImageView& getColorImageView();
     vk::raii::Image& getDepthImage();
     vk::raii::ImageView& getDepthImageView();
     vk::raii::ImageView& getTextureImageView();
@@ -96,7 +113,6 @@ public:
     const VulkanTexture& getOrCreateFontAtlasTexture( const std::vector<uint8_t>& atlasData, uint32_t width, uint32_t height, const std::string& key);
     const VulkanTexture& getOrCreateCubemapTexture(const std::vector<std::string>& facePaths);
     const VulkanTexture& getDefaultCubemapTexture();
-    std::string getCubemapCacheKey(const std::vector<std::string>& facePaths) const;
 
     struct MaterialBuffer {
         vk::raii::Buffer buffer{nullptr};
@@ -110,12 +126,28 @@ public:
         vk::DeviceSize size = 0;
     };
 
-    void ensureMaterialUniformBuffer(const Material* material, const MaterialUniforms& data);
-    void ensureTextMaterialUniformBuffer(const TextMaterial* material, const TextMaterialUniforms& data);
+    struct ShaderMaterialBuffer {
+        vk::raii::Buffer buffer{nullptr};
+        vk::raii::DeviceMemory memory{nullptr};
+        vk::DeviceSize size = 0;
+    };
 
-    
+    struct AnimationBuffer {
+        vk::raii::Buffer buffer{nullptr};
+        vk::raii::DeviceMemory memory{nullptr};
+        vk::DeviceSize size = 0;
+    };
+
+    void ensureMaterialUniformBuffer(const Material* material, const MaterialUniforms& data);
+    void ensureShaderMaterialUniformBuffer(const Material* material, const ShaderMaterialUniforms& data);
+    void ensureTextMaterialUniformBuffer(const TextMaterial* material, const TextMaterialUniforms& data);
+    void createAnimationUniformBuffers();
+    void writeAnimationUniform(uint32_t slot, const std::vector<glm::mat4>& boneTransforms);
+
     vk::DescriptorBufferInfo getMaterialDescriptorBufferInfo(const Material* material) const;
+    vk::DescriptorBufferInfo getShaderMaterialDescriptorBufferInfo(const Material* material) const;
     vk::DescriptorBufferInfo getTextMaterialDescriptorBufferInfo(const TextMaterial* material) const;
+    vk::DescriptorBufferInfo getAnimationDescriptorBufferInfo(uint32_t slot) const;
 
     std::vector<vk::raii::Buffer> uniformBuffers_;
     std::vector<vk::raii::DeviceMemory> uniformBuffersMemory_;
@@ -145,13 +177,17 @@ private:
     std::vector<RetainedStagingBuffer> uploadStagingRetention_;
     RetainedStagingBuffer& createRetainedStagingBuffer(vk::DeviceSize size);
 
-    vk::raii::Image colorImage_ = nullptr;
-    vk::raii::DeviceMemory colorImageMemory_ = nullptr;
-    vk::raii::ImageView colorImageView_ = nullptr;
-
     vk::raii::Image depthImage_ = nullptr;
     vk::raii::DeviceMemory depthImageMemory_ = nullptr;
     vk::raii::ImageView depthImageView_ = nullptr;
+
+    vk::raii::Image shadowAtlasImage_ = nullptr;
+    vk::raii::DeviceMemory shadowAtlasMemory_ = nullptr;
+    vk::raii::ImageView shadowAtlasImageView_ = nullptr;
+    vk::raii::Sampler shadowAtlasSampler_ = nullptr;
+    vk::Format shadowAtlasFormat_ = vk::Format::eUndefined;
+    uint32_t shadowAtlasWidth_ = 0;
+    uint32_t shadowAtlasHeight_ = 0;
 
     uint32_t mipLevels_ = 0;
     vk::raii::Image textureImage_ = nullptr;
@@ -160,12 +196,23 @@ private:
     vk::raii::Sampler textureSampler_ = nullptr;
 
     std::unordered_map<const Mesh*, VulkanMeshGpu> meshCache_;
-    std::unordered_map<const TextComponent*, VulkanTextMeshGpu> textMeshCache_;
+    struct CachedTextMesh {
+        uint64_t revision = 0;
+        VulkanTextMeshGpu gpu;
+    };
+    std::unordered_map<const TextComponent*, CachedTextMesh> textMeshCache_;
+    std::vector<VulkanMeshGpu> retiredMeshes_;
+    std::vector<VulkanTextMeshGpu> retiredTextMeshes_;
+    void retireMeshGpu(VulkanMeshGpu&& gpu);
+    void retireTextMeshGpu(VulkanTextMeshGpu&& gpu);
+
     std::unordered_map<std::string, VulkanTexture> textureCache_;
     std::unordered_map<std::string, VulkanTexture> fontTextureCache_;
     std::unordered_map<std::string, VulkanTexture> cubemapCache_;
     std::unordered_map<const Material*, MaterialBuffer> materialUniformBuffers_;
+    std::unordered_map<const Material*, ShaderMaterialBuffer> shaderMaterialUniformBuffers_;
     std::unordered_map<const TextMaterial*, TextMaterialBuffer> textMaterialUniformBuffers_;
+    std::vector<AnimationBuffer> animationUniformBuffers_;
 
     VulkanMeshGpu skyboxMeshGpu_{};
     bool skyboxMeshUploaded_ = false;

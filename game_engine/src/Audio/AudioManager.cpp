@@ -164,16 +164,14 @@ void AudioManager::audioThreadFunction() {
     
     while (audioThreadRunning.load()) {
 #ifdef VITA_BUILD
-        // Copy component pointers while holding lock, then release lock before calling methods
-        // This prevents accessing deleted components and reduces lock
+        // Hold the lock for the whole streaming pass: unregisterSoundComponent()
+        // (called before a component frees its buffers) then blocks until the
+        // pass is done, so a component can never be deleted mid-stream.
         std::unique_lock<std::mutex> lock(soundComponentsMutex, std::try_to_lock);
         if (lock.owns_lock()) {
-            std::vector<SoundComponent*> componentsToStream = activeSoundComponents;
-            lock.unlock();
-            
-            for (SoundComponent* component : componentsToStream) {
+            for (SoundComponent* component : activeSoundComponents) {
                 if (!component) continue;
-                
+
                 if (component->isPlaying()) {
                     // Call streamAudio() multiple times per iteration to keep hardware buffer filled
                     // sceAudioOutOutput() is blocking and naturally throttles when hardware isn't ready
@@ -185,6 +183,7 @@ void AudioManager::audioThreadFunction() {
                     }
                 }
             }
+            lock.unlock();
         }
         
         // Process commands less frequently to prioritize audio streaming

@@ -1,0 +1,17 @@
+# Shadow Settings
+# Format: platform:key,value
+# Written by the editor. Each build reads its own platform's block:
+#   pc   - the desktop game and the editor viewport
+#   vita - the Vita build (packed into the VPK)
+
+pc:enabled,1
+pc:tileSize,1024
+pc:softShadows,1
+pc:directionalExtent,25
+pc:directionalDepth,60
+
+vita:enabled,0
+vita:tileSize,128
+vita:softShadows,0
+vita:directionalExtent,25
+vita:directionalDepth,60

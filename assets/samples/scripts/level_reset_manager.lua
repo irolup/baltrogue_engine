@@ -1,16 +1,12 @@
--- assets/scripts/level_reset_manager.lua
+-- assets/samples/scripts/level_reset_manager.lua
 -- Template: soft reset for Vita-friendly death handling.
--- Works for nodes with no script by restoring transform/state from snapshot.
 
 local M = {}
 
--- Tune these for your scene
 local PLAYER_ROOT = "Player"
 local PLAYER_COLLISION = "PlayerCollision"
 local PLAYER_CAMERA = "PlayerCamera"
 
--- Nodes that can move/be toggled and must be restored even if they have no script
--- Add names from playground.json here.
 local TRACKED_NODES = {
     "dynamic_cube",
     "dynamic_cube_mesh",
@@ -21,26 +17,24 @@ local TRACKED_NODES = {
     "pushing_wall",
     "platform",
     "ramp",
-    -- Add puzzle props, doors, buttons, pickups, etc.
 }
 
--- Optional script hook nodes (if they exist)
 local HOOK_NODES = {
-    "Player",                 -- player_controller.lua
-    "enemy",                  -- enemy_main.lua
+    "Player", -- player_controller.lua
+    "enemy", -- enemy_main.lua
     "enemy2",
     "Pause_Menu_Controller",
 }
 
 local initial = {
     captured = false,
-    node = {},               -- per-node snapshot
+    node = {},
     player = {},
 }
 
 local runtime = {
     isResetting = false,
-    transientNodes = {},     -- names created/spawned at runtime
+    transientNodes = {}, -- names created/spawned at runtime
 }
 
 local function hasFn(f)
@@ -118,7 +112,7 @@ end
 function M.captureInitialState()
     if initial.captured then return end
 
-    -- Capture tracked nodes (scriptless-safe)
+    -- Capture tracked nodes
     for _, n in ipairs(TRACKED_NODES) do
         initial.node[n] = captureNodeState(n)
     end
@@ -165,27 +159,24 @@ function M.softReset(reason)
         M.captureInitialState()
     end
 
-    -- 1) Optional pre-reset hooks
     for _, n in ipairs(HOOK_NODES) do
         callHook(n, "onPreReset")
     end
 
-    -- 2) Clear runtime spawned stuff
     clearTransients()
 
-    -- 3) Restore all tracked scene nodes (works with no scripts attached)
+    -- Restore all tracked scene nodes
     for nodeName, snap in pairs(initial.node) do
         applyNodeState(nodeName, snap)
         resetPhysicsFor(nodeName)
     end
 
-    -- 4) Restore player baseline
     applyNodeState(PLAYER_ROOT, initial.player.root)
     applyNodeState(PLAYER_COLLISION, initial.player.collision)
     applyNodeState(PLAYER_CAMERA, initial.player.camera)
     resetPhysicsFor(PLAYER_COLLISION)
 
-    -- 5) Optional post-reset hooks (for health, ammo, AI tables, UI)
+    --Optional post-reset hooks (for health, ammo...)
     for _, n in ipairs(HOOK_NODES) do
         callHook(n, "onPostReset")
     end

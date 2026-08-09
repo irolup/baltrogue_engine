@@ -21,9 +21,16 @@ layout(std140, set = 0, binding = 0) uniform FrameUniforms {
     vec4 cameraPosition;
     int numLights;
     int hasEnvironmentMap;
-    int _pad1, _pad2;
+    int numShadowViews;
+    int _pad2;
     Light lights[16];
+    vec4 shadowParams; // x = 1/atlasWidth, y = 1/atlasHeight, z = soft filter
+    mat4 shadowMatrices[8];
 } uFrame;
+
+// Must match kShadowAtlasCols / kShadowAtlasRows in ShadowMap.h.
+const vec2 ATLAS_TILES = vec2(4.0, 2.0);
+layout(set = 0, binding = 1) uniform sampler2D uShadowMap;
 
 layout(set = 1, binding = 0) uniform sampler2D uDiffuseTexture;
 layout(set = 1, binding = 1) uniform sampler2D uNormalTexture;
@@ -34,14 +41,19 @@ layout(std140, set = 1, binding = 3) uniform MaterialUniforms {
     float roughness;
     float metallic;
     float reflectionStrength;
-    float padding;
+    float alphaCutoff;
     vec4 textureFlags;
+    vec4 uvScaleOffset; // xy = scale, zw = offset
 } uMaterial;
 
 layout(set = 2, binding = 0) uniform samplerCube uEnvironmentMap;
 
 layout(push_constant) uniform PushConstants {
     mat4 model;
+    int objectID;
+    int receiveShadows;
+    int shadowViewIndex;
+    int _pad2;
 } uPushConstants;
 
 layout(location = 0) out vec4 outColor;
@@ -176,6 +188,62 @@ layout(location = 0) out vec4 outColor;
 //     return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
 // }
 
+// Face order must match ShadowManager::addPointViews: +X -X +Y -Y +Z -Z.
+int cubeFaceIndex(vec3 d) {
+    vec3 a = abs(d);
+    if (a.x >= a.y && a.x >= a.z) return (d.x > 0.0) ? 0 : 1;
+    if (a.y >= a.z) return (d.y > 0.0) ? 2 : 3;
+    return (d.z > 0.0) ? 4 : 5;
+}
+
+// 1.0 = fully lit, 0.0 = fully occluded.
+float sampleShadowView(int view, vec3 worldPos, float bias) {
+    vec4 lightClip = uFrame.shadowMatrices[view] * vec4(worldPos, 1.0);
+    if (lightClip.w <= 0.0) return 1.0;
+
+    vec3 proj = lightClip.xyz / lightClip.w;
+    // Vulkan clip space already puts z in [0,1]; only xy needs remapping.
+    proj.xy = proj.xy * 0.5 + 0.5;
+    if (proj.z > 1.0 || proj.z < 0.0) return 1.0;
+    if (proj.x < 0.0 || proj.x > 1.0 || proj.y < 0.0 || proj.y > 1.0) return 1.0;
+
+    vec2 tileTexel = uFrame.shadowParams.xy * ATLAS_TILES;
+    vec2 tileUV = clamp(proj.xy, tileTexel * 0.5, vec2(1.0) - tileTexel * 0.5);
+    vec2 tileOrigin = vec2(mod(float(view), ATLAS_TILES.x), floor(float(view) / ATLAS_TILES.x));
+    vec2 atlasUV = (tileOrigin + tileUV) / ATLAS_TILES;
+
+    float compare = proj.z - bias;
+    float lit = step(compare, texture(uShadowMap, atlasUV).r);
+
+    if (uFrame.shadowParams.z > 0.5) {
+        lit += step(compare, texture(uShadowMap, atlasUV + vec2(uFrame.shadowParams.x, 0.0)).r);
+        lit += step(compare, texture(uShadowMap, atlasUV + vec2(0.0, uFrame.shadowParams.y)).r);
+        lit += step(compare, texture(uShadowMap, atlasUV + uFrame.shadowParams.xy).r);
+        lit *= 0.25;
+    }
+
+    return lit;
+}
+
+float computeShadow(Light light, vec3 normal, vec3 worldPos) {
+    int baseView = int(light.attenuation.y);
+    if (baseView < 0) return 1.0;
+
+    vec3 lightDir = (light.position.w < 0.5)
+        ? normalize(-light.direction.xyz)
+        : normalize(light.position.xyz - worldPos);
+
+    int view = baseView;
+    if (light.position.w > 0.5 && light.position.w < 1.5) {
+        view = baseView + cubeFaceIndex(worldPos - light.position.xyz);
+    }
+
+    float ndotl = max(dot(normal, lightDir), 0.0);
+    float bias = light.attenuation.w * max(1.0, 3.0 * (1.0 - ndotl));
+
+    return mix(1.0, sampleShadowView(view, worldPos, bias), light.attenuation.z);
+}
+
 // Lighting calculation functions
 vec3 calculateDirectionalLight(Light light, vec3 normal, vec3 viewDir) {
     vec3 lightDir = normalize(-light.direction.xyz);
@@ -295,9 +363,19 @@ vec3 calculateSpotLight(Light light, vec3 normal, vec3 viewDir, vec3 worldPos) {
 
 
 void main() {
+    vec2 uv = inTexCoord * uMaterial.uvScaleOffset.xy + uMaterial.uvScaleOffset.zw;
+
     vec3 albedo = uMaterial.baseColor.rgb;
+    float alpha = uMaterial.baseColor.a;
     if (uMaterial.textureFlags.x > 0.5) {
-        albedo = texture(uDiffuseTexture, inTexCoord).rgb;
+        vec4 diffuseSample = texture(uDiffuseTexture, uv);
+        albedo = diffuseSample.rgb;
+        alpha *= diffuseSample.a;
+    }
+
+    // glTF MASK: hard cutout (leaves, fences, etc.)
+    if (uMaterial.alphaCutoff > 0.0 && alpha < uMaterial.alphaCutoff) {
+        discard;
     }
 
     vec3 normal = normalize(inNormal);
@@ -305,27 +383,37 @@ void main() {
         vec3 tangent = normalize(inWorldTangent - dot(inWorldTangent, normal) * normal);
         vec3 bitangent = normalize(cross(normal, tangent));
         mat3 tbn = mat3(tangent, bitangent, normal);
-        vec3 normalSample = texture(uNormalTexture, inTexCoord).xyz * 2.0 - 1.0;
+        vec3 normalSample = texture(uNormalTexture, uv).xyz * 2.0 - 1.0;
         normal = normalize(tbn * normalSample);
     }
 
     vec3 viewDir = normalize(uFrame.cameraPosition.xyz - inWorldPos);
     vec3 result = vec3(0.0);
 
+    bool shadowsActive = (uFrame.numShadowViews > 0) && (uPushConstants.receiveShadows != 0);
+
     for (int i = 0; i < uFrame.numLights; i++) {
         Light light = uFrame.lights[i];
         float lightType = light.position.w;
+
+        vec3 contribution = vec3(0.0);
         if (lightType == 0.0)
-            result += calculateDirectionalLight(light, normal, viewDir);
+            contribution = calculateDirectionalLight(light, normal, viewDir);
         else if (lightType == 1.0)
-            result += calculatePointLight(light, normal, viewDir, inWorldPos);
+            contribution = calculatePointLight(light, normal, viewDir, inWorldPos);
         else if (lightType == 2.0)
-            result += calculateSpotLight(light, normal, viewDir, inWorldPos);
+            contribution = calculateSpotLight(light, normal, viewDir, inWorldPos);
+
+        if (shadowsActive && dot(contribution, contribution) > 0.0) {
+            contribution *= computeShadow(light, normal, inWorldPos);
+        }
+
+        result += contribution;
     }
     float ao = 1.0;
     if (uMaterial.textureFlags.z > 0.5)
-        ao = texture(uARMTexture, inTexCoord).r;
-    vec3 ambient = vec3(0.1) * albedo * ao;
+        ao = texture(uARMTexture, uv).r;
+    vec3 ambient = vec3(0.3) * albedo * ao;
     vec3 color = ambient + result * albedo;
     //vec3 color = result * albedo;
 
@@ -336,5 +424,5 @@ void main() {
         color = mix(color, environmentColor, clamp(uMaterial.reflectionStrength, 0.0, 1.0));
     }
 
-    outColor = vec4(color, 1.0);
+    outColor = vec4(color, alpha);
 }

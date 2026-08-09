@@ -103,7 +103,12 @@ public:
     void render(IRenderer& renderer);
     
     void bindToLua(lua_State* L);
-    
+
+    // Must be called before a Lua state that was passed to bindToLua() is closed
+    // (per-scene script runtimes are destroyed on scene unload/cache eviction).
+    // Clears the stored pointer so menu callbacks never run on a freed state.
+    void onLuaStateClosed(lua_State* L);
+
     bool isAnyMenuVisible() const;
     std::vector<std::string> getVisibleMenus() const;
     

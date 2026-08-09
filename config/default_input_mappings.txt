@@ -80,10 +80,10 @@ action:SecondaryFire,PC,3,1,1,0.1,1.0,-1
 action:SecondaryFire,VITA,1,4096,1,0.1,1.0,-1
 
 # D-pad Controls (VITA only)
-action:DpadUp,VITA,1,16,0,0.1,1.0,-1
-action:DpadDown,VITA,1,64,0,0.1,1.0,-1
-action:DpadLeft,VITA,1,128,0,0.1,1.0,-1
-action:DpadRight,VITA,1,32,0,0.1,1.0,-1
+action:DpadUp,VITA,1,16,1,0.1,1.0,-1
+action:DpadDown,VITA,1,64,1,0.1,1.0,-1
+action:DpadLeft,VITA,1,128,1,0.1,1.0,-1
+action:DpadRight,VITA,1,32,1,0.1,1.0,-1
 
 # Analog Stick Movement (for both platforms)
 action:MoveHorizontal,ALL,2,0,1,0.1,1.0,0

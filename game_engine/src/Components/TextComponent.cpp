@@ -1,5 +1,9 @@
 #include "Components/TextComponent.h"
 #include "Rendering/Renderer.h"
+#ifdef ENABLE_VULKAN
+#include "Core/Engine.h"
+#include "Rendering/Vulkan/VulkanResources.h"
+#endif
 #include "Rendering/FontManager.h"
 #include "Rendering/Shader.h"
 #include "Rendering/Texture.h"
@@ -43,6 +47,7 @@ TextComponent::TextComponent()
     , ebo(0)
     , needsUpdate(true)
     , isInitialized(false)
+    , textMeshRevision(0)
 {
 }
 
@@ -57,9 +62,7 @@ TextComponent::~TextComponent() {
 }
 
 void TextComponent::start() {
-    // TextComponent::start called
     if (isInitialized) {
-        // Already initialized, don't initialize again
         return;
     }
 
@@ -68,15 +71,13 @@ void TextComponent::start() {
 #ifndef ENABLE_VULKAN
     setupBuffers();
 #endif
-    
+
     isInitialized = true;
-    
-    // Generate initial mesh data
+
     if (needsUpdate) {
         updateTextMesh();
         needsUpdate = false;
     }
-    
 }
 
 void TextComponent::update(float deltaTime) {
@@ -188,20 +189,41 @@ glm::mat4 TextComponent::buildClipMatrix(IRenderer& renderer, const glm::mat4& w
 void TextComponent::destroy() {
     cleanupBuffers();
     cleanupFontAtlas();
+#ifdef ENABLE_VULKAN
+    if (Engine* engine = GetEngineIfExists()) {
+        if (auto* resources = engine->getVulkanResources()) {
+            resources->evictTextMesh(this);
+        }
+    }
+    textMaterial.reset();
+#endif
+    isInitialized = false;
+}
+
+void TextComponent::prepareForRestart() {
+    isInitialized = false;
+}
+
+void TextComponent::suspend() {
+    // Keep GPU buffers alive for cached scene transitions.
+}
+
+void TextComponent::resume() {
+    if (!isInitialized) {
+        start();
+    }
 }
 
 void TextComponent::setText(const std::string& newText) {
     if (text != newText) {
         text = newText;
         needsUpdate = true;
-        
-        // In editor mode, immediately update the mesh since update() might not be called
-        #ifdef EDITOR_BUILD
-        if (isInitialized && needsUpdate) {
-            updateTextMesh();
-            needsUpdate = false;
-        }
-        #endif
+    }
+
+    // Rebuild immediately when possible (pause menus call setText while game is paused).
+    if (needsUpdate && isInitialized) {
+        updateTextMesh();
+        needsUpdate = false;
     }
 }
 
@@ -413,7 +435,7 @@ void TextComponent::initializeFont() {
 
         packedChars = atlas->packedChars;
         alignedQuads = atlas->alignedQuads;
-        textShader = std::make_shared<Shader>();
+        textShader = Shader::getTextShader();
 
     #ifdef ENABLE_VULKAN
 
@@ -424,99 +446,9 @@ void TextComponent::initializeFont() {
         return;
 
     #endif
-        
-        #ifdef VITA_BUILD
-        // Vita CG shaders need matrices transposed
-            textShader->needsTranspose = true;
-        #else
-            textShader->needsTranspose = false; // Linux or other platforms
-        #endif
-        
-#ifdef LINUX_BUILD
-        // Try to load external shaders first
-        if (!textShader->loadFromFiles("assets/linux_shaders/text.vert", "assets/linux_shaders/text.frag")) {
-            // Fallback to embedded shaders
-            std::string vertexSource = R"(
-                #version 120
-                attribute vec3 aPosition;
-                attribute vec2 aTexCoord;
-                
-                uniform mat4 uViewProjectionMat;
-                uniform mat4 uModelMat;
-                
-                varying vec2 texCoord;
-                
-                void main()
-                {
-                    gl_Position = uViewProjectionMat * uModelMat * vec4(aPosition, 1.0);
-                    texCoord = aTexCoord;
-                }
-            )";
-            
-            std::string fragmentSource = R"(
-                #version 120
-                varying vec2 texCoord;
-                
-                uniform sampler2D uFontAtlasTexture;
-                uniform vec4 uColor;
-                
-                void main()
-                {
-                    float alpha = texture2D(uFontAtlasTexture, texCoord).r;
-                    gl_FragColor = vec4(uColor.rgb, uColor.a * alpha);
-                }
-            )";
-            
-            textShader->loadFromSource(vertexSource, fragmentSource);
-        }
-#else
-        // Vita builds - try to load external shaders first
-        if (!textShader->loadFromFiles("app0:/assets/shaders/text.vert", "app0:/assets/shaders/text.frag")) {
-            // Fallback to embedded CG/HLSL shaders (VitaGL uses CG/HLSL)
-            std::string vertexSource = R"(
-                struct VS_INPUT {
-                    float3 aPosition : POSITION;
-                    float2 aTexCoord : TEXCOORD0;
-                };
-                
-                struct VS_OUTPUT {
-                    float4 Position : POSITION;
-                    float2 texCoord : TEXCOORD0;
-                };
-                
-                float4x4 uViewProjectionMat;
-                float4x4 uModelMat;
-                
-                VS_OUTPUT main(VS_INPUT input) {
-                    VS_OUTPUT output;
-                    output.Position = mul(uViewProjectionMat, mul(uModelMat, float4(input.aPosition, 1.0)));
-                    output.texCoord = input.aTexCoord;
-                    return output;
-                }
-            )";
-            
-            std::string fragmentSource = R"(
-                struct PS_INPUT {
-                    float2 texCoord : TEXCOORD0;
-                };
-                
-                sampler2D uFontAtlasTexture;
-                uniform float4 uColor;
-                
-                float4 main(PS_INPUT input) : COLOR {
-                    float alpha = tex2D(uFontAtlasTexture, input.texCoord).r;
-                    return float4(uColor.rgb, uColor.a * alpha);
-                }
-            )";
-            
-            if (!textShader->loadFromSource(vertexSource, fragmentSource)) {
-                std::cerr << "Failed to load embedded CG/HLSL text shaders!" << std::endl;
-                textShader.reset();
-            }
-        }
-#endif
+
         if (!textShader || !textShader->isValid()) {
-            std::cerr << "Failed to create text shader!" << std::endl;
+            std::cerr << "Failed to get shared text shader!" << std::endl;
             textShader.reset();
         }
     } else {
@@ -526,13 +458,13 @@ void TextComponent::initializeFont() {
 
 void TextComponent::updateTextMesh() {
     generateVertices(renderMode);
-    
 
 #ifndef ENABLE_VULKAN
     updateBuffers();
 #endif
 
     rebuildMesh();
+    ++textMeshRevision;
 }
 
 void TextComponent::setupBuffers() {
@@ -641,7 +573,7 @@ void TextComponent::renderWorldSpace(IRenderer& renderer) {
     glDepthMask(GL_FALSE);
 
     glBindVertexArray(vao);
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(std::min(indices.size(), size_t(6000)) / 6 * 6), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 
     if (!blendWasEnabled) glDisable(GL_BLEND);
@@ -691,7 +623,7 @@ void TextComponent::renderWorldSpace(IRenderer& renderer, const glm::mat4& world
     glDepthMask(GL_FALSE);
 
     glBindVertexArray(vao);
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(std::min(indices.size(), size_t(6000)) / 6 * 6), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 
     if (!blendWasEnabled) glDisable(GL_BLEND);
@@ -750,7 +682,7 @@ void TextComponent::renderScreenSpace(IRenderer& renderer) {
     glDepthMask(GL_FALSE);
     
     glBindVertexArray(vao);
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(std::min(indices.size(), size_t(6000)) / 6 * 6), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
     
     if (!blendWasEnabled) glDisable(GL_BLEND);
@@ -779,7 +711,7 @@ void TextComponent::renderWorldSpaceDirectly(const glm::mat4& worldTransform, co
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDepthMask(GL_FALSE);
     glBindVertexArray(vao);
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(std::min(indices.size(), size_t(6000)) / 6 * 6), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
     if (!blendWasEnabled) glDisable(GL_BLEND);
     if (depthMaskWasEnabled) glDepthMask(GL_TRUE);
@@ -819,16 +751,23 @@ void TextComponent::renderScreenSpaceDirectly() {
     glActiveTexture(GL_TEXTURE0);
     fontAtlasTexture->bind();
     GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
+    GLboolean depthTestWasEnabled = glIsEnabled(GL_DEPTH_TEST);
     GLboolean depthMaskWasEnabled;
     glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWasEnabled);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glBindVertexArray(vao);
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(std::min(indices.size(), size_t(6000)) / 6 * 6), GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
+    glDepthMask(depthMaskWasEnabled ? GL_TRUE : GL_FALSE);
+    if (depthTestWasEnabled) {
+        glEnable(GL_DEPTH_TEST);
+    } else {
+        glDisable(GL_DEPTH_TEST);
+    }
     if (!blendWasEnabled) glDisable(GL_BLEND);
-    if (depthMaskWasEnabled) glDepthMask(GL_TRUE);
     textShader->unuse();
 }
 
@@ -897,7 +836,9 @@ void TextComponent::generateVertices(TextRenderMode mode)
         if (ch == '\n')
         {
             currentPosition.x = startPosition.x;
-            currentPosition.y -= fontSize * pixelScale * scale * lineSpacing;
+            // The quad Y is flipped below (y = -q.y), so the pen advances in the
+            // positive direction here to move each new line *down* on screen.
+            currentPosition.y += fontSize * pixelScale * scale * lineSpacing;
             continue;
         }
 
@@ -969,15 +910,24 @@ void TextComponent::generateVertices(TextRenderMode mode)
 
 void TextComponent::updateBuffers() {
     if (vertices.empty()) return;
-    
+
+    // setupBuffers() allocates fixed-size buffers (1000 verts / 6000 indices)
+    // clamp long text instead of overflowing them (GL_INVALID_VALUE + stale
+    // geometry past 166 glyphs). Indices are clamped to whole quads
+    constexpr size_t kMaxVertices = 1000;
+    constexpr size_t kMaxIndices = 6000;
+    const size_t vertexCount = std::min(vertices.size(), kMaxVertices);
+    size_t indexCount = std::min(indices.size(), kMaxIndices);
+    indexCount -= indexCount % 6;
+
     glBindVertexArray(vao);
-    
+
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(TextVertex) * vertices.size(), vertices.data());
-    
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(TextVertex) * vertexCount, vertices.data());
+
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, sizeof(unsigned int) * indices.size(), indices.data());
-    
+    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, sizeof(unsigned int) * indexCount, indices.data());
+
     glBindVertexArray(0);
 }
 

@@ -46,6 +46,7 @@ int main() {
     lightComponent->setType(LightType::DIRECTIONAL);
     lightComponent->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
     lightComponent->setIntensity(1.0f);
+    lightComponent->setShowGizmo(true);
     lightNode->getTransform().setPosition(glm::vec3(0.0f, 10.0f, 0.0f));
     lightNode->getTransform().setEulerAngles(glm::vec3(-45.0f, 0.0f, 0.0f));
     testScene->getRootNode()->addChild(lightNode);

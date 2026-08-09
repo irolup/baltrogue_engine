@@ -102,6 +102,10 @@ void SoundComponent::destroy() {
     unloadSound();
 }
 
+void SoundComponent::suspend() {
+    stop();
+}
+
 void SoundComponent::setSoundFile(const std::string& filePath) {
     if (soundFilePath != filePath) {
         unloadSound();
@@ -538,7 +542,15 @@ void SoundComponent::resampleAudioBuffer() {
         std::cerr << "SoundComponent::resampleAudioBuffer() - No original buffer available" << std::endl;
         return;
     }
-    
+
+#ifdef VITA_BUILD
+    auto& audioManager = AudioManager::getInstance();
+    const bool rebindStreaming = audioManager.isThreadingEnabled();
+    if (rebindStreaming) {
+        audioManager.unregisterSoundComponent(this);
+    }
+#endif
+
     if (pitch == 1.0f) {
         if (audioBuffer && audioBuffer != originalAudioBuffer) {
             delete[] audioBuffer;
@@ -547,9 +559,14 @@ void SoundComponent::resampleAudioBuffer() {
         audioDataSize = originalAudioDataSize;
         audioBufferSize = originalAudioDataSize;
         currentStreamPos.store(0);
+#ifdef VITA_BUILD
+        if (rebindStreaming && isStreaming.load()) {
+            audioManager.registerSoundComponent(this);
+        }
+#endif
         return;
     }
-    
+
     size_t originalTotalSamples = originalAudioDataSize / sizeof(int16_t);
     size_t originalSamplesPerChannel = originalTotalSamples / channels;
     size_t newSamplesPerChannel = (size_t)(originalSamplesPerChannel / pitch);
@@ -607,6 +624,12 @@ void SoundComponent::resampleAudioBuffer() {
     audioDataSize = newTotalSamples * sizeof(int16_t);
     audioBufferSize = audioDataSize;
     currentStreamPos = 0;
+
+#ifdef VITA_BUILD
+    if (rebindStreaming && isStreaming.load()) {
+        audioManager.registerSoundComponent(this);
+    }
+#endif
 }
 
 bool SoundComponent::loadWAVFile(const std::string& filePath) {

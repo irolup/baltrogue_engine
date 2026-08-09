@@ -3,7 +3,7 @@ local M = {}
 local vision = nil
 local function ensureVision()
   if vision then return vision end
-  local ok, mod = pcall(dofile, "assets/scripts/vision.lua")
+  local ok, mod = pcall(dofile, "assets/samples/scripts/vision.lua")
   if ok and mod and mod.can_see then
     vision = mod
     return vision
@@ -28,6 +28,7 @@ function M.updateChase(enemyNodeName, playerNodeName, deltaTime, opts)
 
   local px, py, pz = getNodePosition(playerNodeName)
   local ex, ey, ez = getNodePosition(enemyNodeName)
+  if not px or not ex then return end -- node missing/renamed: skip instead of erroring
   local dx = px - ex
   local dz = pz - ez
   local distSq = dx * dx + dz * dz

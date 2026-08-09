@@ -5,6 +5,7 @@
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Rendering/Shader.h"
+#include "Rendering/ShadowMap.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <iostream>
@@ -27,6 +28,10 @@ LightComponent::LightComponent()
     , constant(1.0f)
     , linear(0.09f)
     , quadratic(0.032f)
+    , castShadows(false)
+    , shadowStrength(1.0f)
+    , shadowBias(0.0025f)
+    , shadowViewIndex(-1)
     , showGizmo(false)
     , gizmoMesh(nullptr)
     , gizmoMaterial(nullptr)
@@ -39,7 +44,16 @@ LightComponent::~LightComponent() {
 
 void LightComponent::start() {
     #ifdef EDITOR_BUILD
-    if (showGizmo) {
+    if (showGizmo && !gizmoMesh) {
+        createGizmo();
+    }
+    #endif
+}
+
+void LightComponent::setShowGizmo(bool show) {
+    showGizmo = show;
+    #ifdef EDITOR_BUILD
+    if (showGizmo && !gizmoMesh) {
         createGizmo();
     }
     #endif
@@ -71,8 +85,17 @@ void LightComponent::render(IRenderer& renderer) {
 }
 
 void LightComponent::destroy() {
+    LightingManager::getInstance().removeLight(this);
     gizmoMesh.reset();
     gizmoMaterial.reset();
+}
+
+void LightComponent::suspend() {
+    LightingManager::getInstance().removeLight(this);
+}
+
+void LightComponent::resume() {
+    LightingManager::getInstance().addLight(this);
 }
 
 void LightComponent::setType(LightType newType) {
@@ -223,9 +246,13 @@ LightComponent::LightData LightComponent::getLightData() const {
     // Parameters (cutOff, outerCutOff, constant, linear)
     data.params = glm::vec4(cutOff, outerCutOff, constant, linear);
     
-    // Attenuation (quadratic and unused components)
-    data.attenuation = glm::vec4(quadratic, 0.0f, 0.0f, 0.0f);
-    
+    // Attenuation plus the shadow lookup this light resolved to this frame.
+    // Packing it here keeps the GPU light struct at its current size.
+    data.attenuation = glm::vec4(quadratic,
+                                 static_cast<float>(shadowViewIndex),
+                                 shadowStrength,
+                                 shadowBias);
+
     return data;
 }
 
@@ -298,6 +325,21 @@ void LightComponent::drawInspector() {
         }
     }
     
+    ImGui::Separator();
+    ImGui::Checkbox("Cast Shadows", &castShadows);
+    if (castShadows) {
+        ImGui::SliderFloat("Shadow Strength", &shadowStrength, 0.0f, 1.0f);
+        ImGui::SliderFloat("Shadow Bias", &shadowBias, 0.0f, 0.05f, "%.4f");
+        if (type == LightType::POINT) {
+            ImGui::TextWrapped("Point lights use %u of the %u shadow atlas tiles.",
+                               kShadowViewsPerPointLight, kMaxShadowViews);
+        }
+        if (shadowViewIndex < 0) {
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "No atlas tile available this frame");
+        }
+    }
+
+    ImGui::Separator();
     // Gizmo visibility
     ImGui::Checkbox("Show Gizmo", &showGizmo);
 #endif

@@ -1,51 +1,106 @@
+local levels = dofile("assets/scripts/tire_game/levels.lua")
+local tireSave = dofile("assets/scripts/tire_game/tire_save.lua")
+local controlsPanel = dofile("assets/scripts/ui/controls_panel.lua")
+
 local selectedIndex = 0
+local inControlsPanel = false
 
 local inputState = {
     lastUpPressed = false,
     lastDownPressed = false,
-    lastConfirmPressed = false
+    lastConfirmPressed = false,
+    lastCancelPressed = false,
 }
 
-local menuPositions = {
-    {x = 0.0, y = 3.0, z = 0.0},
-    {x = 0.0, y = -0.5, z = 0.0},
-    {x = 0.0, y = -4.0, z = 0.0},
-    {x = 0.0, y = -7.0, z = 0.0}
+-- Options is hidden until there is real settings UI (G8).
+local menuEntries = {
+    { node = "MainMenuStart", y = 3.0, action = "start" },
+    { node = "MainMenuLoad", y = -0.5, action = "load" },
+    { node = "MainMenuControls", y = -4.0, action = "controls" },
+    { node = "MainMenuQuit", y = -7.0, action = "quit" },
 }
 
-local menuNodeNames = {
-    "MainMenuStart",
-    "MainMenuLoad",
+local hiddenMenuNodes = {
     "MainMenuOptions",
-    "MainMenuQuit"
 }
+
 local selectorNodeName = "MainMenuSelector"
 
+local function updateSelectorPosition()
+    local entry = menuEntries[selectedIndex + 1]
+    if not entry then
+        return
+    end
+    setNodePosition(selectorNodeName, -10.0, entry.y, 0.0)
+end
+
+local function loadLevelSafe(levelId)
+    if not levelId or not levels.loadLevel(levelId) then
+        return levels.loadLevel("level_1")
+    end
+    return true
+end
+
 function start()
-    for i = 1, #menuNodeNames do
-        setNodeVisible(menuNodeNames[i], true)
+    for i = 1, #menuEntries do
+        local entry = menuEntries[i]
+        setNodeVisible(entry.node, true)
+        setNodePosition(entry.node, 0.0, entry.y, 0.0)
         if renderer and renderer.setTextRenderMode then
-            renderer.setTextRenderMode(menuNodeNames[i], 1)
+            renderer.setTextRenderMode(entry.node, 1)
         end
     end
-    
+
+    for i = 1, #hiddenMenuNodes do
+        setNodeVisible(hiddenMenuNodes[i], false)
+    end
+
     updateSelectorPosition()
     setNodeVisible(selectorNodeName, true)
     if renderer and renderer.setTextRenderMode then
         renderer.setTextRenderMode(selectorNodeName, 1)
     end
+
+    if scene and scene.preloadSceneFromFile then
+        scene.preloadSceneFromFile("level_1", "assets/scenes/level_1.json")
+    end
 end
 
-function updateSelectorPosition()
-    local selPos = menuPositions[selectedIndex + 1]
-    setNodePosition(selectorNodeName, selPos.x - 10.0, selPos.y, selPos.z)
+local function showControlsPanel()
+    inControlsPanel = true
+    for i = 1, #menuEntries do
+        setNodeVisible(menuEntries[i].node, false)
+    end
+    setNodeVisible(selectorNodeName, false)
+    controlsPanel.show()
+end
+
+local function hideControlsPanel()
+    inControlsPanel = false
+    for i = 1, #menuEntries do
+        local entry = menuEntries[i]
+        setNodeVisible(entry.node, true)
+        setNodePosition(entry.node, 0.0, entry.y, 0.0)
+    end
+    setNodeVisible(selectorNodeName, true)
+    updateSelectorPosition()
+    controlsPanel.hide()
 end
 
 function update(deltaTime)
+    if inControlsPanel then
+        local cancelPressed = input and input.isActionPressed and input.isActionPressed("menu_cancel") or false
+        if cancelPressed and not inputState.lastCancelPressed then
+            hideControlsPanel()
+        end
+        inputState.lastCancelPressed = cancelPressed
+        return
+    end
+
     local upPressed = false
     local downPressed = false
     local confirmPressed = false
-    
+
     if input and input.isActionPressed then
         upPressed = input.isActionPressed("menu_up")
         downPressed = input.isActionPressed("menu_down")
@@ -57,51 +112,56 @@ function update(deltaTime)
             confirmPressed = isKeyDown("ENTER") or isKeyDown("SPACE")
         end
     end
-    
+
     if upPressed and not inputState.lastUpPressed then
         selectedIndex = selectedIndex - 1
         if selectedIndex < 0 then
-            selectedIndex = #menuNodeNames - 1
+            selectedIndex = #menuEntries - 1
         end
         updateSelectorPosition()
     end
-    
+
     if downPressed and not inputState.lastDownPressed then
         selectedIndex = selectedIndex + 1
-        if selectedIndex >= #menuNodeNames then
+        if selectedIndex >= #menuEntries then
             selectedIndex = 0
         end
         updateSelectorPosition()
     end
-    
+
     if confirmPressed and not inputState.lastConfirmPressed then
         handleMenuSelection()
     end
-    
+
     inputState.lastUpPressed = upPressed
     inputState.lastDownPressed = downPressed
     inputState.lastConfirmPressed = confirmPressed
 end
 
 function handleMenuSelection()
-    if selectedIndex == 0 then
+    local entry = menuEntries[selectedIndex + 1]
+    if not entry then
+        return
+    end
+
+    if entry.action == "start" then
         print("Main Menu: Starting new game...")
-        if scene and scene.loadSceneFromFile then
-            if scene.loadSceneFromFile("Game Scene", "assets/scenes/playground.json") then
-                print("Main Menu: Game scene loaded from JSON")
-            else
-                print("Main Menu: ERROR - Failed to load game scene from JSON!")
-            end
-        elseif scene and scene.loadScene then
-            scene.loadScene("Game Scene")
+        if loadLevelSafe("level_1") then
+            print("Main Menu: Game scene load requested")
         else
-            print("Main Menu: ERROR - scene loading not available!")
+            print("Main Menu: ERROR - Failed to load game scene!")
         end
-    elseif selectedIndex == 1 then
-        print("Main Menu: Load Game (not implemented yet)")
-    elseif selectedIndex == 2 then
-        print("Main Menu: Options (not implemented yet)")
-    elseif selectedIndex == 3 then
+    elseif entry.action == "load" then
+        local levelId = tireSave.getLastLevelId() or "level_1"
+        print("Main Menu: Load Game -> " .. tostring(levelId))
+        if loadLevelSafe(levelId) then
+            print("Main Menu: Continue scene load requested")
+        else
+            print("Main Menu: ERROR - Failed to load saved level, falling back failed")
+        end
+    elseif entry.action == "controls" then
+        showControlsPanel()
+    elseif entry.action == "quit" then
         print("Main Menu: Quitting game...")
         if quitGame then
             quitGame()
@@ -110,4 +170,3 @@ function handleMenuSelection()
         end
     end
 end
-

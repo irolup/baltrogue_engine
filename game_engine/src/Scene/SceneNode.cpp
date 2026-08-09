@@ -1,19 +1,22 @@
 #include "Scene/SceneNode.h"
+#include "Scene/Scene.h"
 #include "Components/Component.h"
 #include "Components/LightComponent.h"
 #include "Components/SoundComponent.h"
 #include "Rendering/Renderer.h"
 #include "Rendering/LightingManager.h"
 #include <algorithm>
-#include <iostream> // Added for debug output
+#include <iostream>
 #include "Core/MenuManager.h"
 #include "Components/ScriptComponent.h"
+#include "Components/TextComponent.h"
 
 namespace GameEngine {
 
 SceneNode::SceneNode(const std::string& name)
     : name(name)
     , parent(nullptr)
+    , owningScene(nullptr)
     , visible(true)
     , active(true)
     , selected(false)
@@ -22,28 +25,71 @@ SceneNode::SceneNode(const std::string& name)
 
 SceneNode::~SceneNode() {
     for (auto& component : components) {
-        if (component->getTypeName() == "LightComponent") {
-            auto& lightingManager = LightingManager::getInstance();
-            LightComponent* lightComponent = dynamic_cast<LightComponent*>(component.get());
-            if (lightComponent) {
-                lightingManager.removeLight(lightComponent);
-            }
+        if (component->getTypeName() == LightComponent::StaticTypeName()) {
+            LightingManager::getInstance().removeLight(
+                static_cast<LightComponent*>(component.get()));
         }
         component->destroy();
     }
 }
 
-void SceneNode::start() {
-    if (!active) return;
-    
-    for (auto& component : components) {
-        if (component->isEnabled()) {
-            component->start();
+void SceneNode::setOwningScene(Scene* scene) {
+    owningScene = scene;
+    for (size_t i = 0; i < children.size(); ++i) {
+        if (children[i]) {
+            children[i]->setOwningScene(scene);
         }
     }
-    
-    for (auto& child : children) {
-        child->start();
+}
+
+void SceneNode::setName(const std::string& newName) {
+    if (name == newName) {
+        return;
+    }
+    if (owningScene) {
+        owningScene->onNodeRenamed(this, name, newName);
+    }
+    name = newName;
+}
+
+void SceneNode::start() {
+    if (!active) return;
+
+    // Index-based: scripts may add components to this node during start()
+    for (size_t i = 0; i < components.size(); ++i) {
+        if (components[i]->isEnabled()) {
+            components[i]->start();
+        }
+    }
+
+    for (size_t i = 0; i < children.size(); ++i) {
+        children[i]->start();
+    }
+}
+
+void SceneNode::suspend() {
+    for (size_t i = 0; i < components.size(); ++i) {
+        if (components[i]->isEnabled()) {
+            components[i]->suspend();
+        }
+    }
+
+    for (size_t i = 0; i < children.size(); ++i) {
+        children[i]->suspend();
+    }
+}
+
+void SceneNode::resume() {
+    if (!active) return;
+
+    for (size_t i = 0; i < components.size(); ++i) {
+        if (components[i]->isEnabled()) {
+            components[i]->resume();
+        }
+    }
+
+    for (size_t i = 0; i < children.size(); ++i) {
+        children[i]->resume();
     }
 }
 
@@ -56,6 +102,10 @@ void SceneNode::addChild(std::shared_ptr<SceneNode> child) {
     
     child->parent = this;
     children.push_back(child);
+    child->setOwningScene(owningScene);
+    if (owningScene) {
+        owningScene->registerNodeTree(child);
+    }
 }
 
 void SceneNode::removeChild(std::shared_ptr<SceneNode> child) {
@@ -63,6 +113,10 @@ void SceneNode::removeChild(std::shared_ptr<SceneNode> child) {
     
     auto it = std::find(children.begin(), children.end(), child);
     if (it != children.end()) {
+        if (owningScene) {
+            owningScene->unregisterNodeTree(child);
+        }
+        (*it)->setOwningScene(nullptr);
         (*it)->parent = nullptr;
         children.erase(it);
     }
@@ -78,6 +132,10 @@ void SceneNode::removeChild(const std::string& childName) {
 void SceneNode::removeAllChildren() {
     for (auto& child : children) {
         if (child) {
+            if (owningScene) {
+                owningScene->unregisterNodeTree(child);
+            }
+            child->setOwningScene(nullptr);
             child->parent = nullptr;
         }
     }
@@ -110,6 +168,22 @@ glm::mat4 SceneNode::getWorldMatrix() const {
     return worldMatrix;
 }
 
+glm::quat SceneNode::getWorldRotation() const {
+    glm::quat worldRotation = transform.getRotation();
+    if (parent) {
+        worldRotation = parent->getWorldRotation() * worldRotation;
+    }
+    return glm::normalize(worldRotation);
+}
+
+glm::vec3 SceneNode::getWorldScale() const {
+    glm::vec3 worldScale = transform.getScale();
+    if (parent) {
+        worldScale *= parent->getWorldScale();
+    }
+    return worldScale;
+}
+
 bool SceneNode::hasComponent(const std::string& typeName) const {
     for (const auto& component : components) {
         if (component->getTypeName() == typeName) {
@@ -123,24 +197,30 @@ void SceneNode::update(float deltaTime) {
     if (!active) return;
 
     bool paused = MenuManager::getInstance().isGamePaused();
-    
-    for (auto& component : components) {
-        if (component->isEnabled()) {
-            if (auto* scriptComp = dynamic_cast<ScriptComponent*>(component.get())) {
-                if (paused) {
-                    if (scriptComp->isPauseExempt()) {
-                        scriptComp->update(deltaTime);
-                    }
-                } else {
+
+    // Index-based: scripts may add components to this node during update()
+    for (size_t i = 0; i < components.size(); ++i) {
+        auto& component = components[i];
+        if (!component->isEnabled()) {
+            continue;
+        }
+
+        const std::string& typeName = component->getTypeName();
+        if (typeName == ScriptComponent::StaticTypeName()) {
+            auto* scriptComp = static_cast<ScriptComponent*>(component.get());
+            if (paused) {
+                if (scriptComp->isPauseExempt()) {
                     scriptComp->update(deltaTime);
                 }
-            } else if (auto* soundComp = dynamic_cast<SoundComponent*>(component.get())) {
-                soundComp->update(deltaTime);
             } else {
-                if (!paused) {
-                    component->update(deltaTime);
-                }
+                scriptComp->update(deltaTime);
             }
+        } else if (typeName == SoundComponent::StaticTypeName()) {
+            static_cast<SoundComponent*>(component.get())->update(deltaTime);
+        } else if (typeName == TextComponent::StaticTypeName()) {
+            static_cast<TextComponent*>(component.get())->update(deltaTime);
+        } else if (!paused) {
+            component->update(deltaTime);
         }
     }
 
@@ -150,15 +230,19 @@ void SceneNode::update(float deltaTime) {
 void SceneNode::fixedUpdate(float deltaTime) {
     if (!active) return;
     bool paused = MenuManager::getInstance().isGamePaused();
-    for (auto& component : components) {
-        if (component->isEnabled()) {
-            if (auto* scriptComp = dynamic_cast<ScriptComponent*>(component.get())) {
-                if (!paused || scriptComp->isPauseExempt()) {
-                    scriptComp->fixedUpdate(deltaTime);
-                }
-            } else if (!paused) {
-                component->fixedUpdate(deltaTime);
+    for (size_t i = 0; i < components.size(); ++i) {
+        auto& component = components[i];
+        if (!component->isEnabled()) {
+            continue;
+        }
+
+        if (component->getTypeName() == ScriptComponent::StaticTypeName()) {
+            auto* scriptComp = static_cast<ScriptComponent*>(component.get());
+            if (!paused || scriptComp->isPauseExempt()) {
+                scriptComp->fixedUpdate(deltaTime);
             }
+        } else if (!paused) {
+            component->fixedUpdate(deltaTime);
         }
     }
     fixedUpdateChildren(deltaTime);
@@ -169,21 +253,23 @@ void SceneNode::lateUpdate(float deltaTime) {
 
     bool paused = MenuManager::getInstance().isGamePaused();
 
-    for (auto& component : components) {
-        if (component->isEnabled()) {
-            if (auto* scriptComp = dynamic_cast<ScriptComponent*>(component.get())) {
-                if (paused) {
-                    if (scriptComp->isPauseExempt()) {
-                        scriptComp->lateUpdate(deltaTime);
-                    }
-                } else {
+    for (size_t i = 0; i < components.size(); ++i) {
+        auto& component = components[i];
+        if (!component->isEnabled()) {
+            continue;
+        }
+
+        if (component->getTypeName() == ScriptComponent::StaticTypeName()) {
+            auto* scriptComp = static_cast<ScriptComponent*>(component.get());
+            if (paused) {
+                if (scriptComp->isPauseExempt()) {
                     scriptComp->lateUpdate(deltaTime);
                 }
             } else {
-                if (!paused) {
-                    component->lateUpdate(deltaTime);
-                }
+                scriptComp->lateUpdate(deltaTime);
             }
+        } else if (!paused) {
+            component->lateUpdate(deltaTime);
         }
     }
 
@@ -192,13 +278,13 @@ void SceneNode::lateUpdate(float deltaTime) {
 
 void SceneNode::render(IRenderer& renderer) {
     if (!visible || !active) return;
-    
-    for (auto& component : components) {
-        if (component->isEnabled()) {
-            component->render(renderer);
+
+    for (size_t i = 0; i < components.size(); ++i) {
+        if (components[i]->isEnabled()) {
+            components[i]->render(renderer);
         }
     }
-    
+
     renderChildren(renderer);
 }
 
@@ -260,23 +346,20 @@ bool SceneNode::hasTag(const std::string& tag) const {
 }
 
 void SceneNode::updateChildren(float deltaTime) {
-    std::vector<std::shared_ptr<SceneNode>> copy = children;
-    for (auto& child : copy) {
-        if (child) child->update(deltaTime);
+    for (size_t i = 0; i < children.size(); ++i) {
+        if (children[i]) children[i]->update(deltaTime);
     }
 }
 
 void SceneNode::fixedUpdateChildren(float deltaTime) {
-    std::vector<std::shared_ptr<SceneNode>> copy = children;
-    for (auto& child : copy) {
-        if (child) child->fixedUpdate(deltaTime);
+    for (size_t i = 0; i < children.size(); ++i) {
+        if (children[i]) children[i]->fixedUpdate(deltaTime);
     }
 }
 
 void SceneNode::lateUpdateChildren(float deltaTime) {
-    std::vector<std::shared_ptr<SceneNode>> copy = children;
-    for (auto& child : copy) {
-        if (child) child->lateUpdate(deltaTime);
+    for (size_t i = 0; i < children.size(); ++i) {
+        if (children[i]) children[i]->lateUpdate(deltaTime);
     }
 }
 

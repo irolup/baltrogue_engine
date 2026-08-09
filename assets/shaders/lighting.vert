@@ -26,6 +26,9 @@ uniform float4x4 viewMatrix;
 uniform float4x4 projectionMatrix;
 uniform float3x3 normalMatrix;
 
+uniform float2 u_UVScale;
+uniform float2 u_UVOffset;
+
 uniform float4x4 u_BoneMatrices[100];  // Maximum 100 bones
 uniform int u_NumBones;
 
@@ -89,7 +92,7 @@ VertexOutput main(VertexInput input) {
     output.bitangent = normalize(cross(output.normal, output.tangent));
     
     // Texture coordinates (no flip needed for Vita)
-    output.texCoord = input.aTexCoord;
+    output.texCoord = input.aTexCoord * u_UVScale + u_UVOffset;
     
     // Clip-space position
     output.position = mul(viewPos, projectionMatrix);

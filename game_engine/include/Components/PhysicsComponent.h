@@ -22,6 +22,7 @@ enum class CollisionShapeType {
     SPHERE,
     CAPSULE,
     CYLINDER,
+    RAMP,
     PLANE
 };
 
@@ -41,6 +42,9 @@ public:
     virtual void start() override;
     virtual void update(float deltaTime) override;
     virtual void destroy() override;
+    virtual void prepareForRestart() override;
+    virtual void suspend() override;
+    virtual void resume() override;
     virtual void render(IRenderer& renderer) override;
     
     void setCollisionShape(CollisionShapeType shapeType, const glm::vec3& dimensions = glm::vec3(1.0f));

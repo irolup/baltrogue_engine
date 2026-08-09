@@ -204,10 +204,10 @@ void InputMappingManager::setDefaultMappings() {
     addMapping(InputMapping("Back", InputType::VITA_BUTTON, SCE_CTRL_SELECT, InputActionType::PRESSED));
     
     // D-pad mappings
-    addMapping(InputMapping("DpadUp", InputType::VITA_BUTTON, SCE_CTRL_UP, InputActionType::PRESSED));
-    addMapping(InputMapping("DpadDown", InputType::VITA_BUTTON, SCE_CTRL_DOWN, InputActionType::PRESSED));
-    addMapping(InputMapping("DpadLeft", InputType::VITA_BUTTON, SCE_CTRL_LEFT, InputActionType::PRESSED));
-    addMapping(InputMapping("DpadRight", InputType::VITA_BUTTON, SCE_CTRL_RIGHT, InputActionType::PRESSED));
+    addMapping(InputMapping("DpadUp", InputType::VITA_BUTTON, SCE_CTRL_UP, InputActionType::HELD));
+    addMapping(InputMapping("DpadDown", InputType::VITA_BUTTON, SCE_CTRL_DOWN, InputActionType::HELD));
+    addMapping(InputMapping("DpadLeft", InputType::VITA_BUTTON, SCE_CTRL_LEFT, InputActionType::HELD));
+    addMapping(InputMapping("DpadRight", InputType::VITA_BUTTON, SCE_CTRL_RIGHT, InputActionType::HELD));
 #endif
 }
 

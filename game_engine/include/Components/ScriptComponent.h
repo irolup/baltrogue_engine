@@ -9,12 +9,16 @@ struct lua_State;
 
 namespace GameEngine {
 
+class Scene;
+
 class ScriptComponent : public Component {
 public:
     ScriptComponent();
     virtual ~ScriptComponent();
     
     COMPONENT_TYPE(ScriptComponent)
+
+    static void installEngineBindings(lua_State* luaState);
     
     virtual void start() override;
     virtual void update(float deltaTime) override;
@@ -22,13 +26,17 @@ public:
     virtual void lateUpdate(float deltaTime) override;
     virtual void render(IRenderer& renderer) override;
     virtual void destroy() override;
+    virtual void suspend() override;
+    virtual void resume() override;
     
     bool loadScript(const std::string& scriptPath);
     void reloadScript();
     bool isScriptLoaded() const { return scriptLoaded; }
-    
+
     const std::string& getScriptPath() const { return scriptPath; }
     void setScriptPath(const std::string& path);
+    void assignScriptPath(const std::string& path);
+    void setOwningScene(Scene* scene);
     bool isPauseExempt() const { return pauseExempt; }
     void setPauseExempt(bool exempt) { pauseExempt = exempt; }
     
@@ -44,12 +52,14 @@ public:
     
 private:
     lua_State* luaState;
+    Scene* owningScene;
     std::string scriptPath;
     bool scriptLoaded;
     bool scriptStarted;
     bool pauseExempt = false;
     
     bool hasScriptFunction(const std::string& functionName);
+    bool ensureScriptLoaded();
     
     void handleLuaError(const std::string& operation);
     
@@ -59,7 +69,6 @@ private:
     void bindEngineToLua();
     void bindCommonFunctions();
     void bindTransformToLua();
-    void bindPickupZoneToLua();
     void bindArea3DToLua();
     void bindInputToLua();
     void bindCameraToLua();
@@ -70,6 +79,7 @@ private:
     void bindAnimationToLua();
     void bindSoundToLua();
     void bindSkyboxToLua();
+    void bindSaveFileToLua();
 };
 
 } // namespace GameEngine

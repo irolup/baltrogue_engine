@@ -5,6 +5,9 @@
 #include <iostream>
 #include <vector>
 #include <filesystem>
+#include <algorithm>
+#include <cstring>
+#include <type_traits>
 
 namespace GameEngine {
 
@@ -12,10 +15,9 @@ void VulkanResources::create(VulkanDevice& device, VulkanSwapChain& swapChain){
     device_ = &device;
     swapChain_ = &swapChain;
     createCommandPool();
-    createColorResources();
     createDepthResources();
-    // Create per-frame uniform buffers sized for camera/projection
     createUniformBuffers(sizeof(PerFrameUniforms));
+    createAnimationUniformBuffers();
 }
 
 void VulkanResources::ensureMaterialUniformBuffer(const Material* material, const MaterialUniforms& data) {
@@ -46,6 +48,85 @@ void VulkanResources::ensureMaterialUniformBuffer(const Material* material, cons
     mb.size = dataSize;
 
     materialUniformBuffers_.emplace(material, std::move(mb));
+}
+
+void VulkanResources::ensureShaderMaterialUniformBuffer(const Material* material, const ShaderMaterialUniforms& data) {
+    if (!material) return;
+    auto it = shaderMaterialUniformBuffers_.find(material);
+    const vk::DeviceSize dataSize = sizeof(ShaderMaterialUniforms);
+    if (it != shaderMaterialUniformBuffers_.end()) {
+        auto& mb = it->second;
+        if (mb.size == dataSize) {
+            void* mem = mb.memory.mapMemory(0, dataSize);
+            memcpy(mem, &data, static_cast<size_t>(dataSize));
+            mb.memory.unmapMemory();
+            return;
+        }
+    }
+
+    vk::raii::Buffer buf = nullptr;
+    vk::raii::DeviceMemory mem = nullptr;
+    createBuffer(dataSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buf, mem);
+    void* mapped = mem.mapMemory(0, dataSize);
+    memcpy(mapped, &data, static_cast<size_t>(dataSize));
+    mem.unmapMemory();
+
+    ShaderMaterialBuffer mb{};
+    mb.buffer = std::move(buf);
+    mb.memory = std::move(mem);
+    mb.size = dataSize;
+
+    shaderMaterialUniformBuffers_.emplace(material, std::move(mb));
+}
+
+void VulkanResources::createAnimationUniformBuffers() {
+    const uint32_t imageCount = swapChain_
+        ? static_cast<uint32_t>(swapChain_->getImages().size())
+        : 1;
+    const uint32_t totalSlots = kMaxSkinnedDrawsPerFrame * imageCount;
+
+    animationUniformBuffers_.resize(totalSlots);
+    const vk::DeviceSize bufferSize = sizeof(AnimationUniforms);
+
+    for (uint32_t slot = 0; slot < totalSlots; ++slot) {
+        AnimationBuffer buffer{};
+        createBuffer(
+            bufferSize,
+            vk::BufferUsageFlagBits::eUniformBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            buffer.buffer,
+            buffer.memory);
+        buffer.size = bufferSize;
+        animationUniformBuffers_[slot] = std::move(buffer);
+    }
+}
+
+void VulkanResources::writeAnimationUniform(uint32_t slot, const std::vector<glm::mat4>& boneTransforms) {
+    if (slot >= animationUniformBuffers_.size()) {
+        return;
+    }
+
+    const size_t boneCount = std::min(boneTransforms.size(), static_cast<size_t>(kMaxBones));
+
+    auto& buffer = animationUniformBuffers_[slot];
+    void* mapped = buffer.memory.mapMemory(0, buffer.size);
+    auto* dst = static_cast<AnimationUniforms*>(mapped);
+    dst->numBones = static_cast<int32_t>(boneCount);
+    for (size_t i = 0; i < boneCount; ++i) {
+        dst->boneMatrices[i] = boneTransforms[i];
+    }
+    buffer.memory.unmapMemory();
+}
+
+vk::DescriptorBufferInfo VulkanResources::getAnimationDescriptorBufferInfo(uint32_t slot) const {
+    vk::DescriptorBufferInfo info{};
+    if (slot < animationUniformBuffers_.size()) {
+        const auto& buffer = animationUniformBuffers_[slot];
+        info.buffer = *buffer.buffer;
+        info.offset = 0;
+        info.range = buffer.size;
+    }
+    return info;
 }
 
 void VulkanResources::ensureTextMaterialUniformBuffer(const TextMaterial* material, const TextMaterialUniforms& data) {
@@ -83,6 +164,17 @@ vk::DescriptorBufferInfo VulkanResources::getMaterialDescriptorBufferInfo(const 
     if (!material) return info;
     auto it = materialUniformBuffers_.find(material);
     if (it == materialUniformBuffers_.end()) return info;
+    info.buffer = *it->second.buffer;
+    info.offset = 0;
+    info.range = it->second.size;
+    return info;
+}
+
+vk::DescriptorBufferInfo VulkanResources::getShaderMaterialDescriptorBufferInfo(const Material* material) const {
+    vk::DescriptorBufferInfo info{};
+    if (!material) return info;
+    auto it = shaderMaterialUniformBuffers_.find(material);
+    if (it == shaderMaterialUniformBuffers_.end()) return info;
     info.buffer = *it->second.buffer;
     info.offset = 0;
     info.range = it->second.size;
@@ -219,13 +311,6 @@ VulkanResources::RetainedStagingBuffer& VulkanResources::createRetainedStagingBu
     return staging;
 }
 
-void VulkanResources::createColorResources() {
-    vk::Format colorFormat = swapChain_->getSurfaceFormat().format;
-
-    createImage(swapChain_->getExtent().width, swapChain_->getExtent().height, 1, device_->getMsaaSamples(), colorFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,  vk::MemoryPropertyFlagBits::eDeviceLocal, colorImage_, colorImageMemory_);
-    colorImageView_ = createImageView(colorImage_, colorFormat, vk::ImageAspectFlagBits::eColor, 1);
-}
-
 void VulkanResources::createDepthResources() {
     vk::Format depthFormat = findDepthFormat();
     createImage(swapChain_->getExtent().width, swapChain_->getExtent().height, 1, vk::SampleCountFlagBits::e1, depthFormat, vk::ImageTiling::eOptimal,
@@ -242,6 +327,65 @@ void VulkanResources::createDepthResources() {
     barrier.subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1};
     commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eEarlyFragmentTests, {}, {}, {}, barrier);
     waitForUploads();
+}
+
+bool VulkanResources::ensureShadowAtlas(uint32_t width, uint32_t height) {
+    if (width == 0 || height == 0) {
+        return false;
+    }
+    if (shadowAtlasWidth_ == width && shadowAtlasHeight_ == height) {
+        return true;
+    }
+
+    device_->getDevice().waitIdle();
+
+    shadowAtlasImageView_ = nullptr;
+    shadowAtlasImage_ = nullptr;
+    shadowAtlasMemory_ = nullptr;
+    shadowAtlasWidth_ = 0;
+    shadowAtlasHeight_ = 0;
+
+    // 16 bits is plenty for a shadow map and halves the bandwidth of the pass
+    shadowAtlasFormat_ = findSupportedFormat(
+        {vk::Format::eD16Unorm, vk::Format::eD32Sfloat},
+        vk::ImageTiling::eOptimal,
+        vk::FormatFeatureFlagBits::eDepthStencilAttachment | vk::FormatFeatureFlagBits::eSampledImage);
+
+    createImage(width, height, 1, vk::SampleCountFlagBits::e1, shadowAtlasFormat_, vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
+                vk::MemoryPropertyFlagBits::eDeviceLocal, shadowAtlasImage_, shadowAtlasMemory_);
+    shadowAtlasImageView_ = createImageView(shadowAtlasImage_, shadowAtlasFormat_, vk::ImageAspectFlagBits::eDepth, 1);
+
+    if (!*shadowAtlasSampler_) {
+        vk::SamplerCreateInfo samplerInfo{};
+        samplerInfo.magFilter = vk::Filter::eNearest;
+        samplerInfo.minFilter = vk::Filter::eNearest;
+        samplerInfo.mipmapMode = vk::SamplerMipmapMode::eNearest;
+        samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+        samplerInfo.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+        samplerInfo.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+        samplerInfo.anisotropyEnable = vk::False;
+        samplerInfo.compareEnable = vk::False;
+        samplerInfo.minLod = 0.0f;
+        samplerInfo.maxLod = 0.0f;
+        shadowAtlasSampler_ = vk::raii::Sampler(device_->getDevice(), samplerInfo);
+    }
+
+    auto& commandBuffer = getUploadCommandBuffer();
+    vk::ImageMemoryBarrier barrier{};
+    barrier.oldLayout = vk::ImageLayout::eUndefined;
+    barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    barrier.srcAccessMask = {};
+    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+    barrier.image = shadowAtlasImage_;
+    barrier.subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1};
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                  vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
+    waitForUploads();
+
+    shadowAtlasWidth_ = width;
+    shadowAtlasHeight_ = height;
+    return true;
 }
 
 vk::Format VulkanResources::findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features) {
@@ -555,10 +699,6 @@ const VulkanResources::VulkanTexture& VulkanResources::getDefaultCubemapTexture(
     return getDefaultCubemap();
 }
 
-std::string VulkanResources::getCubemapCacheKey(const std::vector<std::string>& facePaths) const {
-    return makeCubemapCacheKey(facePaths);
-}
-
 const VulkanResources::VulkanTexture& VulkanResources::getOrCreateCubemapTexture(const std::vector<std::string>& facePaths) {
 
     if (isInvalidCubemapPaths(facePaths)) {
@@ -585,11 +725,17 @@ const VulkanResources::VulkanTexture& VulkanResources::getOrCreateCubemapTexture
     createCubemapImage(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), tex.mipLevels, tex.image, tex.memory);
     transitionCubeMapLayout(tex.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, tex.mipLevels);
 
-    const vk::DeviceSize faceSize = static_cast<vk::DeviceSize>(texWidth * texHeight * 4);
+    const int faceWidth = texWidth;
+    const int faceHeight = texHeight;
+    const vk::DeviceSize faceSize = static_cast<vk::DeviceSize>(faceWidth * faceHeight * 4);
 
     for (uint32_t face = 0; face < 6; ++face) {
         stbi_uc* pixels = stbi_load(facePaths[face].c_str(), &texWidth, &texHeight, &channels, STBI_rgb_alpha);
         if (!pixels) throw std::runtime_error("failed to load cubemap face: " + facePaths[face]);
+        if (texWidth != faceWidth || texHeight != faceHeight) {
+            stbi_image_free(pixels);
+            throw std::runtime_error("cubemap face size mismatch: " + facePaths[face]);
+        }
         auto& staging = createRetainedStagingBuffer(faceSize);
 
         void* data = staging.memory.mapMemory(0, faceSize);
@@ -597,7 +743,7 @@ const VulkanResources::VulkanTexture& VulkanResources::getOrCreateCubemapTexture
         staging.memory.unmapMemory();
         stbi_image_free(pixels);
 
-        copyBufferToImageLayer(staging.buffer, tex.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), face);
+        copyBufferToImageLayer(staging.buffer, tex.image, static_cast<uint32_t>(faceWidth), static_cast<uint32_t>(faceHeight), face);
     }
 
     transitionCubeMapLayout(tex.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, tex.mipLevels);
@@ -936,13 +1082,9 @@ VulkanMeshGpu VulkanResources::uploadMesh(const std::vector<Vertex>& verts, cons
 }
 
 VulkanMeshGpu VulkanResources::uploadMesh(const Mesh& mesh) {
-    std::vector<uint32_t> indices;
-    indices.reserve(mesh.getIndices().size());
-    for (unsigned int index : mesh.getIndices()) {
-        indices.push_back(static_cast<uint32_t>(index));
-    }
-
-    return uploadMesh(mesh.getVertices(), indices);
+    static_assert(std::is_same_v<std::vector<unsigned int>, std::vector<uint32_t>>,
+                  "index upload assumes unsigned int is uint32_t on this target");
+    return uploadMesh(mesh.getVertices(), mesh.getIndices());
 }
 
 const VulkanMeshGpu& VulkanResources::getOrUploadMesh(const Mesh& mesh) {
@@ -1045,24 +1187,100 @@ VulkanTextMeshGpu VulkanResources::uploadTextMesh(const std::vector<TextVertex>&
 }
 
 const VulkanTextMeshGpu& VulkanResources::getOrUploadTextMesh(const TextComponent& text){
+    const uint64_t revision = text.getTextMeshRevision();
     auto found = textMeshCache_.find(&text);
     if (found != textMeshCache_.end()) {
-        return found->second;
+        if (found->second.revision == revision) {
+            return found->second.gpu;
+        }
+        retireTextMeshGpu(std::move(found->second.gpu));
+        textMeshCache_.erase(found);
     }
 
-    std::vector<TextVertex> tvs = text.getCpuTextVertices();
-    std::vector<uint32_t> idxs;
-    idxs.reserve(text.getCpuIndices().size());
-    for (unsigned int i : text.getCpuIndices()) idxs.push_back(static_cast<uint32_t>(i));
+    VulkanTextMeshGpu gpu = uploadTextMesh(text.getCpuTextVertices(), text.getCpuIndices());
+    textMeshCache_.emplace(&text, CachedTextMesh{ revision, std::move(gpu) });
+    return textMeshCache_.at(&text).gpu;
+}
 
-    VulkanTextMeshGpu gpu = uploadTextMesh(tvs, idxs);
-    auto insRes = textMeshCache_.try_emplace(&text, std::move(gpu));
-    return insRes.first->second;
+const VulkanTextMeshGpu* VulkanResources::findTextMesh(const TextComponent& text) const {
+    auto found = textMeshCache_.find(&text);
+    if (found == textMeshCache_.end()) {
+        return nullptr;
+    }
+    if (found->second.revision != text.getTextMeshRevision()) {
+        return nullptr;
+    }
+    return &found->second.gpu;
+}
+
+void VulkanResources::retireMeshGpu(VulkanMeshGpu&& gpu) {
+    if (gpu.vertexCount > 0) {
+        retiredMeshes_.push_back(std::move(gpu));
+    }
+}
+
+void VulkanResources::retireTextMeshGpu(VulkanTextMeshGpu&& gpu) {
+    if (gpu.vertexCount > 0) {
+        retiredTextMeshes_.push_back(std::move(gpu));
+    }
+}
+
+void VulkanResources::drainRetiredGpuResources() {
+    if (retiredMeshes_.empty() && retiredTextMeshes_.empty()) {
+        return;
+    }
+    waitForGpuIdle();
+    retiredMeshes_.clear();
+    retiredTextMeshes_.clear();
 }
 
 void VulkanResources::clearMeshCache() {
+    for (auto& [mesh, gpu] : meshCache_) {
+        (void)mesh;
+        retireMeshGpu(std::move(gpu));
+    }
     meshCache_.clear();
+
+    for (auto& [text, cached] : textMeshCache_) {
+        (void)text;
+        retireTextMeshGpu(std::move(cached.gpu));
+    }
     textMeshCache_.clear();
+}
+
+void VulkanResources::evictMesh(const Mesh* mesh) {
+    auto it = meshCache_.find(mesh);
+    if (it != meshCache_.end()) {
+        retireMeshGpu(std::move(it->second));
+        meshCache_.erase(it);
+    }
+}
+
+void VulkanResources::evictTextMesh(const TextComponent* text) {
+    auto it = textMeshCache_.find(text);
+    if (it != textMeshCache_.end()) {
+        retireTextMeshGpu(std::move(it->second.gpu));
+        textMeshCache_.erase(it);
+    }
+}
+
+void VulkanResources::waitForGpuIdle() {
+    if (device_) {
+        device_->getDevice().waitIdle();
+    }
+    waitForUploads();
+}
+
+void VulkanResources::clearSceneGpuCaches() {
+    clearMeshCache();
+    drainRetiredGpuResources();
+    materialUniformBuffers_.clear();
+    shaderMaterialUniformBuffers_.clear();
+    textMaterialUniformBuffers_.clear();
+}
+
+void VulkanResources::releaseSceneGpuResources() {
+    clearSceneGpuCaches();
 }
 
 
@@ -1151,14 +1369,6 @@ vk::raii::CommandPool& VulkanResources::getCommandPool(){
 
 std::vector<vk::raii::CommandBuffer>& VulkanResources::getCommandBuffers(){
     return commandBuffers_;
-}
-
-vk::raii::Image& VulkanResources::getColorImage(){
-    return colorImage_;
-}
-
-vk::raii::ImageView& VulkanResources::getColorImageView(){
-    return colorImageView_;
 }
 
 vk::raii::Image& VulkanResources::getDepthImage(){

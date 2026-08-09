@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Rendering/IRenderer.h"
+#include "Rendering/Frustum.h"
+#include "Rendering/ShadowMap.h"
 #include "Rendering/Vulkan/VulkanDevice.h"
 #include "Rendering/Vulkan/VulkanSwapChain.h"
 #include "Rendering/Vulkan/VulkanResources.h"
@@ -28,8 +30,10 @@ public:
     void renderFromCamera(Scene& scene, CameraComponent* cam, const glm::vec4& vpNorm) override;
 
     void recordRenderCommands(vk::CommandBuffer cmdBuf, uint32_t imageIndex);
+    void recordShadowPass(vk::CommandBuffer cmdBuf, uint32_t imageIndex);
     void recordTextRenderCommand(vk::CommandBuffer cmdBuf, const TextRenderCommand& tc);
     void recordSkyboxRenderCommand(vk::CommandBuffer cmdBuf, uint32_t imageIndex);
+    void recordShaderMaterialRenderCommand(vk::CommandBuffer cmdBuf, uint32_t imageIndex, const RenderCommand& rc, float totalTime);
 
     // Set the current swapchain image index (frame owner `VulkanFrame` sets this)
     void setCurrentImageIndex(uint32_t idx) { currentImageIndex = idx; }
@@ -66,17 +70,18 @@ public:
     void create(VulkanDevice* device, VulkanSwapChain* swapchain, VulkanResources* resources, VulkanPipeline* pipeline);
 
 private:
-    struct FrustumPlane {
-        glm::vec3 normal{0.0f};
-        float distance = 0.0f;
+    struct ShadowDrawItem {
+        uint32_t queueIndex = 0;
+        uint32_t views = 0;
     };
 
     void resolveFrameEnvironment(Scene& scene);
     void prepareRenderResources();
+    void prepareAnimationResources();
     void sortRenderQueue();
     void cullRenderQueue();
+    void buildShadowDrawList();
     void updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
-    bool isAABBInFrustum(const glm::vec3& min, const glm::vec3& max, const glm::mat4& transform) const;
 
     VulkanDevice* device_ = nullptr;
     VulkanSwapChain* swapChain_ = nullptr;
@@ -88,7 +93,10 @@ private:
     FrameEnvironment frameEnvironment_;
     const VulkanResources::VulkanTexture* environmentCubemap_ = nullptr;
     bool frustumCullingEnabled_ = true;
-    std::array<FrustumPlane, 6> frustumPlanes_{};
+    Frustum cameraFrustum_;
+    std::vector<uint8_t> cameraVisible_;
+    std::vector<ShadowDrawItem> shadowDraws_;
+    std::vector<uint32_t> animationSlots_;
     RenderStats stats;
 };
 

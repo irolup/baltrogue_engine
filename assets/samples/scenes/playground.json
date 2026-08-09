@@ -476,7 +476,7 @@
                     "castShadows": true,
                     "isLoaded": true,
                     "modelName": "Pistol.glb",
-                    "modelPath": "assets/models/Pistol.glb",
+                    "modelPath": "assets/samples/models/Pistol.glb",
                     "receiveShadows": true,
                     "type": "ModelRenderer"
                   }
@@ -614,7 +614,7 @@
         "components": [
           {
             "pauseExempt": false,
-            "scriptPath": "assets/scripts/player_controller.lua",
+            "scriptPath": "assets/samples/scripts/player_controller.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -1588,9 +1588,9 @@
                 "material": {
                   "blendMode": "Opaque",
                   "color": [
-                    1.0,
-                    0.5,
-                    0.20000000298023224
+                    0.19999998807907104,
+                    0.2705882787704468,
+                    1.0
                   ],
                   "metallic": 0.0,
                   "reflectionStrength": 0.0,
@@ -1704,7 +1704,7 @@
         "components": [
           {
             "pauseExempt": false,
-            "scriptPath": "assets/scripts/enemy_main.lua",
+            "scriptPath": "assets/samples/scripts/enemy_main.lua",
             "type": "ScriptComponent"
           },
           {
@@ -1968,7 +1968,7 @@
         "components": [
           {
             "pauseExempt": false,
-            "scriptPath": "assets/scripts/enemy_main.lua",
+            "scriptPath": "assets/samples/scripts/enemy_main.lua",
             "type": "ScriptComponent"
           },
           {
@@ -2326,7 +2326,7 @@
             "components": [
               {
                 "pauseExempt": false,
-                "scriptPath": "assets/scripts/interactables/piston_button.lua",
+                "scriptPath": "assets/samples/scripts/interactables/piston_button.lua",
                 "type": "ScriptComponent"
               }
             ],

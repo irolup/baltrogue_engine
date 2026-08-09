@@ -61,6 +61,8 @@ private:
     bool isLooping;
     bool isPlaying_;
     bool enableRootMotion;
+    bool skeletonBindAttempted_ = false;
+    bool clipBindAttempted_ = false;
     
     void updateBoneTransforms();
     void updateBoneHierarchy(int boneIndex, const glm::mat4& parentTransform);

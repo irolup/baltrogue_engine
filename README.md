@@ -54,25 +54,37 @@ First demo scene (physics, player, camera):
 ## Directory Structure
 
 ```
-first_game/
+baltrogue_engine/
 ├── game_engine/           # Core engine
 │   ├── include/          # Headers (Core, Scene, Components, Rendering, Input, Editor)
 │   └── src/              # Implementation
-├── src/                  # Game entry points (vita_main, game_main, Platform)
-├── include/              # Game headers
-├── assets/               # Scenes, shaders, textures, models
-│   ├── shaders/          # OpenGL/CG shaders (Vita + Linux OpenGL path)
-│   └── vulkan/           # GLSL sources for Vulkan backend (compiled to .spv)
+│       └── App/          # Entry points (game_main, vita_main, editor_main, Platform)
+├── assets/
+│   ├── scenes/           # Game scenes (shipped; compiled to .bscn for Vita)
+│   ├── scripts/          # Game Lua — tire_game/ and ui/ plus the shared menus
+│   ├── templates/        # Node templates (prefabs)
+│   ├── models/           # Game models
+│   ├── textures/         # Shared texture library (recursively scanned)
+│   ├── fonts/            # Fonts
+│   ├── shaders/          # CG shaders (Vita) + GLSL (Linux OpenGL)
+│   ├── linux_shaders/    # OpenGL 2.0 compatible shaders
+│   ├── vulkan/           # GLSL sources for Vulkan backend (compiled to .spv)
+│   └── samples/          # Engine showcases — never shipped, see samples/README.md
+├── config/               # Build settings, input mappings, shadow settings
+├── tools/                # scene_to_binary (JSON -> .bscn)
+├── vendor/               # Bullet, Lua, ImGui, OpenAL, stb, json
 └── Makefile
 ```
 
-## Demo Scenes
 
-In `assets/scenes/`:
+## Engine Samples
 
-- **first_game_demo.json** — player, physics, collisions, camera
-- **drop_ball_scene.json** — physics demo
-- **main_menu.json** — menu and scene transitions
+`assets/samples/` holds feature showcases. Open them in the editor:
+
+- **samples/scenes/playground.json** : FPS controller, weapons, nav-mesh enemies with
+  line-of-sight, physics interactables
+- **samples/scenes/first_game_demo.json** : third-person player, collectibles, goal
+  volume, GLTF skeletal animation
 
 ## Building
 
@@ -88,6 +100,10 @@ make run                   # run game
 make run-editor            # run editor
 make help                  # list all targets
 ```
+
+Output: `build_linux/Baltrogue`. The executable name and the game's window
+title come from the `pc` block of `config/build_settings.txt`, see
+[Build names and LiveArea assets](#build-names-and-livearea-assets).
 
 **Vulkan (Linux game build)**
 
@@ -115,7 +131,40 @@ Then:
 make vita
 ```
 
-Output: `build/first_game_demo.vpk`.
+Output: `build/Baltrogue.vpk`.
+
+### Build names and LiveArea assets
+
+`config/build_settings.txt` holds what each build is called and, for the Vita,
+the LiveArea images. Edit it in the editor under **View > Build Settings**, or by
+hand, one block per platform, like `config/shadow_settings.txt`:
+
+| Key | Goes into |
+|-----|-----------|
+| `pc:title` | window title of the game, read at startup (no rebuild) |
+| `pc:executableName` | `build_linux/<executableName>` |
+| `vita:title`, `vita:titleId`, `vita:appVersion` | `param.sfo` |
+| `vita:vpkName` | `build/<vpkName>.vpk` |
+| `vita:style`, `vita:icon0`, `vita:pic0`, `vita:bg0`, `vita:startup` | `sce_sys/` |
+
+Each image key points at a source PNG of any size. `scripts/build_livearea.sh`
+scales and quantises it into what the Vita expects, writes `template.xml`, and
+`make vita` packs the result:
+
+| Source | Becomes | Size | Notes |
+|--------|---------|------|-------|
+| `icon0` | `sce_sys/icon0.png` | 128 x 128 | app icon, no transparency |
+| `pic0` | `sce_sys/pic0.png` | 960 x 544 | fullscreen loading image |
+| `bg0` | `sce_sys/livearea/contents/bg0.png` | 840 x 500 | LiveArea "paper" background |
+| `startup` | `sce_sys/livearea/contents/startup.png` | 280 x 158 | above the Start button, alpha kept |
+
+An empty key ships the VPK without that asset. The conversion needs `ffmpeg` and
+`pngquant`, both installed by `make install-deps`; `make livearea` rebuilds
+`sce_sys/` on its own without touching the game build.
+
+To wipe and rebuild only the Vita tree — leaving the Linux and editor builds
+untouched — use `make rebuild-vita`. See
+[Cleaning and rebuilding one target](#cleaning-and-rebuilding-one-target).
 
 **Running the homebrew**
 
@@ -134,6 +183,7 @@ Output: `build/first_game_demo.vpk`.
 | Target | Description |
 |--------|--------------|
 | `make vita` | PS Vita build |
+| `make livearea` | Rebuild `sce_sys/` from `config/build_settings.txt` |
 | `make linux` | Linux game (Vulkan on by default) |
 | `make linux USE_VULKAN=0` | Linux game without Vulkan |
 | `make editor` | Linux editor |
@@ -143,7 +193,53 @@ Output: `build/first_game_demo.vpk`.
 | `make lua-vita` | Build Lua 5.3 static library for PS Vita |
 | `make build-bullet` | Bullet Physics build instructions |
 | `make clean` | Clean all build dirs and compiled Vulkan shaders (`.spv`) |
+| `make clean-vita` | Clean only `build/` |
+| `make clean-linux` | Clean only `build_linux/`, `build_linux_gl/` and `.spv` shaders |
+| `make clean-editor` | Clean only `build_editor/` |
+| `make clean-scenes` | Remove generated `.bscn` files and `tools/scene_to_binary` |
+| `make rebuild-vita` | `clean-vita` then `vita` — other build trees untouched |
+| `make rebuild-linux` | `clean-linux` then `linux` |
+| `make rebuild-editor` | `clean-editor` then `editor` |
 | `make help` | List all targets |
+
+### Cleaning and rebuilding one target
+
+Each target has its own object tree, so you rarely need a full `make clean`:
+
+| Target | Object tree |
+|--------|-------------|
+| `vita` | `build/` |
+| `linux` (`USE_VULKAN=1`) | `build_linux/` |
+| `linux USE_VULKAN=0` | `build_linux_gl/` |
+| `editor` | `build_editor/` |
+
+To wipe and rebuild just one of them, leaving the others intact:
+
+```bash
+make rebuild-vita              # or rebuild-linux / rebuild-editor
+make -j$(nproc) rebuild-vita   # parallel
+```
+
+The `rebuild-*` targets shell out to a recursive `make` rather than listing clean
+and build as prerequisites, so the clean-then-build order still holds under `-j`.
+
+**When a clean is actually required.** Object files do not depend on the
+`Makefile`, so changing compiler flags or `-D` defines for a platform will not
+recompile that platform — clean its tree first. Adding or removing *source*
+files needs no clean; make picks those up on its own.
+
+**Editing the Vita VPK asset list.** The `.vpk` rule depends only on
+`eboot.bin`, so adding or changing an `-a` line in the `vita-pack-vpk` command
+will not trigger a repack on its own. Force one without recompiling:
+
+```bash
+rm -f build/ToTheWell.vpk && make vita
+```
+
+**Binary scenes.** `make vita` runs `scene-binaries`, converting
+`assets/scenes/*.json` to `.bscn` (except `save_file.json`, which stays JSON).
+These live in `assets/`, not in a build dir, so no clean target removes them —
+use `make clean-scenes` if the converter itself changed.
 
 ## Editor
 
@@ -151,6 +247,7 @@ Output: `build/first_game_demo.vpk`.
 - **Viewport (center)**: preview and manipulation
 - **Properties (right)**: transform and component props
 - **Create menu**: empty node, camera, cube, lights...
+- **View > Build Settings**: game name per platform — Linux executable and window title, VPK name, title id and LiveArea images
 
 ## Documentation
 

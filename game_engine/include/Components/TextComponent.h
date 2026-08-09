@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 namespace GameEngine {
     class Renderer;
@@ -55,6 +56,9 @@ public:
     virtual void render(IRenderer& renderer) override;
     void render(IRenderer& renderer, const glm::mat4& worldTransform);
     virtual void destroy() override;
+    virtual void prepareForRestart() override;
+    virtual void suspend() override;
+    virtual void resume() override;
     
     void renderWorldSpaceDirectly(const glm::mat4& worldTransform, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
     void renderScreenSpaceDirectly();
@@ -90,6 +94,7 @@ public:
     // Accessors for Vulkan text upload
     const std::vector<TextVertex>& getCpuTextVertices() const { return vertices; }
     const std::vector<unsigned int>& getCpuIndices() const { return indices; }
+    uint64_t getTextMeshRevision() const { return textMeshRevision; }
 
     virtual void drawInspector() override;
     
@@ -124,6 +129,7 @@ private:
     
     bool needsUpdate;
     bool isInitialized;
+    uint64_t textMeshRevision;
     
     void initializeFont();
     void updateTextMesh();

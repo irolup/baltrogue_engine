@@ -54,8 +54,12 @@ public:
     Time& getTime() { return *timeSystem; }
     PhysicsManager& getPhysicsManager() { return PhysicsManager::getInstance(); }
 
+    void waitForGpuIdle();
+
 #ifdef ENABLE_VULKAN
     VulkanResources* getVulkanResources() { return vulkanResources.get(); }
+    VulkanFrame* getVulkanFrame() { return vulkanFrame.get(); }
+    VulkanPipeline* getVulkanPipeline() { return vulkanPipeline.get(); }
 #endif
     
 #ifdef EDITOR_BUILD
@@ -104,6 +108,8 @@ private:
 };
 
 Engine& GetEngine();
+// Null-safe variant for destructors that may run during or after engine shutdown.
+Engine* GetEngineIfExists();
 
 } // namespace GameEngine
 

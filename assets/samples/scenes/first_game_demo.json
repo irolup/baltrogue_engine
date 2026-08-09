@@ -55,7 +55,7 @@
                 "castShadows": false,
                 "isLoaded": true,
                 "modelName": "lightning.glb",
-                "modelPath": "assets/models/lightning.glb",
+                "modelPath": "assets/samples/models/lightning.glb",
                 "receiveShadows": true,
                 "type": "ModelRenderer"
               }
@@ -213,7 +213,7 @@
         "components": [
           {
             "pauseExempt": true,
-            "scriptPath": "assets/scripts/collectible_behavior.lua",
+            "scriptPath": "assets/samples/scripts/collectible_behavior.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -242,7 +242,7 @@
         "components": [
           {
             "pauseExempt": false,
-            "scriptPath": "assets/scripts/player_controller_demo.lua",
+            "scriptPath": "assets/samples/scripts/player_controller_demo.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -297,13 +297,7 @@
       },
       {
         "active": true,
-        "components": [
-          {
-            "pauseExempt": true,
-            "scriptPath": "assets/scripts/physics_gun.lua",
-            "type": "ScriptComponent"
-          }
-        ],
+        "components": [],
         "name": "Physics_Gun_Controller",
         "transform": {
           "position": [
@@ -729,7 +723,7 @@
                     "castShadows": true,
                     "isLoaded": true,
                     "modelName": "Pistol.glb",
-                    "modelPath": "assets/models/Pistol.glb",
+                    "modelPath": "assets/samples/models/Pistol.glb",
                     "receiveShadows": true,
                     "type": "ModelRenderer"
                   }
@@ -794,7 +788,7 @@
                     "castShadows": true,
                     "isLoaded": true,
                     "modelName": "Player.glb",
-                    "modelPath": "assets/models/Player.glb",
+                    "modelPath": "assets/samples/models/Player.glb",
                     "receiveShadows": true,
                     "type": "ModelRenderer"
                   },
@@ -1145,7 +1139,7 @@
         "components": [
           {
             "pauseExempt": false,
-            "scriptPath": "assets/scripts/animated_character.lua",
+            "scriptPath": "assets/samples/scripts/animated_character.lua",
             "type": "ScriptComponent"
           }
         ],
@@ -1834,7 +1828,7 @@
         "components": [
           {
             "pauseExempt": false,
-            "scriptPath": "assets/scripts/goal_controller.lua",
+            "scriptPath": "assets/samples/scripts/goal_controller.lua",
             "type": "ScriptComponent"
           }
         ],

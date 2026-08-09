@@ -464,11 +464,17 @@ std::vector<std::string> MenuManager::getVisibleMenus() const {
     return visibleMenuStack;
 }
 
+void MenuManager::onLuaStateClosed(lua_State* L) {
+    if (luaState == L) {
+        luaState = nullptr;
+    }
+}
+
 void MenuManager::bindToLua(lua_State* L) {
     if (!L) {
         return;
     }
-    
+
     luaState = L;
     
     lua_newtable(L);

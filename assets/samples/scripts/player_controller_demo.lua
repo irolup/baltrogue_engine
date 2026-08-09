@@ -47,6 +47,7 @@ local stopSoundFrameCount = 0
 
 function start()
     lastJumpTime = getTime()
+    angularFactorSet = false
     if setNodeVisible then
         setNodeVisible(playerModelNodeName, true)
         setNodeVisible(gunMeshNodeName, false)
@@ -61,14 +62,14 @@ function start()
         walkSound = sound.getComponent(walkSoundNodeName)
         if walkSound and type(walkSound) == "table" and walkSound.setLoop then
             if walkSound.stop and type(walkSound.stop) == "function" then
-                pcall(function() walkSound:stop() end)
+                pcall(walkSound.stop, walkSound)
             end
             if walkSound.setLoop and type(walkSound.setLoop) == "function" then
-                pcall(function() walkSound:setLoop(true) end)
+                pcall(walkSound.setLoop, walkSound, true)
             end
             if walkSound.stop and type(walkSound.stop) == "function" then
                 for i = 1, 5 do
-                    pcall(function() walkSound:stop() end)
+                    pcall(walkSound.stop, walkSound)
                 end
                 stopSoundFrameCount = 10
             end
@@ -90,12 +91,12 @@ function update(deltaTime)
         walkSound = sound.getComponent(walkSoundNodeName)
         if walkSound and walkSound.setLoop then
             if walkSound.stop then
-                pcall(function() walkSound:stop() end)
+                pcall(walkSound.stop, walkSound)
             end
-            pcall(function() walkSound:setLoop(true) end)
+            pcall(walkSound.setLoop, walkSound, true)
             if walkSound.stop then
-                pcall(function() walkSound:stop() end)
-                pcall(function() walkSound:stop() end)
+                pcall(walkSound.stop, walkSound)
+                pcall(walkSound.stop, walkSound)
                 stopSoundFrameCount = 5
             end
             lastMovementState = false
@@ -103,12 +104,13 @@ function update(deltaTime)
     end
     
     if stopSoundFrameCount > 0 and walkSound and walkSound.stop then
-        pcall(function() walkSound.stop() end)
+        pcall(walkSound.stop, walkSound)
         stopSoundFrameCount = stopSoundFrameCount - 1
     end
 
-    if setNodeAngularFactor then
+    if not angularFactorSet and setNodeAngularFactor then
         setNodeAngularFactor("PlayerCollision", 0, 0, 0)
+        angularFactorSet = true
     end
 
     local moveH = input.getActionAxis("MoveHorizontal")
@@ -162,20 +164,22 @@ function update(deltaTime)
     if walkSound ~= nil and type(walkSound) == "table" then
         local soundIsPlaying = false
         if walkSound.isPlaying and type(walkSound.isPlaying) == "function" then
-            local success, result = pcall(function() return walkSound:isPlaying() end)
+            -- pcall with the function directly: an inline closure here
+            -- allocated garbage every frame.
+            local success, result = pcall(walkSound.isPlaying, walkSound)
             if success then
                 soundIsPlaying = result
             end
         end
-        
+
         if isMoving ~= lastMovementState then
             if isMoving then
                 if walkSound and type(walkSound) == "table" and walkSound.play and type(walkSound.play) == "function" then
-                    pcall(function() walkSound:play() end)
+                    pcall(walkSound.play, walkSound)
                 end
             else
                 if walkSound and type(walkSound) == "table" and walkSound.stop and type(walkSound.stop) == "function" then
-                    pcall(function() walkSound:stop() end)
+                    pcall(walkSound.stop, walkSound)
                     stopSoundFrameCount = 5
                 end
             end
@@ -184,19 +188,19 @@ function update(deltaTime)
         
         if not isMoving and walkSound and type(walkSound) == "table" and walkSound.stop and type(walkSound.stop) == "function" then
             if stopSoundFrameCount > 0 then
-                pcall(function() walkSound:stop() end)
+                pcall(walkSound.stop, walkSound)
                 stopSoundFrameCount = stopSoundFrameCount - 1
             elseif soundIsPlaying then
-                pcall(function() walkSound:stop() end)
+                pcall(walkSound.stop, walkSound)
                 stopSoundFrameCount = 3
             end
         end
         
         if isMoving and walkSound and type(walkSound) == "table" and walkSound.setPitch and type(walkSound.setPitch) == "function" then
             if isSprinting and not wasSprinting then
-                pcall(function() walkSound:setPitch(runPitch) end)
+                pcall(walkSound.setPitch, walkSound, runPitch)
             elseif not isSprinting and wasSprinting then
-                pcall(function() walkSound:setPitch(walkPitch) end)
+                pcall(walkSound.setPitch, walkSound, walkPitch)
             end
         end
     end

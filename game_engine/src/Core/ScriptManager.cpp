@@ -33,6 +33,8 @@ namespace GameEngine {
 
 static void applyLuaTableToMaterial(Material* mat, lua_State* L, int tableIndex) {
     if (!mat || !lua_istable(L, tableIndex)) return;
+    bool hasDepthWrite = false;
+    bool depthWriteValue = true;
     lua_pushnil(L);
     while (lua_next(L, tableIndex) != 0) {
         const char* key = lua_tostring(L, -2);
@@ -45,7 +47,10 @@ static void applyLuaTableToMaterial(Material* mat, lua_State* L, int tableIndex)
                 else mat->setBlendMode(BlendMode::Opaque);
             }
         } else if (strcmp(key, "depthWrite") == 0) {
-            mat->setDepthWrite(lua_toboolean(L, -1) != 0);
+            hasDepthWrite = true;
+            depthWriteValue = lua_toboolean(L, -1) != 0;
+        } else if (strcmp(key, "opacity") == 0 && lua_isnumber(L, -1)) {
+            mat->setOpacity((float)lua_tonumber(L, -1));
         } else if (lua_isnumber(L, -1)) {
             mat->setFloat(key, (float)lua_tonumber(L, -1));
         } else if (lua_istable(L, -1)) {
@@ -61,6 +66,9 @@ static void applyLuaTableToMaterial(Material* mat, lua_State* L, int tableIndex)
             else if (len >= 4) mat->setVec4(key, glm::vec4(v[0], v[1], v[2], v[3]));
         }
         lua_pop(L, 1);
+    }
+    if (hasDepthWrite) {
+        mat->setDepthWrite(depthWriteValue);
     }
 }
 
@@ -219,7 +227,6 @@ void ScriptManager::bindEngineSystems() {
     bindPhysicsSystem();
     bindRendererSystem();
     bindSceneSystem();
-    bindPickupZoneSystem();
     bindMenuSystem();
     
     std::cout << "ScriptManager: Engine systems bound to Lua" << std::endl;
@@ -246,6 +253,7 @@ bool ScriptManager::initializeLua() {
 
 void ScriptManager::cleanupLua() {
     if (globalLuaState) {
+        MenuManager::getInstance().onLuaStateClosed(globalLuaState);
         lua_close(globalLuaState);
         globalLuaState = nullptr;
     }
@@ -323,9 +331,14 @@ void ScriptManager::bindMathFunctions() {
     if (!globalLuaState) {
         return;
     }
-    
-    lua_newtable(globalLuaState);
-    
+
+    // Add to Lua's own math table instead of replacing it
+    lua_getglobal(globalLuaState, "math");
+    if (!lua_istable(globalLuaState, -1)) {
+        lua_pop(globalLuaState, 1);
+        lua_newtable(globalLuaState);
+    }
+
     lua_pushstring(globalLuaState, "vec3");
     lua_pushcfunction(globalLuaState, [](lua_State* L) -> int {
         float x = luaL_optnumber(L, 1, 0.0);
@@ -813,8 +826,24 @@ void ScriptManager::bindSceneSystem() {
         auto& engine = GetEngine();
         auto& sceneManager = engine.getSceneManager();
         
-        bool success = sceneManager.loadSceneFromFile(sceneName, filepath);
+        bool success = sceneManager.requestLoadSceneFromFile(sceneName, filepath);
         lua_pushboolean(L, success);
+        return 1;
+    });
+    lua_settable(globalLuaState, -3);
+
+    lua_pushstring(globalLuaState, "preloadSceneFromFile");
+    lua_pushcfunction(globalLuaState, [](lua_State* L) -> int {
+        const char* sceneName = luaL_checkstring(L, 1);
+        const char* filepath = luaL_checkstring(L, 2);
+
+        if (!sceneName || !filepath) {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+
+        auto& sceneManager = GetEngine().getSceneManager();
+        lua_pushboolean(L, sceneManager.preloadSceneFromFile(sceneName, filepath));
         return 1;
     });
     lua_settable(globalLuaState, -3);
@@ -887,214 +916,6 @@ void ScriptManager::bindSceneSystem() {
     lua_settable(globalLuaState, -3);
     
     lua_setglobal(globalLuaState, "scene");
-}
-
-void ScriptManager::bindPickupZoneSystem() {
-    if (!globalLuaState) {
-        return;
-    }
-    
-    lua_newtable(globalLuaState);
-    
-    lua_pushstring(globalLuaState, "zones");
-    lua_newtable(globalLuaState);
-    lua_settable(globalLuaState, -3);
-    
-    lua_pushstring(globalLuaState, "createZone");
-    lua_pushcfunction(globalLuaState, [](lua_State* L) -> int {
-        const char* name = luaL_checkstring(L, 1);
-        float x = luaL_optnumber(L, 2, 0.0);
-        float y = luaL_optnumber(L, 3, 0.0);
-        float z = luaL_optnumber(L, 4, 0.0);
-        float width = luaL_optnumber(L, 5, 1.0);
-        float height = luaL_optnumber(L, 6, 1.0);
-        float depth = luaL_optnumber(L, 7, 1.0);
-        
-        lua_newtable(L);
-        lua_pushstring(L, "name");
-        lua_pushstring(L, name);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "x");
-        lua_pushnumber(L, x);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "y");
-        lua_pushnumber(L, y);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "z");
-        lua_pushnumber(L, z);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "width");
-        lua_pushnumber(L, width);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "height");
-        lua_pushnumber(L, height);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "depth");
-        lua_pushnumber(L, depth);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "objects");
-        lua_newtable(L);
-        lua_settable(L, -3);
-        
-        // Store in global zones table
-        lua_getglobal(L, "pickupZone");
-        lua_pushstring(L, "zones");
-        lua_gettable(L, -2);
-        lua_pushstring(L, name);
-        lua_pushvalue(L, -4); // Copy the zone table
-        lua_settable(L, -3);
-        lua_pop(L, 2); // Remove zones table and pickupZone table
-        
-        return 1; // Return the zone table
-    });
-    lua_settable(globalLuaState, -3);
-    
-    lua_pushstring(globalLuaState, "isObjectInZone");
-    lua_pushcfunction(globalLuaState, [](lua_State* L) -> int {
-        const char* zoneName = luaL_checkstring(L, 1);
-        const char* objectName = luaL_checkstring(L, 2);
-        
-        lua_getglobal(L, "pickupZone");
-        lua_pushstring(L, "zones");
-        lua_gettable(L, -2);
-        lua_pushstring(L, zoneName);
-        lua_gettable(L, -2);
-        
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 3); // Clean up stack
-            lua_pushboolean(L, false);
-            return 1;
-        }
-        
-        lua_pushstring(L, "objects");
-        lua_gettable(L, -2);
-        
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 4);
-            lua_pushboolean(L, false);
-            return 1;
-        }
-        
-        lua_pushstring(L, objectName);
-        lua_gettable(L, -2);
-        bool isInZone = !lua_isnil(L, -1);
-        lua_pop(L, 5); // Clean up stack
-        
-        lua_pushboolean(L, isInZone);
-        return 1;
-    });
-    lua_settable(globalLuaState, -3);
-    
-    lua_pushstring(globalLuaState, "addObjectToZone");
-    lua_pushcfunction(globalLuaState, [](lua_State* L) -> int {
-        const char* zoneName = luaL_checkstring(L, 1);
-        const char* objectName = luaL_checkstring(L, 2);
-        
-        lua_getglobal(L, "pickupZone");
-        lua_pushstring(L, "zones");
-        lua_gettable(L, -2);
-        lua_pushstring(L, zoneName);
-        lua_gettable(L, -2);
-        
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 3); // Clean up stack
-            lua_pushboolean(L, false);
-            return 1;
-        }
-        
-        lua_pushstring(L, "objects");
-        lua_gettable(L, -2);
-        
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 4);
-            lua_pushboolean(L, false);
-            return 1;
-        }
-        
-        lua_pushstring(L, objectName);
-        lua_pushboolean(L, true);
-        lua_settable(L, -3);
-        
-        lua_pop(L, 4); // Clean up stack
-        lua_pushboolean(L, true);
-        return 1;
-    });
-    lua_settable(globalLuaState, -3);
-    
-    lua_pushstring(globalLuaState, "removeObjectFromZone");
-    lua_pushcfunction(globalLuaState, [](lua_State* L) -> int {
-        const char* zoneName = luaL_checkstring(L, 1);
-        const char* objectName = luaL_checkstring(L, 2);
-        
-        lua_getglobal(L, "pickupZone");
-        lua_pushstring(L, "zones");
-        lua_gettable(L, -2);
-        lua_pushstring(L, zoneName);
-        lua_gettable(L, -2);
-        
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 3); // Clean up stack
-            lua_pushboolean(L, false);
-            return 1;
-        }
-        
-        lua_pushstring(L, "objects");
-        lua_gettable(L, -2);
-        
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 4);
-            lua_pushboolean(L, false);
-            return 1;
-        }
-        
-        lua_pushstring(L, objectName);
-        lua_pushnil(L);
-        lua_settable(L, -3);
-        
-        lua_pop(L, 4); // Clean up stack
-        lua_pushboolean(L, true);
-        return 1;
-    });
-    lua_settable(globalLuaState, -3);
-    
-    lua_pushstring(globalLuaState, "getObjectsInZone");
-    lua_pushcfunction(globalLuaState, [](lua_State* L) -> int {
-        const char* zoneName = luaL_checkstring(L, 1);
-        
-        lua_getglobal(L, "pickupZone");
-        lua_pushstring(L, "zones");
-        lua_gettable(L, -2);
-        lua_pushstring(L, zoneName);
-        lua_gettable(L, -2);
-        
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 3);
-            lua_newtable(L);
-            return 1;
-        }
-        
-        lua_pushstring(L, "objects");
-        lua_gettable(L, -2);
-        
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 4);
-            lua_newtable(L);
-            return 1;
-        }
-        
-        lua_pop(L, 3);
-        return 1;
-    });
-    lua_settable(globalLuaState, -3);
-    
-    lua_setglobal(globalLuaState, "pickupZone");
 }
 
 void ScriptManager::bindMenuSystem() {

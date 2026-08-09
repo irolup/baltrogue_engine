@@ -8,6 +8,7 @@
 #include <utility>
 #include <glm/glm.hpp>
 #include "Platform.h"
+#include "Rendering/RenderTypes.h"
 
 namespace GameEngine {
 
@@ -59,10 +60,27 @@ public:
     void setReflectionStrength(float r) { reflectionStrength = r; setFloat("u_ReflectionStrength", reflectionStrength); }
     
     BlendMode getBlendMode() const { return blendMode; }
-    void setBlendMode(BlendMode mode) { blendMode = mode; }
+    void setBlendMode(BlendMode mode);
     
+    float getOpacity() const { return opacity; }
+    void setOpacity(float o);
+
+    float getAlphaCutoff() const { return alphaCutoff; }
+    void setAlphaCutoff(float cutoff);
+
+    bool getDoubleSided() const { return doubleSided; }
+    void setDoubleSided(bool enabled) { doubleSided = enabled; }
+
     bool getDepthWrite() const { return depthWrite; }
     void setDepthWrite(bool write) { depthWrite = write; }
+
+    glm::vec2 getUVScale() const { return uvScale; }
+    void setUVScale(const glm::vec2& scale) { uvScale = scale; setVec2("u_UVScale", uvScale); }
+
+    glm::vec2 getUVOffset() const { return uvOffset; }
+    void setUVOffset(const glm::vec2& offset) { uvOffset = offset; setVec2("u_UVOffset", uvOffset); }
+
+    void resetUVTransform() { setUVScale(glm::vec2(1.0f, 1.0f)); setUVOffset(glm::vec2(0.0f, 0.0f)); }
     
     std::shared_ptr<Texture> getDiffuseTexture() const { return diffuseTexture; }
     void setDiffuseTexture(std::shared_ptr<Texture> texture, const std::string& path = "");
@@ -130,6 +148,16 @@ public:
 
     bool isUsingCustomShader() const;
     void useDefaultLitShader();
+
+#ifdef ENABLE_VULKAN
+    bool isBeamMaterial() const;
+    VulkanShaderPipelineKind getVulkanShaderPipelineKind() const;
+    std::string getVulkanVertexSpvPath() const;
+    std::string getVulkanFragmentSpvPath() const;
+    std::string getVulkanShaderPipelineKey() const;
+    std::string getCustomTexturePathByUniformName(const std::string& uniformName) const;
+    bool hasCustomTextureUniform(const std::string& uniformName) const;
+#endif
     
     using CustomTextureUniform = std::pair<std::string, std::string>;
     const std::vector<CustomTextureUniform>& getCustomTextureUniforms() const { return customTextureUniforms; }
@@ -141,6 +169,7 @@ public:
     
     void setupLightingUniforms() const;
     void setCameraPosition(const glm::vec3& cameraPos);
+    void setupShadowUniforms() const;
     
     static std::shared_ptr<Material> getDefaultMaterial();
     static std::shared_ptr<Material> getErrorMaterial();
@@ -162,8 +191,13 @@ private:
     float metallic;
     float roughness;
     float reflectionStrength;
+    float opacity = 1.0f;
+    float alphaCutoff = 0.0f; // >0 enables alpha-test discard
     BlendMode blendMode;
     bool depthWrite = true;
+    bool doubleSided = false;
+    glm::vec2 uvScale{1.0f, 1.0f};
+    glm::vec2 uvOffset{0.0f, 0.0f};
     
     std::shared_ptr<Texture> diffuseTexture;
     std::shared_ptr<Texture> normalTexture;

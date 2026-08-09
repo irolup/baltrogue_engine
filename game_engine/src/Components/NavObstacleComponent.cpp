@@ -11,18 +11,24 @@ NavObstacleComponent::~NavObstacleComponent() {}
 
 void NavObstacleComponent::start() {
     if (!owner) return;
-    gridsRegistered_.clear();
     NavGridRegistry::get().forEachGrid([this](NavGrid* g) {
         g->registerObstacleNode(owner);
-        gridsRegistered_.push_back(g);
     });
 }
 
 void NavObstacleComponent::destroy() {
     if (!owner) return;
-    for (NavGrid* g : gridsRegistered_)
+    NavGridRegistry::get().forEachGrid([this](NavGrid* g) {
         g->unregisterObstacleNode(owner);
-    gridsRegistered_.clear();
+    });
+}
+
+void NavObstacleComponent::suspend() {
+    destroy();
+}
+
+void NavObstacleComponent::resume() {
+    start();
 }
 
 void NavObstacleComponent::drawInspector() {

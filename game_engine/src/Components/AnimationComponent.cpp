@@ -91,12 +91,10 @@ void AnimationComponent::start() {
 }
 
 void AnimationComponent::update(float deltaTime) {
-    static int updateCount = 0;
-    updateCount++;
-    
-    if (!currentSkeleton && owner) {
+    if (!currentSkeleton && owner && !skeletonBindAttempted_) {
         auto modelRenderer = owner->getComponent<ModelRenderer>();
         if (modelRenderer && modelRenderer->isModelLoaded()) {
+            skeletonBindAttempted_ = true;
             std::string modelName = modelRenderer->getModelName();
             auto& animManager = AnimationManager::getInstance();
             
@@ -116,9 +114,10 @@ void AnimationComponent::update(float deltaTime) {
         }
     }
     
-    if (currentSkeleton && !currentClip && owner) {
+    if (currentSkeleton && !currentClip && owner && !clipBindAttempted_) {
         auto modelRenderer = owner->getComponent<ModelRenderer>();
         if (modelRenderer && modelRenderer->isModelLoaded()) {
+            clipBindAttempted_ = true;
             auto& animManager = AnimationManager::getInstance();
             
             std::string skeletonName = currentSkeleton->getName();

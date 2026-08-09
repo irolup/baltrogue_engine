@@ -80,7 +80,7 @@ void Area3DComponent::update(float deltaTime) {
     // Force recalculation of world matrix each frame to ensure it's up-to-date
     glm::mat4 worldMatrix = getWorldTransformMatrix();
     glm::vec3 worldPos = glm::vec3(worldMatrix[3]);
-    glm::quat worldRot = glm::quat_cast(worldMatrix);
+    glm::quat worldRot = owner->getWorldRotation();
     
     // Debug: Print if position seems wrong (very large Y value)
     #ifdef _DEBUG
@@ -123,6 +123,14 @@ void Area3DComponent::render(IRenderer& renderer) {
 void Area3DComponent::destroy() {
     unregisterFromGroup();
     destroyGhostObject();
+}
+
+void Area3DComponent::suspend() {
+    destroy();
+}
+
+void Area3DComponent::resume() {
+    start();
 }
 
 void Area3DComponent::setShape(Area3DShape shape) {
@@ -214,7 +222,7 @@ void Area3DComponent::createGhostObject() {
     // Set initial transform
     glm::mat4 worldMatrix = getWorldTransformMatrix();
     glm::vec3 worldPos = glm::vec3(worldMatrix[3]);
-    glm::quat worldRot = glm::quat_cast(worldMatrix);
+    glm::quat worldRot = owner->getWorldRotation();
     
     btTransform transform;
     transform.setIdentity();
@@ -291,6 +299,8 @@ void Area3DComponent::performCollisionDetection() {
     
     // Get area world position for precise shape checks
     glm::vec3 areaPos = getWorldPosition();
+    glm::quat areaRot = owner->getWorldRotation();
+    glm::vec3 areaScale = owner->getWorldScale();
     
     // Get all overlapping objects directly from the ghost object (AABB-based, fast)
     // Then do precise shape-based checks to filter out false positives
@@ -306,27 +316,15 @@ void Area3DComponent::performCollisionDetection() {
             continue;
         }
         
-        // Get object identifier first
-        std::string bodyName = "";
-        PhysicsComponent* physicsComp = static_cast<PhysicsComponent*>(obj->getUserPointer());
-        Area3DComponent* areaComp = nullptr;
-        
-        if (physicsComp && physicsComp->getOwner()) {
-            bodyName = physicsComp->getOwner()->getName();
-        } else {
-            // Try to get from Area3DComponent
-            areaComp = static_cast<Area3DComponent*>(obj->getUserPointer());
-            if (areaComp && areaComp->getOwner()) {
-                // Skip if this is our own component (triple-check to prevent self-detection)
-                if (areaComp == this) {
-                    continue; // Skip self
-                }
-                bodyName = areaComp->getOwner()->getName();
-            } else {
-                // Skip objects we can't identify
-                continue;
-            }
+        // Resolve the owning component through the common base; user pointers
+        // hold either a PhysicsComponent or an Area3DComponent.
+        Component* comp = static_cast<Component*>(obj->getUserPointer());
+        if (!comp || !comp->getOwner() || comp == this) {
+            continue;
         }
+        std::string bodyName = comp->getOwner()->getName();
+        Area3DComponent* areaComp =
+            (comp->getTypeName() == "Area3DComponent") ? static_cast<Area3DComponent*>(comp) : nullptr;
         
         // Get the object's world position
         btTransform objTransform = obj->getWorldTransform();
@@ -335,58 +333,53 @@ void Area3DComponent::performCollisionDetection() {
         
         // Check if object is actually within the precise detection area shape
         bool isInside = false;
+        glm::vec3 localPos = glm::inverse(areaRot) * (objectPos - areaPos);
         
         if (shapeType == Area3DShape::BOX) {
-            // Box vs point/sphere check
-            glm::vec3 localPos = objectPos - areaPos;
-            glm::vec3 halfExtents = dimensions * 0.5f;
+            glm::vec3 halfExtents = dimensions * areaScale * 0.5f;
             isInside = (localPos.x >= -halfExtents.x && localPos.x <= halfExtents.x &&
                         localPos.y >= -halfExtents.y && localPos.y <= halfExtents.y &&
                         localPos.z >= -halfExtents.z && localPos.z <= halfExtents.z);
         } else if (shapeType == Area3DShape::SPHERE) {
-            // Sphere vs point/sphere check
-            float distance = glm::length(objectPos - areaPos);
+            float maxScale = std::max({areaScale.x, areaScale.y, areaScale.z});
             
-            // If detecting another Area3DComponent with sphere shape, use sphere-sphere overlap
             if (areaComp && areaComp->getShape() == Area3DShape::SPHERE) {
-                // Sphere-sphere overlap: distance between centers <= sum of radii
                 float otherRadius = areaComp->getRadius();
-                float combinedRadius = radius + otherRadius;
-                isInside = (distance <= combinedRadius);
+                float otherMaxScale = std::max({
+                    areaComp->getOwner()->getWorldScale().x,
+                    areaComp->getOwner()->getWorldScale().y,
+                    areaComp->getOwner()->getWorldScale().z
+                });
+                float combinedRadius = radius * maxScale + otherRadius * otherMaxScale;
+                isInside = (glm::length(objectPos - areaPos) <= combinedRadius);
             } else {
-                // Point-in-sphere or sphere vs physics body: just check if point is within radius
-                isInside = (distance <= radius);
+                isInside = (glm::length(localPos) <= radius * maxScale);
             }
         } else if (shapeType == Area3DShape::CAPSULE || shapeType == Area3DShape::CYLINDER) {
-            // Capsule/Cylinder check (simplified - check distance in XZ plane and Y)
-            glm::vec3 localPos = objectPos - areaPos;
             float horizontalDist = glm::length(glm::vec2(localPos.x, localPos.z));
             float verticalPos = localPos.y;
+            float scaledRadius = radius * std::max(areaScale.x, areaScale.z);
+            float scaledHeight = height * areaScale.y;
             
             if (shapeType == Area3DShape::CAPSULE) {
-                // Capsule: Bullet convention - height is distance between cap centers
-                float halfHeight = height * 0.5f;
+                float halfHeight = scaledHeight * 0.5f;
                 float bottomCapCenter = -halfHeight;
                 float topCapCenter = halfHeight;
                 
-                // Check if within the cylinder part
                 if (verticalPos >= bottomCapCenter && verticalPos <= topCapCenter) {
-                    isInside = (horizontalDist <= radius);
+                    isInside = (horizontalDist <= scaledRadius);
                 } else if (verticalPos > topCapCenter) {
-                    // Top sphere cap (center at +height/2)
                     float verticalOffset = verticalPos - topCapCenter;
                     float distanceFromTopCapCenter = glm::length(glm::vec2(horizontalDist, verticalOffset));
-                    isInside = (distanceFromTopCapCenter <= radius);
+                    isInside = (distanceFromTopCapCenter <= scaledRadius);
                 } else {
-                    // Bottom sphere cap (center at -height/2)
                     float verticalOffset = verticalPos - bottomCapCenter;
                     float distanceFromBottomCapCenter = glm::length(glm::vec2(horizontalDist, verticalOffset));
-                    isInside = (distanceFromBottomCapCenter <= radius);
+                    isInside = (distanceFromBottomCapCenter <= scaledRadius);
                 }
             } else {
-                // Cylinder: height in Y, radius in XZ
-                float halfHeight = height * 0.5f;
-                isInside = (horizontalDist <= radius && 
+                float halfHeight = scaledHeight * 0.5f;
+                isInside = (horizontalDist <= scaledRadius && 
                            verticalPos >= -halfHeight && 
                            verticalPos <= halfHeight);
             }
@@ -403,78 +396,44 @@ void Area3DComponent::performCollisionDetection() {
 }
 
 void Area3DComponent::handleCollisionEvents() {
-    // Handle enter events
-    for (const auto& bodyName : bodiesInArea) {
-        if (previousBodiesInArea.find(bodyName) == previousBodiesInArea.end()) {
-            // Body entered the area
-            void* userData = nullptr;
-            // Try to find the user data for this body
-            btDiscreteDynamicsWorld* world = PhysicsManager::getInstance().getDynamicsWorld();
-            if (world) {
-                for (int i = 0; i < world->getNumCollisionObjects(); i++) {
-                    btCollisionObject* obj = world->getCollisionObjectArray()[i];
-                    PhysicsComponent* physicsComp = static_cast<PhysicsComponent*>(obj->getUserPointer());
-                    Area3DComponent* areaComp = static_cast<Area3DComponent*>(obj->getUserPointer());
-                    if ((physicsComp && physicsComp->getOwner() && physicsComp->getOwner()->getName() == bodyName) ||
-                        (areaComp && areaComp->getOwner() && areaComp->getOwner()->getName() == bodyName)) {
-                        userData = obj->getUserPointer();
-                        break;
-                    }
-                }
-            }
-            
-            if (onBodyEntered) {
-                onBodyEntered(bodyName, userData);
-            }
-        }
+    if (!onBodyEntered && !onBodyExited && !onBodyStayed) {
+        return;
     }
-    
-    // Handle exit events
-    for (const auto& bodyName : previousBodiesInArea) {
-        if (bodiesInArea.find(bodyName) == bodiesInArea.end()) {
-            // Body exited the area
-            void* userData = nullptr;
-            // Try to find the user data for this body (simplified - may not find it if already removed)
-            btDiscreteDynamicsWorld* world = PhysicsManager::getInstance().getDynamicsWorld();
-            if (world) {
-                for (int i = 0; i < world->getNumCollisionObjects(); i++) {
-                    btCollisionObject* obj = world->getCollisionObjectArray()[i];
-                    PhysicsComponent* physicsComp = static_cast<PhysicsComponent*>(obj->getUserPointer());
-                    Area3DComponent* areaComp = static_cast<Area3DComponent*>(obj->getUserPointer());
-                    if ((physicsComp && physicsComp->getOwner() && physicsComp->getOwner()->getName() == bodyName) ||
-                        (areaComp && areaComp->getOwner() && areaComp->getOwner()->getName() == bodyName)) {
-                        userData = obj->getUserPointer();
-                        break;
-                    }
-                }
-            }
-            
-            if (onBodyExited) {
-                onBodyExited(bodyName, userData);
-            }
-        }
-    }
-    
-    // Handle stay events
-    for (const auto& bodyName : bodiesInArea) {
-        void* userData = nullptr;
-        // Try to find the user data for this body
+
+    auto findUserData = [](const std::string& bodyName) -> void* {
         btDiscreteDynamicsWorld* world = PhysicsManager::getInstance().getDynamicsWorld();
-        if (world) {
-            for (int i = 0; i < world->getNumCollisionObjects(); i++) {
-                btCollisionObject* obj = world->getCollisionObjectArray()[i];
-                PhysicsComponent* physicsComp = static_cast<PhysicsComponent*>(obj->getUserPointer());
-                Area3DComponent* areaComp = static_cast<Area3DComponent*>(obj->getUserPointer());
-                if ((physicsComp && physicsComp->getOwner() && physicsComp->getOwner()->getName() == bodyName) ||
-                    (areaComp && areaComp->getOwner() && areaComp->getOwner()->getName() == bodyName)) {
-                    userData = obj->getUserPointer();
-                    break;
-                }
+        if (!world) {
+            return nullptr;
+        }
+        for (int i = 0; i < world->getNumCollisionObjects(); i++) {
+            btCollisionObject* obj = world->getCollisionObjectArray()[i];
+            Component* comp = static_cast<Component*>(obj->getUserPointer());
+            if (comp && comp->getOwner() && comp->getOwner()->getName() == bodyName) {
+                return obj->getUserPointer();
             }
         }
-        
-        if (onBodyStayed) {
-            onBodyStayed(bodyName, userData);
+        return nullptr;
+    };
+
+    if (onBodyEntered) {
+        for (const auto& bodyName : bodiesInArea) {
+            if (previousBodiesInArea.find(bodyName) == previousBodiesInArea.end()) {
+                onBodyEntered(bodyName, findUserData(bodyName));
+            }
+        }
+    }
+
+    if (onBodyExited) {
+        for (const auto& bodyName : previousBodiesInArea) {
+            if (bodiesInArea.find(bodyName) == bodiesInArea.end()) {
+                onBodyExited(bodyName, findUserData(bodyName));
+            }
+        }
+    }
+
+    if (onBodyStayed) {
+        for (const auto& bodyName : bodiesInArea) {
+            onBodyStayed(bodyName, findUserData(bodyName));
         }
     }
 }
@@ -517,18 +476,30 @@ glm::mat4 Area3DComponent::getWorldTransformMatrix() const {
 }
 
 btCollisionShape* Area3DComponent::createBulletCollisionShape() {
+    glm::vec3 worldScale(1.0f);
+    if (owner) {
+        worldScale = owner->getWorldScale();
+    }
+    
     switch (shapeType) {
         case Area3DShape::BOX:
-            return PhysicsManager::getInstance().createBoxShape(dimensions * 0.5f);
+            return PhysicsManager::getInstance().createBoxShape(dimensions * worldScale * 0.5f);
             
-        case Area3DShape::SPHERE:
-            return PhysicsManager::getInstance().createSphereShape(radius);
+        case Area3DShape::SPHERE: {
+            float maxScale = std::max({worldScale.x, worldScale.y, worldScale.z});
+            return PhysicsManager::getInstance().createSphereShape(radius * maxScale);
+        }
             
-        case Area3DShape::CAPSULE:
-            return PhysicsManager::getInstance().createCapsuleShape(radius, height);
+        case Area3DShape::CAPSULE: {
+            float radiusScale = std::max(worldScale.x, worldScale.z);
+            return PhysicsManager::getInstance().createCapsuleShape(radius * radiusScale, height * worldScale.y);
+        }
             
         case Area3DShape::CYLINDER:
-            return PhysicsManager::getInstance().createCylinderShape(glm::vec3(radius, height * 0.5f, radius));
+            return PhysicsManager::getInstance().createCylinderShape(glm::vec3(
+                radius * worldScale.x,
+                height * worldScale.y * 0.5f,
+                radius * worldScale.z));
             
         case Area3DShape::PLANE:
             // Plane is a special case - use dimensions for plane normal/constant

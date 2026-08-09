@@ -27,6 +27,17 @@ public:
     
     // Create the scenes directory if it doesn't exist
     static void ensureScenesDirectoryExists();
+
+    static std::string openTemplateFileDialog(const std::string& title = "Open Template");
+    static std::string saveTemplateFileDialog(const std::string& title = "Save Template",
+                                              const std::string& defaultName = "template.template.json");
+
+    static std::string getDefaultTemplatesDirectory();
+    static void ensureTemplatesDirectoryExists();
+
+    static std::string openImageFileDialog(const std::string& title = "Open Image");
+
+    static std::string toProjectRelativePath(const std::string& path);
 };
 
 } // namespace GameEngine

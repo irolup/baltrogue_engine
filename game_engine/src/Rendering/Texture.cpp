@@ -79,6 +79,7 @@ bool Texture::loadSTBImage(const std::string& filepath) {
         return false;
     }
     
+    if (textureID) { glDeleteTextures(1, &textureID); }
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
     
@@ -166,6 +167,7 @@ bool Texture::loadSTBImage(const std::string& filepath) {
         return false;
     }
     
+    if (textureID) { glDeleteTextures(1, &textureID); }
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
     
@@ -323,6 +325,7 @@ bool Texture::loadFromFile(const std::string& filepath) {
         format = TextureFormat::RGB;
     }
     
+    if (textureID) { glDeleteTextures(1, &textureID); }
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
     
@@ -385,6 +388,7 @@ bool Texture::createEmpty(int w, int h, TextureFormat fmt) {
     height = h;
     format = fmt;
     
+    if (textureID) { glDeleteTextures(1, &textureID); }
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
     
@@ -408,6 +412,7 @@ bool Texture::createFromData(const void* data, int w, int h, TextureFormat fmt) 
     height = h;
     format = fmt;
     
+    if (textureID) { glDeleteTextures(1, &textureID); }
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
     
@@ -441,6 +446,7 @@ bool Texture::createCubemap(const std::vector<std::string>& facePaths) {
         GL_TEXTURE_CUBE_MAP_NEGATIVE_Z
     };
     
+    if (textureID) { glDeleteTextures(1, &textureID); }
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
     

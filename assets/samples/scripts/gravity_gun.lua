@@ -103,12 +103,14 @@ local function update(deltaTime, isEquipped, opts)
     end
 
     -- Move held object to ray
+    local heldObstacleDist = nil
     if heldNodeName then
         if setNodeAngularVelocity then setNodeAngularVelocity(heldNodeName, 0, 0, 0) end
         local moveNode = heldRootName or heldNodeName
         local effectiveDist = grabDistance
         if physicsRaycastObstacle then
             local od = physicsRaycastObstacle(rayOriginX, rayOriginY, rayOriginZ, rayDirX, rayDirY, rayDirZ, maxGrabDistance, heldNodeName)
+            heldObstacleDist = od
             if od and od > 0 then effectiveDist = math.min(grabDistance, math.max(0.5, od - 0.2)) end
         end
         local holdX = rayOriginX + rayDirX * effectiveDist
@@ -130,10 +132,8 @@ local function update(deltaTime, isEquipped, opts)
     if grabHeld then
         if heldNodeName then
             local ed = grabDistance
-            if physicsRaycastObstacle then
-                local od = physicsRaycastObstacle(rayOriginX, rayOriginY, rayOriginZ, rayDirX, rayDirY, rayDirZ, maxGrabDistance, heldNodeName)
-                if od and od > 0 then ed = math.min(grabDistance, math.max(0.5, od - 0.2)) end
-            end
+            local od = heldObstacleDist
+            if od and od > 0 then ed = math.min(grabDistance, math.max(0.5, od - 0.2)) end
             lastBeamLength = ed
         else
             lastBeamLength = (physicsRaycastObstacle and physicsRaycastObstacle(rayOriginX, rayOriginY, rayOriginZ, rayDirX, rayDirY, rayDirZ, maxGrabDistance, "")) or maxGrabDistance

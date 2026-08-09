@@ -25,7 +25,10 @@
 #include "Editor/BuildSystem.h"
 #include "Editor/SceneSerializer.h"
 #include "Editor/FileDialog.h"
+#include "Editor/BuildSettings.h"
+#include "Editor/NodeTemplateSerializer.h"
 #include "Rendering/Framebuffer.h"
+#include "Rendering/ShadowMap.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Rendering/Texture.h"
@@ -34,6 +37,8 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
+#include <cstdio>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 
@@ -57,6 +62,7 @@ EditorUI::EditorUI(EditorSystem& editorSystem)
     , showFileExplorer(false)
     , showInputMapping(false)
     , showMemoryViewer(false)
+    , showBuildSettings(false)
     , sceneGraphWidth(300.0f)
     , propertiesWidth(350.0f)
     , fileExplorerHeight(200.0f)
@@ -90,39 +96,128 @@ void EditorUI::setupDockspace() {
     ImGui::End();
 }
 
+void EditorUI::openSceneFromDialog() {
+    std::string filepath = FileDialog::openFileDialog("Open Scene", "*.json");
+    if (!FileDialog::isValidResult(filepath)) {
+        return;
+    }
+    if (editor.loadSceneFromFile(filepath)) {
+        std::cout << "Scene loaded from: " << filepath << std::endl;
+    } else {
+        std::cout << "Failed to load scene from: " << filepath << std::endl;
+    }
+}
+
+void EditorUI::saveSceneAsDialog() {
+    if (!editor.getActiveScene()) {
+        std::cout << "No active scene to save" << std::endl;
+        return;
+    }
+
+    std::string filepath = FileDialog::saveFileDialog("Save Scene As", "*.json", "scene.json");
+    if (!FileDialog::isValidResult(filepath)) {
+        return;
+    }
+    if (editor.saveSceneToFile(filepath)) {
+        std::cout << "Scene saved to: " << filepath << std::endl;
+    } else {
+        std::cout << "Failed to save scene to: " << filepath << std::endl;
+    }
+}
+
+void EditorUI::saveActiveScene() {
+    if (!editor.getActiveScene()) {
+        std::cout << "No active scene to save" << std::endl;
+        return;
+    }
+
+    if (editor.getActiveSceneFilePath().empty()) {
+        saveSceneAsDialog();
+        return;
+    }
+
+    if (editor.saveActiveScene()) {
+        std::cout << "Scene saved to: " << editor.getActiveSceneFilePath() << std::endl;
+    } else {
+        std::cout << "Failed to save scene to: " << editor.getActiveSceneFilePath() << std::endl;
+    }
+}
+
+void EditorUI::drawShadowSettingsForPlatform(const char* platform) {
+    ShadowSettings& shadowSettings = ShadowManager::getInstance().getSettingsForPlatform(platform);
+
+    // Both tabs use the same widget labels, so they need distinct ImGui ids
+    ImGui::PushID(platform);
+
+    ImGui::Checkbox("Enable Shadows", &shadowSettings.enabled);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Master switch. Off means the shadow pass never runs.");
+    }
+
+    const int tileSizes[] = {128, 256, 512, 1024};
+    const char* tileSizeLabels[] = {"128 (Vita low)", "256 (Vita)", "512", "1024"};
+    int currentTileSize = 1;
+    for (int i = 0; i < 4; ++i) {
+        if (tileSizes[i] == shadowSettings.tileSize) currentTileSize = i;
+    }
+    if (ImGui::Combo("Tile Resolution", &currentTileSize, tileSizeLabels, 4)) {
+        shadowSettings.tileSize = tileSizes[currentTileSize];
+    }
+
+    ImGui::Checkbox("Soft Shadows (2x2 PCF)", &shadowSettings.softShadows);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Four taps instead of one. Leave off on Vita.");
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Directional light coverage");
+    ImGui::DragFloat("Extent", &shadowSettings.directionalExtent, 0.5f, 2.0f, 200.0f, "%.1f");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Half-size of the shadowed box around the camera. Smaller is sharper.");
+    }
+    ImGui::DragFloat("Depth", &shadowSettings.directionalDepth, 1.0f, 5.0f, 500.0f, "%.1f");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("How far back the light starts. Must reach every caster above the ground.");
+    }
+
+    if (ImGui::Button("Reset to Defaults")) {
+        shadowSettings = ShadowManager::getDefaultSettings(platform);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Back to the stock values for this platform. Only this tab.");
+    }
+
+    ImGui::PopID();
+}
+
 void EditorUI::renderMenuBar() {
     static bool openGridSettingsNextFrame = false;
     static bool openPhysicsSettingsNextFrame = false;
+    static bool openShadowSettingsNextFrame = false;
+
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal)) {
+        openSceneFromDialog();
+    }
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal)) {
+        saveActiveScene();
+    }
+    if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S, ImGuiInputFlags_RouteGlobal)) {
+        saveSceneAsDialog();
+    }
+
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Scene")) {
                 editor.createNewScene();
             }
             if (ImGui::MenuItem("Open Scene...", "Ctrl+O")) {
-                std::string filepath = FileDialog::openFileDialog("Open Scene", "*.json");
-                if (FileDialog::isValidResult(filepath)) {
-                    if (editor.loadSceneFromFile(filepath)) {
-                        std::cout << "Scene loaded from: " << filepath << std::endl;
-                    } else {
-                        std::cout << "Failed to load scene from: " << filepath << std::endl;
-                    }
-                }
+                openSceneFromDialog();
             }
             if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
-                std::string filepath = FileDialog::getDefaultScenesDirectory() + "/scene.json";
-                if (editor.saveSceneToFile(filepath)) {
-                    std::cout << "Scene saved to: " << filepath << std::endl;
-                }
+                saveActiveScene();
             }
             if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S")) {
-                std::string filepath = FileDialog::saveFileDialog("Save Scene As", "*.json", "scene.json");
-                if (FileDialog::isValidResult(filepath)) {
-                    if (editor.saveSceneToFile(filepath)) {
-                        std::cout << "Scene saved to: " << filepath << std::endl;
-                    } else {
-                        std::cout << "Failed to save scene to: " << filepath << std::endl;
-                    }
-                }
+                saveSceneAsDialog();
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit")) {
@@ -137,6 +232,10 @@ void EditorUI::renderMenuBar() {
             ImGui::MenuItem("Viewport", nullptr, &showViewport);
             ImGui::MenuItem("File Explorer", nullptr, &showFileExplorer);
             ImGui::MenuItem("Input Mapping", nullptr, &showInputMapping);
+            ImGui::MenuItem("Build Settings", nullptr, &showBuildSettings);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Game name per platform: the Linux executable and window title, the VPK and its LiveArea images.");
+            }
             ImGui::Separator();
             ImGui::MenuItem("Demo Window", nullptr, &showDemoWindow);
             
@@ -176,7 +275,14 @@ void EditorUI::renderMenuBar() {
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("World gravity and other physics settings.");
             }
-            
+            ImGui::Separator();
+            if (ImGui::MenuItem("Shadow Settings...")) {
+                openShadowSettingsNextFrame = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Shadow map resolution and quality. Enable casting per light in its inspector.");
+            }
+
             ImGui::EndMenu();
         }
         if (openGridSettingsNextFrame) {
@@ -186,6 +292,45 @@ void EditorUI::renderMenuBar() {
         if (openPhysicsSettingsNextFrame) {
             ImGui::OpenPopup("PhysicsSettings");
             openPhysicsSettingsNextFrame = false;
+        }
+        if (openShadowSettingsNextFrame) {
+            ImGui::OpenPopup("ShadowSettings");
+            openShadowSettingsNextFrame = false;
+        }
+        if (ImGui::BeginPopupModal("ShadowSettings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            auto& shadowManager = ShadowManager::getInstance();
+
+            ImGui::Text("Atlas: %d x %d (%u tiles of %d)",
+                        shadowManager.getAtlasWidth(), shadowManager.getAtlasHeight(),
+                        kMaxShadowViews, shadowManager.getSettings().tileSize);
+            ImGui::Text("Tiles in use this frame: %zu / %u",
+                        shadowManager.getViewCount(), kMaxShadowViews);
+            ImGui::TextDisabled("Saved to %s. Each build reads its own tab.", kShadowSettingsPath);
+
+            if (ImGui::BeginTabBar("ShadowPlatforms")) {
+                if (ImGui::BeginTabItem("PC")) {
+                    drawShadowSettingsForPlatform("pc");
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Vita")) {
+                    drawShadowSettingsForPlatform("vita");
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
+            }
+
+            ImGui::Separator();
+            if (ImGui::Button("Save")) {
+                shadowManager.saveSettings();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Writes both tabs. Also saved automatically when the editor closes.");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Close")) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
         if (ImGui::BeginPopupModal("PhysicsSettings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             glm::vec3 gravity = PhysicsManager::getInstance().getGravity();
@@ -407,12 +552,32 @@ void EditorUI::renderMenuBar() {
                     if (scene) {
                         auto node = scene->createNode(editor.generateUniqueNodeName("CylinderMesh"));
                         auto meshRenderer = node->addComponent<MeshRenderer>();
-                        meshRenderer->setMesh(Mesh::createCylinder(0.5f, 1.0f));
+                        meshRenderer->setMesh(Mesh::createCylinder(0.5f, 0.5f));
 
                         auto material = std::make_shared<Material>();
                         material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                         meshRenderer->setMaterial(material);
                         
+                        auto selected = editor.getSelectedNode();
+                        if (selected) {
+                            selected->addChild(node);
+                        } else {
+                            scene->getRootNode()->addChild(node);
+                        }
+                    }
+                }
+
+                if (ImGui::MenuItem("Ramp")) {
+                    auto scene = editor.getActiveScene();
+                    if (scene) {
+                        auto node = scene->createNode(editor.generateUniqueNodeName("RampMesh"));
+                        auto meshRenderer = node->addComponent<MeshRenderer>();
+                        meshRenderer->setMesh(Mesh::createRamp());
+
+                        auto material = std::make_shared<Material>();
+                        material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                        meshRenderer->setMaterial(material);
+
                         auto selected = editor.getSelectedNode();
                         if (selected) {
                             selected->addChild(node);
@@ -529,6 +694,25 @@ void EditorUI::renderMenuBar() {
                         physicsComponent->setShowCollisionShape(true);
                         physicsComponent->start();
                         
+                        auto selected = editor.getSelectedNode();
+                        if (selected) {
+                            selected->addChild(node);
+                        } else {
+                            scene->getRootNode()->addChild(node);
+                        }
+                    }
+                }
+
+                if (ImGui::MenuItem("Ramp Collision")) {
+                    auto scene = editor.getActiveScene();
+                    if (scene) {
+                        auto node = scene->createNode(editor.generateUniqueNodeName("RampCollision"));
+                        auto physicsComponent = node->addComponent<PhysicsComponent>();
+                        physicsComponent->setCollisionShape(CollisionShapeType::RAMP);
+                        physicsComponent->setBodyType(PhysicsBodyType::KINEMATIC);
+                        physicsComponent->setShowCollisionShape(true);
+                        physicsComponent->start();
+
                         auto selected = editor.getSelectedNode();
                         if (selected) {
                             selected->addChild(node);
@@ -735,6 +919,18 @@ void EditorUI::renderMenuBar() {
 
 void EditorUI::renderSceneGraph() {
     ImGui::Begin("Scene Graph", &showSceneGraph);
+
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+        auto selected = editor.getSelectedNode();
+        if (selected && ImGui::GetIO().KeyCtrl) {
+            if (ImGui::IsKeyPressed(ImGuiKey_UpArrow) && editor.canMoveNodeUp(selected)) {
+                editor.moveNodeUp(selected);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_DownArrow) && editor.canMoveNodeDown(selected)) {
+                editor.moveNodeDown(selected);
+            }
+        }
+    }
     
     auto scene = editor.getActiveScene();
     if (scene) {
@@ -752,12 +948,31 @@ void EditorUI::renderSceneGraph() {
         if (ImGui::Button("Focus on Selected")) {
             focusOnSelectedNode = true;
         }
-        
-        ImGui::Separator();
-        
+        ImGui::SameLine();
+        if (ImGui::Button("Insert Template...")) {
+            std::string filepath = FileDialog::openTemplateFileDialog("Insert Template");
+            if (FileDialog::isValidResult(filepath)) {
+                auto parent = editor.getSelectedNode();
+                if (!parent) {
+                    parent = scene->getRootNode();
+                }
+                auto instance = editor.instantiateTemplate(filepath, parent);
+                if (instance) {
+                    editor.selectNode(instance);
+                }
+            }
+        }
+
         auto rootNode = scene->getRootNode();
         if (rootNode) {
             renderSceneNode(rootNode, 0);
+        }
+
+        if (expandAllNodes) {
+            expandAllNodes = false;
+        }
+        if (collapseAllNodes) {
+            collapseAllNodes = false;
         }
     } else {
         ImGui::Text("No active scene");
@@ -796,10 +1011,37 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
         nodeLabel = "[OBJ] " + nodeLabel;
     }
     
-    bool nodeOpen = ImGui::TreeNodeEx(nodeLabel.c_str(), flags);
+    ImGui::PushID(node.get());
+
+    if (expandAllNodes) {
+        ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+    } else if (collapseAllNodes) {
+        ImGui::SetNextItemOpen(false, ImGuiCond_Always);
+    }
+    
+    bool nodeOpen = ImGui::TreeNodeEx((void*)(intptr_t)node.get(), flags, "%s", nodeLabel.c_str());
     
     if (ImGui::IsItemClicked()) {
         editor.selectNode(node);
+    }
+
+    const bool canReorder = editor.getActiveScene() && node != editor.getActiveScene()->getRootNode();
+    if (canReorder && ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+        SceneNode* nodePtr = node.get();
+        ImGui::SetDragDropPayload("SCENE_NODE", &nodePtr, sizeof(SceneNode*));
+        ImGui::Text("Reorder %s", node->getName().c_str());
+        ImGui::EndDragDropSource();
+    }
+
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("SCENE_NODE")) {
+            IM_ASSERT(payload->DataSize == sizeof(SceneNode*));
+            SceneNode* draggedPtr = *static_cast<SceneNode* const*>(payload->Data);
+            if (auto dragged = editor.findNodeShared(draggedPtr)) {
+                editor.reorderNodeBefore(dragged, node);
+            }
+        }
+        ImGui::EndDragDropTarget();
     }
     
         if (ImGui::BeginPopupContextItem()) {
@@ -941,12 +1183,27 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                         if (scene) {
                             auto child = scene->createNode(editor.generateUniqueNodeName("CylinderMesh"));
                             auto meshRenderer = child->addComponent<MeshRenderer>();
-                            meshRenderer->setMesh(Mesh::createCylinder(0.5f, 1.0f));
+                            meshRenderer->setMesh(Mesh::createCylinder(0.5f, 0.5f));
                             
                             auto material = std::make_shared<Material>();
                             material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                             meshRenderer->setMaterial(material);
                             
+                            node->addChild(child);
+                        }
+                    }
+
+                    if (ImGui::MenuItem("Ramp")) {
+                        auto scene = editor.getActiveScene();
+                        if (scene) {
+                            auto child = scene->createNode(editor.generateUniqueNodeName("RampMesh"));
+                            auto meshRenderer = child->addComponent<MeshRenderer>();
+                            meshRenderer->setMesh(Mesh::createRamp());
+
+                            auto material = std::make_shared<Material>();
+                            material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                            meshRenderer->setMaterial(material);
+
                             node->addChild(child);
                         }
                     }
@@ -1151,6 +1408,19 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             node->addChild(child);
                         }
                     }
+
+                    if (ImGui::MenuItem("Ramp Collision")) {
+                        auto scene = editor.getActiveScene();
+                        if (scene) {
+                            auto child = scene->createNode(editor.generateUniqueNodeName("RampCollision"));
+                            auto physicsComponent = child->addComponent<PhysicsComponent>();
+                            physicsComponent->setCollisionShape(CollisionShapeType::RAMP);
+                            physicsComponent->setBodyType(PhysicsBodyType::KINEMATIC);
+                            physicsComponent->setShowCollisionShape(true);
+                            physicsComponent->start();
+                            node->addChild(child);
+                        }
+                    }
                     
                     if (ImGui::MenuItem("Raycast")) {
                         auto scene = editor.getActiveScene();
@@ -1169,30 +1439,46 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
             }
             
             ImGui::Separator();
+
+            if (canReorder) {
+                if (ImGui::MenuItem("Move Up", "Ctrl+Up", false, editor.canMoveNodeUp(node))) {
+                    editor.moveNodeUp(node);
+                }
+                if (ImGui::MenuItem("Move Down", "Ctrl+Down", false, editor.canMoveNodeDown(node))) {
+                    editor.moveNodeDown(node);
+                }
+                ImGui::Separator();
+            }
             
             if (ImGui::MenuItem("Duplicate")) {
                 auto scene = editor.getActiveScene();
                 if (scene) {
-                    auto duplicate = SceneSerializer::duplicateNodeSubtree(node);
+                    std::shared_ptr<SceneNode> parent = scene->getRootNode();
+                    if (node->getParent()) {
+                        parent = editor.findNodeShared(node->getParent());
+                    }
+                    auto duplicate = editor.instantiateNodeSubtree(node, parent, "_Copy");
                     if (duplicate) {
-                        duplicate->setName(editor.generateUniqueNodeName(node->getName() + "_Copy"));
-                        std::function<void(std::shared_ptr<SceneNode>)> makeNamesUnique;
-                        makeNamesUnique = [&](std::shared_ptr<SceneNode> n) {
-                            for (size_t i = 0; i < n->getChildCount(); ++i) {
-                                auto ch = n->getChild(i);
-                                if (ch) {
-                                    ch->setName(editor.generateUniqueNodeName(ch->getName()));
-                                    makeNamesUnique(ch);
-                                }
-                            }
-                        };
-                        makeNamesUnique(duplicate);
-                        if (node->getParent()) {
-                            node->getParent()->addChild(duplicate);
-                        } else {
-                            scene->getRootNode()->addChild(duplicate);
-                        }
-                        duplicate->start();
+                        editor.selectNode(duplicate);
+                    }
+                }
+            }
+
+            const bool isSceneRoot = editor.getActiveScene() && node == editor.getActiveScene()->getRootNode();
+            if (!isSceneRoot && ImGui::MenuItem("Save as Template...")) {
+                std::string defaultName = node->getName() + ".template.json";
+                std::string filepath = FileDialog::saveTemplateFileDialog("Save as Template", defaultName);
+                if (FileDialog::isValidResult(filepath)) {
+                    NodeTemplateSerializer::saveNodeTemplate(node, filepath);
+                }
+            }
+
+            if (ImGui::MenuItem("Insert Template...")) {
+                std::string filepath = FileDialog::openTemplateFileDialog("Insert Template");
+                if (FileDialog::isValidResult(filepath)) {
+                    auto instance = editor.instantiateTemplate(filepath, node);
+                    if (instance) {
+                        editor.selectNode(instance);
                     }
                 }
             }
@@ -1209,6 +1495,8 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
         }
         ImGui::TreePop();
     }
+
+    ImGui::PopID();
 }
 
 void EditorUI::renderProperties() {
@@ -1298,25 +1586,6 @@ void EditorUI::renderProperties() {
                 ImGui::BulletText("Visible=ON, Active=OFF: Visible but frozen");
                 ImGui::BulletText("Visible=OFF, Active=OFF: Completely disabled");
                 ImGui::EndTooltip();
-            }
-        }
-        
-        if (ImGui::CollapsingHeader("Hierarchy", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text("Parent: %s", selected->getParent() ? selected->getParent()->getName().c_str() : "None (Root)");
-            ImGui::Text("Children: %zu", selected->getChildCount());
-            
-            if (ImGui::Button("Add Empty Child")) {
-                auto scene = editor.getActiveScene();
-                if (scene) {
-                    auto child = scene->createNode(editor.generateUniqueNodeName("Child"));
-                    selected->addChild(child);
-                }
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Remove from Parent")) {
-                if (selected->getParent()) {
-                    selected->getParent()->removeChild(selected->getName());
-                }
             }
         }
         
@@ -1526,7 +1795,7 @@ void EditorUI::renderProperties() {
                 }
                 
                 if (ImGui::Button("Load Model...")) {
-                    std::string modelPath = FileDialog::openFileDialog("Select 3D Model", "*.gltf");
+                    std::string modelPath = FileDialog::openFileDialog("Select 3D Model", "*.gltf *.glb");
                     if (!modelPath.empty()) {
                         if (modelRenderer->loadModel(modelPath)) {
                             std::cout << "Successfully loaded model: " << modelPath << std::endl;
@@ -1995,6 +2264,182 @@ void EditorUI::renderMemoryViewer() {
         ImGui::Separator();
         ImGui::Text("Total tracked: %zu bytes (%.2f MB)", totalBytes, totalBytes / (1024.0 * 1024.0));
     }
+    ImGui::End();
+}
+
+void EditorUI::drawLiveAreaImageSlot(const char* label, const char* requirement, char* path, size_t pathSize) {
+    ImGui::PushID(label);
+
+    ImGui::InputText(label, path, pathSize);
+    ImGui::SameLine();
+    if (ImGui::Button("Browse...")) {
+        std::string filepath = FileDialog::openImageFileDialog(label);
+        if (FileDialog::isValidResult(filepath)) {
+            std::snprintf(path, pathSize, "%s", FileDialog::toProjectRelativePath(filepath).c_str());
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear")) {
+        path[0] = '\0';
+    }
+
+    ImGui::TextDisabled("    %s", requirement);
+    if (path[0] != '\0' && !std::filesystem::exists(path)) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "- file not found");
+    }
+
+    ImGui::PopID();
+}
+
+void EditorUI::renderBuildSettings() {
+    if (!showBuildSettings) return;
+
+    static bool loaded = false;
+    static bool toolsAvailable = false;
+    static char pcTitle[64] = "";
+    static char pcExecutableName[64] = "";
+    static char vitaTitle[64] = "";
+    static char vitaTitleId[16] = "";
+    static char vitaAppVersion[8] = "";
+    static char vpkName[64] = "";
+    static char icon0[256] = "";
+    static char pic0[256] = "";
+    static char bg0[256] = "";
+    static char startup[256] = "";
+    static int styleIndex = 0;
+    static std::string status;
+
+    if (!loaded) {
+        BuildSettings settings;
+        settings.load();
+        std::snprintf(pcTitle, sizeof(pcTitle), "%s", settings.pc.title.c_str());
+        std::snprintf(pcExecutableName, sizeof(pcExecutableName), "%s", settings.pc.executableName.c_str());
+        std::snprintf(vitaTitle, sizeof(vitaTitle), "%s", settings.vita.title.c_str());
+        std::snprintf(vitaTitleId, sizeof(vitaTitleId), "%s", settings.vita.titleId.c_str());
+        std::snprintf(vitaAppVersion, sizeof(vitaAppVersion), "%s", settings.vita.appVersion.c_str());
+        std::snprintf(vpkName, sizeof(vpkName), "%s", settings.vita.vpkName.c_str());
+        std::snprintf(icon0, sizeof(icon0), "%s", settings.vita.icon0Source.c_str());
+        std::snprintf(pic0, sizeof(pic0), "%s", settings.vita.pic0Source.c_str());
+        std::snprintf(bg0, sizeof(bg0), "%s", settings.vita.bg0Source.c_str());
+        std::snprintf(startup, sizeof(startup), "%s", settings.vita.startupSource.c_str());
+        styleIndex = (settings.vita.liveAreaStyle == "psmobile") ? 1 : 0;
+
+        toolsAvailable = BuildSettings::converterToolsAvailable();
+        loaded = true;
+    }
+
+    ImGui::Begin("Build Settings", &showBuildSettings);
+
+    ImGui::TextDisabled("Saved to %s. Each build reads its own tab.", kBuildSettingsPath);
+    ImGui::Separator();
+
+    if (ImGui::BeginTabBar("BuildPlatforms")) {
+        if (ImGui::BeginTabItem("PC")) {
+            ImGui::InputText("Game Name", pcTitle, sizeof(pcTitle));
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Window title the Linux game sets at startup. Read at run time, no rebuild needed.");
+            }
+            ImGui::InputText("Executable Name", pcExecutableName, sizeof(pcExecutableName));
+            ImGui::TextDisabled("    builds build_linux/%s", pcExecutableName);
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Vita")) {
+            ImGui::InputText("Title", vitaTitle, sizeof(vitaTitle));
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Name under the icon on the Vita home screen (TITLE in param.sfo).");
+            }
+            ImGui::InputText("Title ID", vitaTitleId, sizeof(vitaTitleId), ImGuiInputTextFlags_CharsUppercase);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Four letters then five digits, e.g. VSDK00420. Two apps sharing one id overwrite each other.");
+            }
+            ImGui::InputText("App Version", vitaAppVersion, sizeof(vitaAppVersion));
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Shown on the LiveArea, format 01.00.");
+            }
+            ImGui::InputText("VPK Name", vpkName, sizeof(vpkName));
+            ImGui::TextDisabled("    builds build/%s.vpk", vpkName);
+
+            ImGui::Separator();
+            ImGui::Text("LiveArea");
+
+            const char* styleLabels[] = {"a1 (gate centred)", "psmobile (gate on the right)"};
+            ImGui::Combo("Style", &styleIndex, styleLabels, 2);
+
+            drawLiveAreaImageSlot("Icon (icon0.png)", "128 x 128, drawn as a rounded square, no transparency", icon0, sizeof(icon0));
+            drawLiveAreaImageSlot("Loading Screen (pic0.png)", "960 x 544, reduced to a 256 colour palette", pic0, sizeof(pic0));
+            drawLiveAreaImageSlot("Background (bg0.png)", "840 x 500, the paper behind the gate", bg0, sizeof(bg0));
+            drawLiveAreaImageSlot("Gate Image (startup.png)", "280 x 158, above the Start button, alpha kept", startup, sizeof(startup));
+
+            ImGui::TextDisabled("Sources are scaled and quantised into sce_sys/ on build. An empty slot ships without that image.");
+            if (!toolsAvailable) {
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f),
+                                   "ffmpeg and pngquant are needed to convert the images: sudo apt install ffmpeg pngquant");
+            }
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+
+    ImGui::Separator();
+
+    bool saveRequested = false;
+    bool generateRequested = false;
+    if (ImGui::Button("Save")) {
+        saveRequested = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Writes both tabs.");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save and Generate LiveArea Assets")) {
+        saveRequested = true;
+        generateRequested = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Runs %s now. make vita runs it too, so this is only to preview the result.", kLiveAreaScriptPath);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reload")) {
+        loaded = false;
+        status.clear();
+    }
+
+    if (saveRequested) {
+        BuildSettings settings;
+        settings.pc.title = pcTitle;
+        settings.pc.executableName = pcExecutableName;
+        settings.vita.title = vitaTitle;
+        settings.vita.titleId = vitaTitleId;
+        settings.vita.appVersion = vitaAppVersion;
+        settings.vita.vpkName = vpkName;
+        settings.vita.liveAreaStyle = (styleIndex == 1) ? "psmobile" : "a1";
+        settings.vita.icon0Source = icon0;
+        settings.vita.pic0Source = pic0;
+        settings.vita.bg0Source = bg0;
+        settings.vita.startupSource = startup;
+
+        const std::string error = settings.validate();
+        if (!error.empty()) {
+            status = "Not saved: " + error;
+        } else if (!settings.save()) {
+            status = "Could not write " + std::string(kBuildSettingsPath);
+        } else {
+            status = "Saved to " + std::string(kBuildSettingsPath);
+            if (generateRequested) {
+                std::string output;
+                const bool generated = BuildSettings::generateLiveAreaAssets(output);
+                status = (generated ? "Wrote sce_sys/\n" : "Generating sce_sys/ failed\n") + output;
+            }
+        }
+    }
+
+    if (!status.empty()) {
+        ImGui::Separator();
+        ImGui::TextWrapped("%s", status.c_str());
+    }
+
     ImGui::End();
 }
 

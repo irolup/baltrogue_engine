@@ -50,6 +50,8 @@ public:
     
     const std::vector<std::shared_ptr<Mesh>>& getMeshes() const { return modelData.meshes; }
     const std::vector<std::shared_ptr<Material>>& getMaterials() const { return modelData.materials; }
+    const std::vector<int>& getMeshMaterialIndices() const { return modelData.meshMaterialIndices; }
+    const std::vector<glm::mat4>& getMeshNodeTransforms() const { return modelData.meshNodeTransforms; }
     
     bool getCastShadows() const { return castShadows; }
     void setCastShadows(bool cast) { castShadows = cast; }
@@ -78,13 +80,21 @@ private:
     bool saveBinaryModel(const std::string& modelPath);
     
     std::vector<glm::mat4> getBindPoseBoneTransforms() const;
+
+    mutable std::shared_ptr<const std::vector<glm::mat4>> cachedBindPose_;
+    mutable bool bindPoseCached_ = false;
     
     static std::string getFileExtension(const std::string& filepath);
     static std::string getFileName(const std::string& filepath);
     
     static std::unordered_map<std::string, std::shared_ptr<ModelData>> meshCache;
     static std::shared_ptr<ModelData> getCachedModel(const std::string& modelPath);
+
+public:
+    /** Drop the shared CPU-side model cache (all scenes must be unloaded). */
     static void clearMeshCache();
+
+private:
 
 #ifdef ENABLE_VULKAN
     struct DecodedGltfImage {

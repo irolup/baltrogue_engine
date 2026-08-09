@@ -41,22 +41,9 @@ function update(deltaTime)
         return
     end
     
-    local ballInGoal = false
-    
-    if goalArea3D.isBodyInArea(ballAreaNodeName) then
-        ballInGoal = true
-    end
-    
-    local bodiesInGoal = goalArea3D.getBodiesInArea()
-    if type(bodiesInGoal) == "table" then
-        for i = 1, #bodiesInGoal do
-            if bodiesInGoal[i] == ballAreaNodeName then
-                ballInGoal = true
-                break
-            end
-        end
-    end
-    
+    local ballInGoal = goalArea3D.isBodyInArea(ballAreaNodeName)
+
+
     if ballInGoal and not hasScored then
         hasScored = true
         score = score + 1

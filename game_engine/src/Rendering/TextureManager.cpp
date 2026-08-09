@@ -78,7 +78,7 @@ std::shared_ptr<Texture> TextureManager::getTextureByType(const std::string& bas
 std::string TextureManager::getTextureTypeSuffix(TextureType type) const {
     switch (type) {
         case TextureType::DIFFUSE: return "diff";
-        case TextureType::NORMAL: return "nor_gl";
+        case TextureType::NORMAL: return "nor";
         case TextureType::ARM: return "arm";
         case TextureType::SPECULAR: return "spec";
         case TextureType::EMISSIVE: return "emit";

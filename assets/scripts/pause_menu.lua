@@ -2,10 +2,14 @@
 -- Simple pause menu using text nodes from the scene tree
 -- Shows/hides menu and handles navigation with arrow keys
 
+local controlsPanel = dofile("assets/scripts/ui/controls_panel.lua")
+
 local isPaused = false
 local lastEscapePressed = false
 local selectedIndex = 0
 local menuInitialized = false
+local inControlsPanel = false
+local lastCancelPressed = false
 
 local inputState = {
     lastUpPressed = false,
@@ -14,17 +18,20 @@ local inputState = {
 }
 
 local menuPositions = {
-    {x = 0.0, y = 2.0, z = 0.0},
-    {x = 0.0, y = -2.0, z = 0.0},
-    {x = 0.0, y = -4.0, z = 0.0}
+    {x = 0.0, y = 5.0, z = 0.0},
+    {x = 0.0, y = 1.0, z = 0.0},
+    {x = 0.0, y = -3.0, z = 0.0},
+    {x = 0.0, y = -7.0, z = 0.0}
 }
 
 local menuNodeNames = {
     "PauseMenuResume",
     "PauseMenuOptions",
+    "PauseMenuControls",
     "PauseMenuReturn"
 }
 local selectorNodeName = "PauseMenuSelector"
+local tireHudNodeName = "TireHud"
 
 function start()
     for i = 1, #menuNodeNames do
@@ -38,6 +45,8 @@ function start()
     
     isPaused = false
     menuInitialized = false
+    inControlsPanel = false
+    controlsPanel.hide()
 end
 
 function showMenu()
@@ -68,6 +77,8 @@ function showMenu()
         renderer.setTextRenderMode(selectorNodeName, 1)
     end
     updateSelectorPosition()
+
+    setNodeVisible(tireHudNodeName, false)
 end
 
 function hideMenu()
@@ -76,6 +87,8 @@ function hideMenu()
     end
     
     isPaused = false
+    inControlsPanel = false
+    controlsPanel.hide()
     
     if setGamePaused then
         setGamePaused(false)
@@ -90,6 +103,30 @@ function hideMenu()
     end
     
     setNodeVisible(selectorNodeName, false)
+    setNodeVisible(tireHudNodeName, true)
+end
+
+local function showControlsPanel()
+    inControlsPanel = true
+    for i = 1, #menuNodeNames do
+        setNodeVisible(menuNodeNames[i], false)
+    end
+    setNodeVisible(selectorNodeName, false)
+    controlsPanel.show()
+end
+
+local function hideControlsPanel()
+    inControlsPanel = false
+    controlsPanel.hide()
+    for i = 1, #menuNodeNames do
+        local nodeName = menuNodeNames[i]
+        setNodeVisible(nodeName, true)
+        if renderer and renderer.setTextRenderMode then
+            renderer.setTextRenderMode(nodeName, 1)
+        end
+    end
+    setNodeVisible(selectorNodeName, true)
+    updateSelectorPosition()
 end
 
 function updateSelectorPosition()
@@ -118,11 +155,23 @@ function selectCurrentOption()
     elseif selectedIndex == 1 then
         -- TODO: Show options menu
     elseif selectedIndex == 2 then
-        -- TODO: Return to main menu
+        showControlsPanel()
+    elseif selectedIndex == 3 then
+        hideMenu()
+        if setGamePaused then
+            setGamePaused(false)
+        end
+        if scene and scene.loadSceneFromFile then
+            scene.loadSceneFromFile("Main Menu", "assets/scenes/main_menu.json")
+        end
     end
 end
 
 function update(deltaTime)
+    if _G.tireGameUiBlocking then
+        return
+    end
+
     if not menuInitialized then
         for i = 1, #menuNodeNames do
             if isNodeVisible(menuNodeNames[i]) then
@@ -135,7 +184,19 @@ function update(deltaTime)
         menuInitialized = true
     end
     
-    local escapePressed = input.isActionPressed("menu_cancel")
+    local cancelPressed = input.isActionPressed("menu_cancel")
+
+    if isPaused and inControlsPanel then
+        if cancelPressed and not lastCancelPressed then
+            hideControlsPanel()
+        end
+        lastCancelPressed = cancelPressed
+        lastEscapePressed = cancelPressed
+        return
+    end
+    lastCancelPressed = cancelPressed
+
+    local escapePressed = cancelPressed
     
     if escapePressed and not lastEscapePressed then
         if isPaused then
@@ -153,12 +214,12 @@ function update(deltaTime)
         local confirmPressed = input.isActionPressed("menu_confirm")
         
         if not inputState.lastUpPressed and upPressed then
-            selectedIndex = (selectedIndex - 1) % 3
+            selectedIndex = (selectedIndex - 1) % #menuNodeNames
             updateSelectorPosition()
         end
         
         if not inputState.lastDownPressed and downPressed then
-            selectedIndex = (selectedIndex + 1) % 3
+            selectedIndex = (selectedIndex + 1) % #menuNodeNames
             updateSelectorPosition()
         end
         
@@ -169,8 +230,6 @@ function update(deltaTime)
         inputState.lastUpPressed = upPressed
         inputState.lastDownPressed = downPressed
         inputState.lastConfirmPressed = confirmPressed
-        
-        updateSelectorPosition()
     else
         inputState.lastUpPressed = false
         inputState.lastDownPressed = false

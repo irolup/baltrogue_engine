@@ -45,7 +45,6 @@ public:
     void bindPhysicsSystem();
     void bindRendererSystem();
     void bindSceneSystem();
-    void bindPickupZoneSystem();
     void bindMenuSystem();
     
     std::string getScriptDirectory() const { return scriptDirectory; }

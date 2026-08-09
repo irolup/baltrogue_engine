@@ -70,17 +70,22 @@ void ModelRenderer::render(IRenderer& renderer) {
         animComp = owner->getParent()->getComponent<AnimationComponent>();
     }
     
-    std::vector<glm::mat4> boneTransforms;
-    if (animComp && animComp->isPlaying()) {
-        boneTransforms = animComp->getBoneTransforms();
+    std::shared_ptr<const std::vector<glm::mat4>> boneTransforms;
+    if (animComp && animComp->isPlaying() && !animComp->getBoneTransforms().empty()) {
+        boneTransforms = std::make_shared<const std::vector<glm::mat4>>(animComp->getBoneTransforms());
     }
-    if (boneTransforms.empty()) {
-        boneTransforms = getBindPoseBoneTransforms();
+    if (!boneTransforms) {
+        if (!bindPoseCached_) {
+            std::vector<glm::mat4> bindPose = getBindPoseBoneTransforms();
+            if (bindPose.empty()) {
+                bindPose.push_back(glm::mat4(1.0f));
+            }
+            cachedBindPose_ = std::make_shared<const std::vector<glm::mat4>>(std::move(bindPose));
+            bindPoseCached_ = true;
+        }
+        boneTransforms = cachedBindPose_;
     }
-    if (boneTransforms.empty()) {
-        boneTransforms.push_back(glm::mat4(1.0f));
-    }
-    
+
     // Render each mesh in the model
     for (size_t i = 0; i < modelData.meshes.size(); ++i) {
         auto mesh = modelData.meshes[i];
@@ -107,6 +112,9 @@ void ModelRenderer::render(IRenderer& renderer) {
         command.modelMatrix = modelMatrix;
         command.normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
         command.boneTransforms = boneTransforms;  // Pass bone transforms for skinning
+        command.disableCulling = material && material->getDoubleSided();
+        command.castShadows = castShadows;
+        command.receiveShadows = receiveShadows;
         
         // Submit to renderer
         renderer.submitRenderCommand(command);
@@ -197,6 +205,8 @@ void ModelRenderer::unloadModel() {
     modelData.modelPath.clear();
     modelData.modelName.clear();
     modelData.isLoaded = false;
+    cachedBindPose_.reset();
+    bindPoseCached_ = false;
 }
 
 glm::mat4 ModelRenderer::computeNodeTransform(const tinygltf::Node& node) {
@@ -565,7 +575,7 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
     const auto& gltfMaterial = gltfModel.materials[materialIndex];
     auto material = std::make_shared<Material>();
     
-    // Set base color
+    // Set base color / opacity
     if (gltfMaterial.pbrMetallicRoughness.baseColorFactor.size() >= 3) {
         glm::vec3 color(
             gltfMaterial.pbrMetallicRoughness.baseColorFactor[0],
@@ -574,9 +584,28 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
         );
         material->setColor(color);
     }
+    if (gltfMaterial.pbrMetallicRoughness.baseColorFactor.size() >= 4) {
+        material->setOpacity(static_cast<float>(gltfMaterial.pbrMetallicRoughness.baseColorFactor[3]));
+    }
 
     material->setMetallic(static_cast<float>(gltfMaterial.pbrMetallicRoughness.metallicFactor));
     material->setRoughness(static_cast<float>(gltfMaterial.pbrMetallicRoughness.roughnessFactor));
+
+    material->setDoubleSided(gltfMaterial.doubleSided);
+    if (gltfMaterial.alphaMode == "MASK") {
+        material->setBlendMode(BlendMode::Opaque);
+        material->setAlphaCutoff(static_cast<float>(gltfMaterial.alphaCutoff));
+    } else if (gltfMaterial.alphaMode == "BLEND" && gltfMaterial.doubleSided) {
+        material->setBlendMode(BlendMode::Opaque);
+        const float cutoff = static_cast<float>(gltfMaterial.alphaCutoff);
+        material->setAlphaCutoff(cutoff > 0.0f ? cutoff : 0.5f);
+    } else if (gltfMaterial.alphaMode == "BLEND") {
+        material->setBlendMode(BlendMode::Alpha);
+        material->setAlphaCutoff(0.0f);
+    } else {
+        material->setBlendMode(BlendMode::Opaque);
+        material->setAlphaCutoff(0.0f);
+    }
     
     // Load diffuse texture if available
     if (gltfMaterial.pbrMetallicRoughness.baseColorTexture.index >= 0) {
@@ -617,16 +646,17 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
                     material->setDiffuseTexture(embeddedTexture);
                     textureLoaded = true;
                 }
-            } else if (image.as_is) {
-                int width, height, channels;
+            }
+
+            if (!textureLoaded) {
+                int width = 0, height = 0, channels = 0;
                 unsigned char* decodedData = stbi_load_from_memory(
                     image.image.data(),
                     static_cast<int>(image.image.size()),
-                    &width, &height, &channels, 0
+                    &width, &height, &channels, STBI_rgb_alpha
                 );
                 if (decodedData) {
-                    TextureFormat texFormat = (channels == 3) ? TextureFormat::RGB : TextureFormat::RGBA;
-                    if (embeddedTexture->createFromData(decodedData, width, height, texFormat)) {
+                    if (embeddedTexture->createFromData(decodedData, width, height, TextureFormat::RGBA)) {
                         material->setDiffuseTexture(embeddedTexture);
                         textureLoaded = true;
                     }
@@ -640,6 +670,9 @@ std::shared_ptr<Material> ModelRenderer::createMaterialFromGLTF(const tinygltf::
             auto diffuseTexture = textureManager->getTexture(texturePath);
             if (diffuseTexture) {
                 material->setDiffuseTexture(diffuseTexture, texturePath);
+            } else if (texturePath != "assets/textures/default_diffuse.png") {
+                std::cerr << "ModelRenderer: Failed to load diffuse texture for material "
+                          << materialIndex << " (" << texturePath << ")" << std::endl;
             }
         }
 #endif

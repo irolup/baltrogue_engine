@@ -2,6 +2,8 @@
 
 #include "Rendering/IRenderer.h"
 #include "Rendering/RenderTypes.h"
+#include "Rendering/Frustum.h"
+#include "Rendering/ShadowAtlasGL.h"
 #include "Platform.h"
 #include <glm/glm.hpp>
 #include <vector>
@@ -77,21 +79,21 @@ private:
     glm::mat4 cachedViewMatrix;
     glm::mat4 cachedProjectionMatrix;
     bool matricesCached;
-    
-    struct FrustumPlane {
-        glm::vec3 normal;
-        float distance;
-    };
-    std::vector<FrustumPlane> frustumPlanes;
-    
+
+    Frustum cameraFrustum;
+    ShadowAtlasGL shadowAtlas;
+    bool shadowAtlasReady = false;
+
     void processRenderQueue();
     void setupCamera();
     void applyMaterial(const Material& material);
     void updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projMatrix);
     void renderSkybox(Scene& scene);
     void renderTextNodes(SceneNode& node, const glm::mat4& parentTransform);
-    bool isMeshInFrustum(const Mesh& mesh, const glm::mat4& modelMatrix) const;
-    bool isAABBInFrustum(const glm::vec3& min, const glm::vec3& max, const glm::mat4& transform) const;
+
+    // Fills the shadow atlas from the queue built by renderNode()
+    void renderShadowPass();
+    void bindShadowResources();
 
 };
 

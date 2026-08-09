@@ -11,12 +11,13 @@
 #include "Rendering/Texture.h"
 #include "Rendering/LightingManager.h"
 #include "Rendering/Material.h"
+#include "Rendering/ShadowMap.h"
 #include "Physics/PhysicsManager.h"
 #include "Core/Engine.h"
 #include "Platform.h"
 #include <iostream>
 #include <iomanip>
-
+#include <algorithm>
 namespace GameEngine {
 
 OpenGLRenderer::OpenGLRenderer()
@@ -31,7 +32,6 @@ OpenGLRenderer::OpenGLRenderer()
     , cullFaceEnabled(true)
     , frustumCullingEnabled(true)
     , matricesCached(false)
-    , frustumPlanes(6)
 {
 }
 
@@ -66,7 +66,7 @@ void OpenGLRenderer::syncViewportToFramebuffer() {
     if (w <= 0 || h <= 0) {
         return;
     }
-    if (framebufferWidth != w && framebufferHeight != h) {
+    if (framebufferWidth != w || framebufferHeight != h) {
         framebufferWidth = w;
         framebufferHeight = h;
         viewport = glm::ivec4(0, 0, w, h);
@@ -91,17 +91,27 @@ void OpenGLRenderer::present() {
 void OpenGLRenderer::renderScene(Scene& scene) {
     currentScene = &scene;
     setupCamera();
-    
+
+    LightingManager::getInstance().beginPass();
+
     if (activeCamera) {
         updateFrustum(activeCamera->getViewMatrix(), activeCamera->getProjectionMatrix());
+        ShadowManager::getInstance().update(
+            extractCameraPosition(activeCamera->getViewMatrix()),
+            activeCamera->getForward());
+    } else {
+        ShadowManager::getInstance().clear();
     }
-    
+
     renderQueue.clear();
-    
+
     if (scene.getRootNode()) {
         renderNode(*scene.getRootNode(), glm::mat4(1.0f));
     }
-    
+
+    renderShadowPass();
+    bindShadowResources();
+
     renderSkybox(scene);
     processRenderQueue();
 
@@ -112,22 +122,28 @@ void OpenGLRenderer::renderScene(Scene& scene) {
     if (PhysicsManager::getInstance().isDebugDrawEnabled() && activeCamera) {
         glm::mat4 viewMat = activeCamera->getViewMatrix();
         glm::mat4 projMat = activeCamera->getProjectionMatrix();
-        auto debugMaterial = std::make_shared<Material>();
-        debugMaterial->setColor(glm::vec3(0.0f, 1.0f, 0.0f));
-        auto debugShader = std::make_shared<Shader>();
-        const char* vertexSource = "#version 330 core\n"
-            "layout (location = 0) in vec3 aPos;\n"
-            "uniform mat4 modelMatrix;\n"
-            "uniform mat4 viewMatrix;\n"
-            "uniform mat4 projectionMatrix;\n"
-            "void main() { gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(aPos, 1.0); }\n";
-        const char* fragmentSource = "#version 330 core\n"
-            "out vec4 FragColor;\n"
-            "uniform vec3 u_Color;\n"
-            "void main() { FragColor = vec4(u_Color, 1.0); }\n";
-        if (debugShader->loadFromSource(vertexSource, fragmentSource)) {
-            debugMaterial->setShader(debugShader);
-            debugMaterial->setColor(glm::vec3(0.0f, 1.0f, 0.0f));
+        static std::shared_ptr<Material> debugMaterial;
+        static bool debugShaderReady = false;
+        if (!debugMaterial) {
+            debugMaterial = std::make_shared<Material>();
+            auto debugShader = std::make_shared<Shader>();
+            const char* vertexSource = "#version 330 core\n"
+                "layout (location = 0) in vec3 aPos;\n"
+                "uniform mat4 modelMatrix;\n"
+                "uniform mat4 viewMatrix;\n"
+                "uniform mat4 projectionMatrix;\n"
+                "void main() { gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(aPos, 1.0); }\n";
+            const char* fragmentSource = "#version 330 core\n"
+                "out vec4 FragColor;\n"
+                "uniform vec3 u_Color;\n"
+                "void main() { FragColor = vec4(u_Color, 1.0); }\n";
+            debugShaderReady = debugShader->loadFromSource(vertexSource, fragmentSource);
+            if (debugShaderReady) {
+                debugMaterial->setShader(debugShader);
+                debugMaterial->setColor(glm::vec3(0.0f, 1.0f, 0.0f));
+            }
+        }
+        if (debugShaderReady) {
             GLint savedPolygonMode[2];
             glGetIntegerv(GL_POLYGON_MODE, savedPolygonMode);
             GLboolean savedDepthTest;
@@ -141,7 +157,8 @@ void OpenGLRenderer::renderScene(Scene& scene) {
     }
     
     currentScene = nullptr;
-    
+
+#ifdef DEBUG
     static int frameCount = 0;
     frameCount++;
     if (frameCount % 60 == 0) {
@@ -161,26 +178,27 @@ void OpenGLRenderer::renderScene(Scene& scene) {
         
         std::cout << std::endl;
     }
+#endif
 }
 
 void OpenGLRenderer::renderNode(SceneNode& node, const glm::mat4& parentTransform) {
     if (!node.isVisible() || !node.isActive()) return;
     
     glm::mat4 worldTransform = parentTransform * node.getLocalMatrix();
-    
-    auto meshRenderer = node.getComponent<MeshRenderer>();
-    if (meshRenderer && meshRenderer->isEnabled()) {
-        meshRenderer->render(*this);
-    }
-    
-    auto modelRenderer = node.getComponent<ModelRenderer>();
-    if (modelRenderer && modelRenderer->isEnabled()) {
-        modelRenderer->render(*this);
-    }
 
-    auto beamRenderer = node.getComponent<BeamRenderer>();
-    if (beamRenderer && beamRenderer->isEnabled()) {
-        beamRenderer->render(*this);
+    const auto& components = node.getAllComponents();
+    for (const auto& component : components) {
+        if (!component || !component->isEnabled()) {
+            continue;
+        }
+        const std::string& typeName = component->getTypeName();
+        if (typeName == MeshRenderer::StaticTypeName()) {
+            static_cast<MeshRenderer*>(component.get())->render(*this);
+        } else if (typeName == ModelRenderer::StaticTypeName()) {
+            static_cast<ModelRenderer*>(component.get())->render(*this);
+        } else if (typeName == BeamRenderer::StaticTypeName()) {
+            static_cast<BeamRenderer*>(component.get())->render(*this);
+        }
     }
     
     for (size_t i = 0; i < node.getChildCount(); ++i) {
@@ -230,9 +248,16 @@ void OpenGLRenderer::renderFromCamera(Scene& scene, CameraComponent* cam, const 
     glm::mat4 proj = cam->getProjectionMatrix();
     updateFrustum(view, proj);
 
+    LightingManager::getInstance().beginPass();
+    ShadowManager::getInstance().update(extractCameraPosition(view), cam->getForward());
+
     currentScene = &scene;
     renderQueue.clear();
     if (scene.getRootNode()) renderNode(*scene.getRootNode(), glm::mat4(1.0f));
+
+    renderShadowPass();
+    bindShadowResources();
+
     renderSkybox(scene);
     cachedViewMatrix = view;
     cachedProjectionMatrix = proj;
@@ -253,9 +278,11 @@ void OpenGLRenderer::renderFromCamera(Scene& scene, CameraComponent* cam, const 
 void OpenGLRenderer::renderTextNodes(SceneNode& node, const glm::mat4& parentTransform) {
     if (!node.isVisible() || !node.isActive()) return;
     glm::mat4 worldTransform = parentTransform * node.getLocalMatrix();
-    auto textComponent = node.getComponent<TextComponent>();
-    if (textComponent && textComponent->isEnabled()) {
-        textComponent->render(*this, worldTransform);
+    for (const auto& component : node.getAllComponents()) {
+        if (component && component->isEnabled()
+            && component->getTypeName() == TextComponent::StaticTypeName()) {
+            static_cast<TextComponent*>(component.get())->render(*this, worldTransform);
+        }
     }
     for (size_t i = 0; i < node.getChildCount(); ++i) {
         auto child = node.getChild(i);
@@ -362,23 +389,13 @@ void OpenGLRenderer::processRenderQueue() {
     for (const auto& command : renderQueue) {
         if (!command.mesh) continue;
         
-        if (!command.isBeam && frustumCullingEnabled && activeCamera && frustumPlanes.size() == 6) {
-            glm::vec3 boundsMin = command.mesh->getBoundsMin();
-            glm::vec3 boundsMax = command.mesh->getBoundsMax();
-            
-            bool boundsValid = (boundsMin.x < boundsMax.x && boundsMin.y < boundsMax.y && boundsMin.z < boundsMax.z);
-            
-            if (boundsValid) {
-                const float maxVal = std::numeric_limits<float>::max();
-                const float minVal = std::numeric_limits<float>::lowest();
-                if (boundsMin.x > maxVal * 0.1f || boundsMax.x < minVal * 0.1f) {
-                    boundsValid = false;
-                }
-            }
-            
-            if (boundsValid) {
+        if (!command.isBeam && frustumCullingEnabled && activeCamera) {
+            const glm::vec3 boundsMin = command.mesh->getBoundsMin();
+            const glm::vec3 boundsMax = command.mesh->getBoundsMax();
+
+            if (Frustum::areBoundsValid(boundsMin, boundsMax)) {
                 stats.totalObjectsTested++;
-                if (!isAABBInFrustum(boundsMin, boundsMax, command.modelMatrix)) {
+                if (!cameraFrustum.containsAABB(boundsMin, boundsMax, command.modelMatrix)) {
                     stats.culledObjects++;
                     continue;
                 }
@@ -442,10 +459,12 @@ void OpenGLRenderer::processRenderQueue() {
                 shader->setMat4("projectionMatrix", cachedProjectionMatrix);
                 shader->setFloat("u_Time", GetEngine().getTime().getTotalTime());
                 shader->setVec2("u_ViewportSize", glm::vec2(viewport.z, viewport.w));
+                shader->setInt("u_ReceiveShadows",
+                    (shadowAtlasReady && command.receiveShadows) ? 1 : 0);
                 
-                if (!command.boneTransforms.empty()) {
-                    shader->setMat4Array("u_BoneMatrices", command.boneTransforms.data(), command.boneTransforms.size());
-                    shader->setInt("u_NumBones", static_cast<int>(command.boneTransforms.size()));
+                if (command.boneTransforms && !command.boneTransforms->empty()) {
+                    shader->setMat4Array("u_BoneMatrices", command.boneTransforms->data(), command.boneTransforms->size());
+                    shader->setInt("u_NumBones", static_cast<int>(command.boneTransforms->size()));
                 } else {
                     shader->setInt("u_NumBones", 0);
                 }
@@ -472,6 +491,124 @@ void OpenGLRenderer::processRenderQueue() {
     renderQueue.clear();
 }
 
+void OpenGLRenderer::renderShadowPass() {
+#ifndef ENABLE_VULKAN
+    shadowAtlasReady = false;
+
+    auto& shadowManager = ShadowManager::getInstance();
+    const std::vector<ShadowView>& views = shadowManager.getViews();
+
+    if (views.empty()) {
+        return;
+    }
+
+    // Nothing in this scene casts, so the atlas would come out empty
+    bool hasCaster = false;
+    for (const auto& command : renderQueue) {
+        if (command.mesh && command.castShadows && !command.isBeam) {
+            hasCaster = true;
+            break;
+        }
+    }
+    if (!hasCaster) {
+        return;
+    }
+
+    auto shadowShader = Shader::getShadowDepthShader();
+    if (!shadowShader || !shadowShader->isValid()) {
+        return;
+    }
+
+    if (!shadowAtlas.ensureCreated(shadowManager.getAtlasWidth(), shadowManager.getAtlasHeight())) {
+        return;
+    }
+
+    // The editor renders the scene into its own framebuffer, so restore whatever
+    // was bound rather than assuming the default one
+    GLint previousFramebuffer = 0;
+    GLint previousViewport[4] = {0, 0, 0, 0};
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+    glGetIntegerv(GL_VIEWPORT, previousViewport);
+
+    shadowAtlas.bindForWriting();
+
+    // Depth must be written and tested regardless of what the lit pass wants
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
+    if (!depthTestEnabled) {
+        glEnable(GL_DEPTH_TEST);
+    }
+#ifdef VITA_BUILD
+    // The Vita packs depth into the colour attachment, so it has to be cleared
+    // to "furthest" (1.0 packs to white) as well as the depth buffer
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClearColor(clearColor.r, clearColor.g, clearColor.b, 1.0f);
+#else
+    glClear(GL_DEPTH_BUFFER_BIT);
+#endif
+
+    shadowShader->use();
+    shadowShader->setFloat("u_AttributeGuard", 0.0f);
+
+    for (size_t viewIndex = 0; viewIndex < views.size(); ++viewIndex) {
+        const ShadowView& view = views[viewIndex];
+        const glm::ivec4 tile = shadowManager.getTileViewport(view.tile);
+        glViewport(tile.x, tile.y, tile.z, tile.w);
+
+        shadowShader->setMat4("u_LightViewProj", view.viewProjection);
+
+        for (const auto& command : renderQueue) {
+            if (!command.mesh || !command.castShadows || command.isBeam) {
+                continue;
+            }
+
+            const glm::vec3 boundsMin = command.mesh->getBoundsMin();
+            const glm::vec3 boundsMax = command.mesh->getBoundsMax();
+            if (Frustum::areBoundsValid(boundsMin, boundsMax)
+                && !view.frustum.containsAABB(boundsMin, boundsMax, command.modelMatrix)) {
+                continue;
+            }
+
+            shadowShader->setMat4("modelMatrix", command.modelMatrix);
+            if (command.boneTransforms && !command.boneTransforms->empty()) {
+                shadowShader->setMat4Array("u_BoneMatrices", command.boneTransforms->data(), command.boneTransforms->size());
+                shadowShader->setInt("u_NumBones", static_cast<int>(command.boneTransforms->size()));
+            } else {
+                shadowShader->setInt("u_NumBones", 0);
+            }
+
+            command.mesh->draw();
+            stats.drawCalls++;
+            stats.triangles += command.mesh->getTriangleCount();
+        }
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFramebuffer));
+    glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
+    if (!depthTestEnabled) {
+        glDisable(GL_DEPTH_TEST);
+    }
+
+    shadowAtlasReady = true;
+#endif
+}
+
+void OpenGLRenderer::bindShadowResources() {
+#ifndef ENABLE_VULKAN
+
+    if (shadowAtlasReady) {
+        shadowAtlas.bindTexture(kShadowMapTextureUnit);
+    } else if (auto white = Texture::getWhiteTexture()) {
+        white->bind(kShadowMapTextureUnit);
+    }
+    glActiveTexture(GL_TEXTURE0);
+
+    LightingManager::getInstance().setShadowMapBound(shadowAtlasReady);
+#endif
+}
+
 void OpenGLRenderer::setupCamera() {
     if (!activeCamera) return;
 }
@@ -492,104 +629,10 @@ glm::vec3 OpenGLRenderer::extractCameraPosition(const glm::mat4& viewMatrix) {
 
 void OpenGLRenderer::updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projMatrix) {
     if (!activeCamera) {
-        frustumPlanes.clear();
         return;
     }
-    
-    glm::mat4 viewProj = projMatrix * viewMatrix;
-    
-    frustumPlanes[0].normal.x = viewProj[0][3] + viewProj[0][0];
-    frustumPlanes[0].normal.y = viewProj[1][3] + viewProj[1][0];
-    frustumPlanes[0].normal.z = viewProj[2][3] + viewProj[2][0];
-    frustumPlanes[0].distance = viewProj[3][3] + viewProj[3][0];
-    
-    frustumPlanes[1].normal.x = viewProj[0][3] - viewProj[0][0];
-    frustumPlanes[1].normal.y = viewProj[1][3] - viewProj[1][0];
-    frustumPlanes[1].normal.z = viewProj[2][3] - viewProj[2][0];
-    frustumPlanes[1].distance = viewProj[3][3] - viewProj[3][0];
-    
-    frustumPlanes[2].normal.x = viewProj[0][3] + viewProj[0][1];
-    frustumPlanes[2].normal.y = viewProj[1][3] + viewProj[1][1];
-    frustumPlanes[2].normal.z = viewProj[2][3] + viewProj[2][1];
-    frustumPlanes[2].distance = viewProj[3][3] + viewProj[3][1];
-    
-    frustumPlanes[3].normal.x = viewProj[0][3] - viewProj[0][1];
-    frustumPlanes[3].normal.y = viewProj[1][3] - viewProj[1][1];
-    frustumPlanes[3].normal.z = viewProj[2][3] - viewProj[2][1];
-    frustumPlanes[3].distance = viewProj[3][3] - viewProj[3][1];
-    
-    frustumPlanes[4].normal.x = viewProj[0][3] + viewProj[0][2];
-    frustumPlanes[4].normal.y = viewProj[1][3] + viewProj[1][2];
-    frustumPlanes[4].normal.z = viewProj[2][3] + viewProj[2][2];
-    frustumPlanes[4].distance = viewProj[3][3] + viewProj[3][2];
-    
-    frustumPlanes[5].normal.x = viewProj[0][3] - viewProj[0][2];
-    frustumPlanes[5].normal.y = viewProj[1][3] - viewProj[1][2];
-    frustumPlanes[5].normal.z = viewProj[2][3] - viewProj[2][2];
-    frustumPlanes[5].distance = viewProj[3][3] - viewProj[3][2];
-    
-    const float epsilon = 0.0001f;
-    for (auto& plane : frustumPlanes) {
-        float length = glm::length(plane.normal);
-        if (length > epsilon) {
-            plane.normal /= length;
-            plane.distance /= length;
-        }
-    }
-}
 
-bool OpenGLRenderer::isMeshInFrustum(const Mesh& mesh, const glm::mat4& modelMatrix) const {
-    if (frustumPlanes.empty() || frustumPlanes.size() != 6) {
-        return true;
-    }
-    
-    glm::vec3 boundsMin = mesh.getBoundsMin();
-    glm::vec3 boundsMax = mesh.getBoundsMax();
-    
-    if (boundsMin.x >= boundsMax.x || boundsMin.y >= boundsMax.y || boundsMin.z >= boundsMax.z) {
-        return true;
-    }
-    
-    return isAABBInFrustum(boundsMin, boundsMax, modelMatrix);
-}
-
-bool OpenGLRenderer::isAABBInFrustum(const glm::vec3& min, const glm::vec3& max, const glm::mat4& transform) const {
-    if (frustumPlanes.empty() || frustumPlanes.size() != 6) {
-        return true;
-    }
-    
-    if (min.x >= max.x || min.y >= max.y || min.z >= max.z) {
-        return true;
-    }
-    
-    glm::vec3 corners[8];
-    corners[0] = glm::vec3(transform * glm::vec4(min.x, min.y, min.z, 1.0f));
-    corners[1] = glm::vec3(transform * glm::vec4(max.x, min.y, min.z, 1.0f));
-    corners[2] = glm::vec3(transform * glm::vec4(min.x, max.y, min.z, 1.0f));
-    corners[3] = glm::vec3(transform * glm::vec4(max.x, max.y, min.z, 1.0f));
-    corners[4] = glm::vec3(transform * glm::vec4(min.x, min.y, max.z, 1.0f));
-    corners[5] = glm::vec3(transform * glm::vec4(max.x, min.y, max.z, 1.0f));
-    corners[6] = glm::vec3(transform * glm::vec4(min.x, max.y, max.z, 1.0f));
-    corners[7] = glm::vec3(transform * glm::vec4(max.x, max.y, max.z, 1.0f));
-    
-    for (const auto& plane : frustumPlanes) {
-        bool inside = false;
-        
-        const float margin = -0.1f;
-        for (int i = 0; i < 8; i++) {
-            float distance = glm::dot(plane.normal, corners[i]) + plane.distance;
-            if (distance > margin) {
-                inside = true;
-                break;
-            }
-        }
-        
-        if (!inside) {
-            return false;
-        }
-    }
-    
-    return true;
+    cameraFrustum.update(projMatrix * viewMatrix);
 }
 
 void OpenGLRenderer::renderSkybox(Scene& scene) {

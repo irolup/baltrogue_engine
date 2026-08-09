@@ -39,14 +39,19 @@ void MeshRenderer::render(IRenderer& renderer) {
     command.material = material;
     command.modelMatrix = modelMatrix;
     command.normalMatrix = normalMatrix;
+    command.castShadows = castShadows;
+    command.receiveShadows = receiveShadows;
     renderer.submitRenderCommand(command);
-    
+
     if (materialOverride) {
         RenderCommand outlineCmd;
         outlineCmd.mesh = mesh;
         outlineCmd.material = materialOverride;
         outlineCmd.modelMatrix = modelMatrix;
         outlineCmd.normalMatrix = normalMatrix;
+        // The override is a silhouette pass, never a shadow caster.
+        outlineCmd.castShadows = false;
+        outlineCmd.receiveShadows = false;
         renderer.submitRenderCommand(outlineCmd);
     }
 }

@@ -24,6 +24,8 @@ public:
     virtual void update(float deltaTime) override;
     virtual void render(IRenderer& renderer) override;
     virtual void destroy() override;
+    virtual void suspend() override;
+    virtual void resume() override;
     
     bool isActive() const { return isActiveSkybox; }
     void setActive(bool active);

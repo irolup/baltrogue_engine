@@ -35,7 +35,11 @@ class Texture {
 public:
     Texture();
     ~Texture();
-    
+
+    Texture(const Texture&) = delete;
+    Texture& operator=(const Texture&) = delete;
+
+
     bool loadFromFile(const std::string& filepath);
     bool createEmpty(int width, int height, TextureFormat format = TextureFormat::RGBA);
     bool createFromData(const void* data, int width, int height, TextureFormat format = TextureFormat::RGBA);

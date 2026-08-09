@@ -6,6 +6,7 @@
 #include <string>
 
 class btTypedConstraint;
+class btRigidBody;
 
 namespace GameEngine {
 
@@ -24,6 +25,10 @@ public:
     virtual void start() override;
     virtual void update(float deltaTime) override;
     virtual void destroy() override;
+    virtual void suspend() override;
+    virtual void resume() override;
+
+    void releaseConstraintForBody(btRigidBody* body);
     
     void setBodyA(const std::string& nodeName);
     void setBodyB(const std::string& nodeName);

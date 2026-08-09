@@ -3,6 +3,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <cstdint>
 #include <glm/glm.hpp>
 #include <memory>
 #include "Platform.h"
@@ -13,6 +14,9 @@ class Shader {
 public:
     Shader();
     ~Shader();
+
+    Shader(const Shader&) = delete;
+    Shader& operator=(const Shader&) = delete;
     
     bool loadFromFiles(const std::string& vertexPath, const std::string& fragmentPath);
     bool loadFromSource(const std::string& vertexSource, const std::string& fragmentSource);
@@ -32,14 +36,20 @@ public:
     void setMat4Array(const std::string& name, const glm::mat4* values, size_t count);
 
     bool needsTranspose = false;
-    
+
+    uint32_t lightingPassStamp = 0;
+
+    bool hasUniform(const std::string& name) const { return getUniformLocation(name) != -1; }
+
     GLuint getProgram() const { return program; }
     bool isValid() const { return program != 0; }
-    
+
     static std::shared_ptr<Shader> getDefaultShader();
     static std::shared_ptr<Shader> getErrorShader();
     static std::shared_ptr<Shader> getLightingShader();
-    
+    static std::shared_ptr<Shader> getTextShader();
+    static std::shared_ptr<Shader> getShadowDepthShader();
+
 private:
     GLuint program;
     GLuint vertexShader;

@@ -28,9 +28,16 @@ public:
     void renderCameraControls();
     void renderInputMapping();
     void renderMemoryViewer();
+    void renderBuildSettings();
     void renderSceneNode(std::shared_ptr<SceneNode> node, int depth = 0);
 
 private:
+    void openSceneFromDialog();
+    void saveSceneAsDialog();
+    void saveActiveScene();
+    void drawShadowSettingsForPlatform(const char* platform);
+    void drawLiveAreaImageSlot(const char* label, const char* requirement, char* path, size_t pathSize);
+
     EditorSystem& editor;
     
     bool showDemoWindow;
@@ -40,7 +47,8 @@ private:
     bool showFileExplorer;
     bool showInputMapping;
     bool showMemoryViewer;
-    
+    bool showBuildSettings;
+
     float sceneGraphWidth;
     float propertiesWidth;
     float fileExplorerHeight;

@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <cstdio>
 
 namespace GameEngine {
 
@@ -128,7 +129,7 @@ void Shader::setMat4Array(const std::string& name, const glm::mat4* values, size
         static int warnCount = 0;
         warnCount++;
         if (warnCount % 60 == 0) {  // Log every 60 frames
-            std::cerr << "Shader: Uniform '" << name << "' not found! Shader may not support bone matrices." << std::endl;
+            std::cerr << "Shader: matrix array uniform '" << name << "' not found in this program." << std::endl;
         }
         return;
     }
@@ -287,14 +288,13 @@ std::shared_ptr<Shader> Shader::getErrorShader() {
 
 std::shared_ptr<Shader> Shader::getLightingShader() {
     static std::shared_ptr<Shader> lightingShader = nullptr;
-    
-    // Force recreation to pick up changes (for debugging)
-    // Remove this after confirming it works
-    // lightingShader = nullptr;
-    
-    if (!lightingShader) {
+
+    static bool loadAttempted = false;
+
+    if (!loadAttempted) {
+        loadAttempted = true;
         lightingShader = std::make_shared<Shader>();
-        
+
 #ifdef LINUX_BUILD
         // Try to load the external lighting shaders first
         // Try multiple possible paths for the editor
@@ -436,6 +436,7 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
             
             uniform vec3 u_DiffuseColor;
             uniform vec3 u_CameraPos;
+            uniform float u_Opacity;
             
             void main() {
                 vec3 normal = normalize(vNormal);
@@ -445,7 +446,7 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
                 vec3 ambient = vec3(0.1) * u_DiffuseColor;
                 vec3 result = ambient + u_DiffuseColor;
                 
-                gl_FragColor = vec4(result, 1.0);
+                gl_FragColor = vec4(result, u_Opacity);
             }
         )";
         
@@ -490,6 +491,146 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
     return lightingShader;
 }
 
+std::shared_ptr<Shader> Shader::getShadowDepthShader() {
+    static std::shared_ptr<Shader> shadowShader = nullptr;
+    static bool loadAttempted = false;
+
+    // A failed load must not be retried every frame: on Vita a shader compile
+    // goes through the runtime Cg compiler and is far too slow for that
+    if (loadAttempted) {
+        return shadowShader;
+    }
+    loadAttempted = true;
+
+    shadowShader = std::make_shared<Shader>();
+
+#ifdef VITA_BUILD
+    if (!shadowShader->loadFromFiles("app0:/assets/shaders/shadow_depth.vert",
+                                     "app0:/assets/shaders/shadow_depth.frag")) {
+        std::cerr << "Shader: shadow depth shader not found, shadows disabled" << std::endl;
+        shadowShader.reset();
+    }
+#else
+    static const char* const searchPaths[][2] = {
+        {"assets/linux_shaders/shadow_depth.vert", "assets/linux_shaders/shadow_depth.frag"},
+        {"./assets/linux_shaders/shadow_depth.vert", "./assets/linux_shaders/shadow_depth.frag"},
+        {"../assets/linux_shaders/shadow_depth.vert", "../assets/linux_shaders/shadow_depth.frag"},
+    };
+
+    bool loaded = false;
+    for (const auto& paths : searchPaths) {
+        if (shadowShader->loadFromFiles(paths[0], paths[1])) {
+            loaded = true;
+            break;
+        }
+    }
+
+    if (!loaded) {
+        std::cerr << "Shader: shadow depth shader not found, shadows disabled" << std::endl;
+        shadowShader.reset();
+    }
+#endif
+
+    return shadowShader;
+}
+
+std::shared_ptr<Shader> Shader::getTextShader() {
+    static std::shared_ptr<Shader> textShader = nullptr;
+
+    if (!textShader) {
+        textShader = std::make_shared<Shader>();
+
+#ifdef VITA_BUILD
+        textShader->needsTranspose = true;
+        if (textShader->loadFromFiles("app0:/assets/shaders/text.vert", "app0:/assets/shaders/text.frag")) {
+            return textShader;
+        }
+
+        const std::string vertexSource = R"(
+            struct VS_INPUT {
+                float3 aPosition : POSITION;
+                float2 aTexCoord : TEXCOORD0;
+            };
+
+            struct VS_OUTPUT {
+                float4 Position : POSITION;
+                float2 texCoord : TEXCOORD0;
+            };
+
+            float4x4 uViewProjectionMat;
+            float4x4 uModelMat;
+
+            VS_OUTPUT main(VS_INPUT input) {
+                VS_OUTPUT output;
+                output.Position = mul(uViewProjectionMat, mul(uModelMat, float4(input.aPosition, 1.0)));
+                output.texCoord = input.aTexCoord;
+                return output;
+            }
+        )";
+
+        const std::string fragmentSource = R"(
+            struct PS_INPUT {
+                float2 texCoord : TEXCOORD0;
+            };
+
+            sampler2D uFontAtlasTexture;
+            uniform float4 uColor;
+
+            float4 main(PS_INPUT input) : COLOR {
+                float alpha = tex2D(uFontAtlasTexture, input.texCoord).r;
+                return float4(uColor.rgb, uColor.a * alpha);
+            }
+        )";
+
+        if (!textShader->loadFromSource(vertexSource, fragmentSource)) {
+            textShader.reset();
+        }
+#elif defined(LINUX_BUILD)
+        textShader->needsTranspose = false;
+        if (textShader->loadFromFiles("assets/linux_shaders/text.vert", "assets/linux_shaders/text.frag")) {
+            return textShader;
+        }
+
+        const std::string vertexSource = R"(
+            #version 120
+            attribute vec3 aPosition;
+            attribute vec2 aTexCoord;
+
+            uniform mat4 uViewProjectionMat;
+            uniform mat4 uModelMat;
+
+            varying vec2 texCoord;
+
+            void main()
+            {
+                gl_Position = uViewProjectionMat * uModelMat * vec4(aPosition, 1.0);
+                texCoord = aTexCoord;
+            }
+        )";
+
+        const std::string fragmentSource = R"(
+            #version 120
+            varying vec2 texCoord;
+
+            uniform sampler2D uFontAtlasTexture;
+            uniform vec4 uColor;
+
+            void main()
+            {
+                float alpha = texture2D(uFontAtlasTexture, texCoord).r;
+                gl_FragColor = vec4(uColor.rgb, uColor.a * alpha);
+            }
+        )";
+
+        if (!textShader->loadFromSource(vertexSource, fragmentSource)) {
+            textShader.reset();
+        }
+#endif
+    }
+
+    return textShader;
+}
+
 bool Shader::compileShader(GLuint& shader, GLenum type, const std::string& source) {
 #ifdef ENABLE_VULKAN
     (void)type;
@@ -511,11 +652,17 @@ bool Shader::compileShader(GLuint& shader, GLenum type, const std::string& sourc
     GLint success;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
     if (!success) {
-        GLchar infoLog[1024];
-        glGetShaderInfoLog(shader, 1024, NULL, infoLog);
-        std::cerr << "Shader compilation failed (" << (type == GL_VERTEX_SHADER ? "vertex" : "fragment") << "):" << std::endl;
+        GLchar infoLog[2048];
+        infoLog[0] = '\0';
+        glGetShaderInfoLog(shader, sizeof(infoLog), NULL, infoLog);
+        const char* stage = (type == GL_VERTEX_SHADER ? "vertex" : "fragment");
+        std::cerr << "Shader compilation failed (" << stage << "):" << std::endl;
         std::cerr << infoLog << std::endl;
-        
+
+#ifdef VITA_BUILD
+        sceClibPrintf("=== %s shader failed ===\n%s\n", stage, infoLog);
+#endif
+
         glDeleteShader(shader);
         shader = 0;
         return false;
@@ -558,8 +705,14 @@ GLint Shader::getUniformLocation(const std::string& name) const {
     if (it != uniformCache.end()) {
         return it->second;
     }
-    
+
     GLint location = glGetUniformLocation(program, name.c_str());
+
+    if (location == -1 && name.find('[') == std::string::npos) {
+        const std::string firstElement = name + "[0]";
+        location = glGetUniformLocation(program, firstElement.c_str());
+    }
+
     uniformCache[name] = location;
     return location;
 }

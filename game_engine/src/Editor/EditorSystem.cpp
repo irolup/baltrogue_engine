@@ -4,6 +4,7 @@
 #include "Editor/EditorUI.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneNode.h"
+#include "Scene/SceneBinaryFormat.h"
 #include <imgui.h>
 #include "../../vendor/imguizmo/ImGuizmo.h"
 #include "Components/CameraComponent.h"
@@ -23,6 +24,7 @@
 #include "Rendering/Renderer.h"
 #include "Rendering/Texture.h"
 #include "Rendering/Mesh.h"
+#include "Rendering/ShadowMap.h"
 #include "Physics/PhysicsManager.h"
 #include "Navigation/NavGrid.h"
 #include "Navigation/NavGridRegistry.h"
@@ -36,6 +38,8 @@
 #include <memory>
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <glm/gtc/quaternion.hpp>
 
 namespace GameEngine {
 
@@ -56,6 +60,7 @@ EditorSystem::EditorSystem()
     , gridVbo(0)
     , gridIbo(0)
     , gridLineCount(0)
+    , shadowAtlasReady(false)
 {
     ui = std::unique_ptr<EditorUI>(new EditorUI(*this));
 }
@@ -111,6 +116,11 @@ void EditorSystem::shutdown() {
     }
     gridShader.reset();
     gridLineCount = 0;
+
+    ShadowManager::getInstance().saveSettings();
+    shadowAtlas.destroy();
+    shadowCasters.clear();
+    shadowAtlasReady = false;
     if (ImGui::GetCurrentContext()) {
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplGlfw_Shutdown();
@@ -129,6 +139,8 @@ void EditorSystem::update(float deltaTime) {
 }
 
 void EditorSystem::render() {
+    processPendingNodeDeletions();
+
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -143,6 +155,7 @@ void EditorSystem::render() {
     ui->renderFileExplorer();
     ui->renderInputMapping();
     ui->renderMemoryViewer();
+    ui->renderBuildSettings();
     
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -389,19 +402,17 @@ void EditorSystem::handleViewportInput() {
     if (cameraMode != CameraMode::EDITOR_CAMERA || !editorCamera) {
         return;
     }
-    
 
-    
     auto& inputManager = GetEngine().getInputManager();
     auto& time = GetEngine().getTime();
     float deltaTime = time.getDeltaTime();
-    
+
     float moveSpeed = 10.0f * deltaTime;
     float rotateSpeed = 2.0f * deltaTime;
-    
+
     auto& transform = editorCamera->getTransform();
     glm::vec3 position = transform.getPosition();
-    
+
     static float yaw   = 0.0f;
     static float pitch = 0.0f;
 
@@ -452,66 +463,78 @@ void EditorSystem::handleViewportInput() {
 
 void EditorSystem::handleGameCameraInput(float deltaTime) {
     if (!activeScene) return;
-    
+
     auto gameCamera = activeScene->getActiveCamera();
     if (!gameCamera) return;
-    
+
     auto cameraComponent = gameCamera->getComponent<CameraComponent>();
     if (!cameraComponent) return;
-    
+
     auto& inputManager = GetEngine().getInputManager();
     float moveSpeed = 10.0f * deltaTime;
     float rotateSpeed = 2.0f * deltaTime;
 
     auto& transform = gameCamera->getTransform();
     glm::vec3 position = transform.getPosition();
-    
-    static float yaw   = 0.0f;
-    static float pitch = 0.0f;
-
     glm::quat rotation = transform.getRotation();
 
+    bool moved = false;
+    bool rotated = false;
+
     if (inputManager.isKeyHeld(GLFW_KEY_W)) {
+        moved = true;
         position += rotation * glm::vec3(0, 0, -1) * moveSpeed;
     }
     if (inputManager.isKeyHeld(GLFW_KEY_S)) {
+        moved = true;
         position += rotation * glm::vec3(0, 0,  1) * moveSpeed;
     }
     if (inputManager.isKeyHeld(GLFW_KEY_A)) {
+        moved = true;
         position += rotation * glm::vec3(-1, 0, 0) * moveSpeed;
     }
     if (inputManager.isKeyHeld(GLFW_KEY_D)) {
+        moved = true;
         position += rotation * glm::vec3( 1, 0, 0) * moveSpeed;
     }
     if (inputManager.isKeyHeld(GLFW_KEY_SPACE)) {
+        moved = true;
         position += glm::vec3(0, 1, 0) * moveSpeed;
     }
     if (inputManager.isKeyHeld(GLFW_KEY_LEFT_SHIFT)) {
+        moved = true;
         position += glm::vec3(0, -1, 0) * moveSpeed;
     }
-    
-    if (inputManager.isKeyHeld(GLFW_KEY_LEFT)) {
-        yaw += rotateSpeed;
-    }
-    if (inputManager.isKeyHeld(GLFW_KEY_RIGHT)) {
-        yaw -= rotateSpeed;
-    }
-    if (inputManager.isKeyHeld(GLFW_KEY_UP)) {
-        pitch += rotateSpeed;
-    }
-    if (inputManager.isKeyHeld(GLFW_KEY_DOWN)) {
-        pitch -= rotateSpeed;
+
+    if (inputManager.isKeyHeld(GLFW_KEY_LEFT))  rotated = true;
+    if (inputManager.isKeyHeld(GLFW_KEY_RIGHT)) rotated = true;
+    if (inputManager.isKeyHeld(GLFW_KEY_UP))   rotated = true;
+    if (inputManager.isKeyHeld(GLFW_KEY_DOWN)) rotated = true;
+
+    if (!moved && !rotated) return;
+
+    if (moved) {
+        transform.setPosition(position);
     }
 
-    float limit = glm::half_pi<float>() - 0.01f;
-    pitch = glm::clamp(pitch, -limit, limit);
+    if (rotated) {
+        glm::vec3 euler = glm::eulerAngles(rotation);
+        float yaw = euler.y;
+        float pitch = euler.x;
 
-    glm::quat qYaw   = glm::angleAxis(yaw,   glm::vec3(0, 1, 0));
-    glm::quat qPitch = glm::angleAxis(pitch, glm::vec3(1, 0, 0));
-    rotation = qYaw * qPitch;
+        if (inputManager.isKeyHeld(GLFW_KEY_LEFT))  yaw += rotateSpeed;
+        if (inputManager.isKeyHeld(GLFW_KEY_RIGHT)) yaw -= rotateSpeed;
+        if (inputManager.isKeyHeld(GLFW_KEY_UP))    pitch += rotateSpeed;
+        if (inputManager.isKeyHeld(GLFW_KEY_DOWN))  pitch -= rotateSpeed;
 
-    transform.setPosition(position);
-    transform.setRotation(rotation);
+        float limit = glm::half_pi<float>() - 0.01f;
+        pitch = glm::clamp(pitch, -limit, limit);
+
+        transform.setRotation(
+            glm::angleAxis(yaw, glm::vec3(0, 1, 0)) *
+            glm::angleAxis(pitch, glm::vec3(1, 0, 0))
+        );
+    }
 }
 
 std::string EditorSystem::generateUniqueNodeName(const std::string& baseName) {
@@ -528,74 +551,320 @@ std::string EditorSystem::generateUniqueNodeName(const std::string& baseName) {
     return name;
 }
 
+void EditorSystem::makeSubtreeNamesUnique(std::shared_ptr<SceneNode> node) {
+    if (!node) {
+        return;
+    }
+
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        auto child = node->getChild(i);
+        if (child) {
+            child->setName(generateUniqueNodeName(child->getName()));
+            makeSubtreeNamesUnique(child);
+        }
+    }
+}
+
+std::shared_ptr<SceneNode> EditorSystem::instantiateNodeSubtree(std::shared_ptr<SceneNode> source,
+                                                                std::shared_ptr<SceneNode> parent,
+                                                                const std::string& rootNameSuffix) {
+    if (!source || !parent || !activeScene) {
+        return nullptr;
+    }
+
+    auto instance = SceneSerializer::duplicateNodeSubtree(source);
+    if (!instance) {
+        return nullptr;
+    }
+
+    instance->setName(generateUniqueNodeName(source->getName() + rootNameSuffix));
+    makeSubtreeNamesUnique(instance);
+    parent->addChild(instance);
+    instance->start();
+    return instance;
+}
+
+std::shared_ptr<SceneNode> EditorSystem::instantiateTemplate(const std::string& filepath,
+                                                             std::shared_ptr<SceneNode> parent) {
+    if (!parent || !activeScene || filepath.empty()) {
+        return nullptr;
+    }
+
+    auto instance = NodeTemplateSerializer::loadNodeTemplate(filepath);
+    if (!instance) {
+        return nullptr;
+    }
+
+    instance->setName(generateUniqueNodeName(instance->getName()));
+    makeSubtreeNamesUnique(instance);
+    parent->addChild(instance);
+    instance->start();
+    return instance;
+}
+
+int EditorSystem::getSiblingIndex(std::shared_ptr<SceneNode> node) const {
+    if (!node || !node->getParent()) {
+        return -1;
+    }
+    auto parent = node->getParent();
+    for (size_t i = 0; i < parent->getChildCount(); ++i) {
+        if (parent->getChild(i) == node) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+int EditorSystem::getNodeDepth(std::shared_ptr<SceneNode> node) {
+    if (!node) {
+        return -1;
+    }
+    int depth = 0;
+    SceneNode* current = node->getParent();
+    while (current) {
+        ++depth;
+        current = current->getParent();
+    }
+    return depth;
+}
+
+bool EditorSystem::canMoveNodeUp(std::shared_ptr<SceneNode> node) const {
+    return getSiblingIndex(node) > 0;
+}
+
+bool EditorSystem::canMoveNodeDown(std::shared_ptr<SceneNode> node) const {
+    if (!node || !node->getParent()) {
+        return false;
+    }
+    int index = getSiblingIndex(node);
+    return index >= 0 && index < static_cast<int>(node->getParent()->getChildCount()) - 1;
+}
+
+void EditorSystem::moveNodeUp(std::shared_ptr<SceneNode> node) {
+    if (!canMoveNodeUp(node)) {
+        return;
+    }
+    auto parent = node->getParent();
+    int index = getSiblingIndex(node);
+    parent->reorderChild(static_cast<size_t>(index), static_cast<size_t>(index - 1));
+}
+
+void EditorSystem::moveNodeDown(std::shared_ptr<SceneNode> node) {
+    if (!canMoveNodeDown(node)) {
+        return;
+    }
+    auto parent = node->getParent();
+    int index = getSiblingIndex(node);
+    parent->reorderChild(static_cast<size_t>(index), static_cast<size_t>(index + 1));
+}
+
+bool EditorSystem::reorderNodeBefore(std::shared_ptr<SceneNode> dragged, std::shared_ptr<SceneNode> target) {
+    if (!dragged || !target || dragged == target || !activeScene) {
+        return false;
+    }
+    if (dragged == activeScene->getRootNode()) {
+        return false;
+    }
+
+    auto draggedParent = dragged->getParent();
+    auto targetParent = target->getParent();
+    if (!draggedParent || draggedParent != targetParent) {
+        return false;
+    }
+
+    int fromIndex = getSiblingIndex(dragged);
+    int toIndex = getSiblingIndex(target);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex == toIndex) {
+        return false;
+    }
+
+    size_t insertIndex = static_cast<size_t>(toIndex);
+    if (fromIndex < toIndex) {
+        insertIndex = static_cast<size_t>(toIndex - 1);
+    }
+    draggedParent->reorderChild(static_cast<size_t>(fromIndex), insertIndex);
+    return true;
+}
+
+std::shared_ptr<SceneNode> EditorSystem::findNodeShared(SceneNode* nodePtr) const {
+    if (!nodePtr || !activeScene) {
+        return nullptr;
+    }
+
+    std::function<std::shared_ptr<SceneNode>(std::shared_ptr<SceneNode>)> search =
+        [&](std::shared_ptr<SceneNode> current) -> std::shared_ptr<SceneNode> {
+            if (!current) {
+                return nullptr;
+            }
+            if (current.get() == nodePtr) {
+                return current;
+            }
+            for (size_t i = 0; i < current->getChildCount(); ++i) {
+                if (auto found = search(current->getChild(i))) {
+                    return found;
+                }
+            }
+            return nullptr;
+        };
+
+    return search(activeScene->getRootNode());
+}
+
+void EditorSystem::selectAllChildren(std::shared_ptr<SceneNode> node) {
+    if (!node) {
+        return;
+    }
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        if (auto child = node->getChild(i)) {
+            child->setSelected(true);
+        }
+    }
+}
+
 void EditorSystem::deleteNode(std::shared_ptr<SceneNode> node) {
-    if (!node || !activeScene) return;
-    
+    if (!node || !activeScene) {
+        return;
+    }
     if (node == activeScene->getRootNode()) {
         return;
     }
-    
+
+    pendingNodeDeletions_.push_back(node);
+}
+
+void EditorSystem::processPendingNodeDeletions() {
+    if (pendingNodeDeletions_.empty()) {
+        return;
+    }
+
+    auto pending = std::move(pendingNodeDeletions_);
+    pendingNodeDeletions_.clear();
+
+    for (const auto& node : pending) {
+        if (!node || !activeScene) {
+            continue;
+        }
+        if (!node->getParent()) {
+            continue;
+        }
+        deleteNodeImmediate(node);
+    }
+}
+
+void EditorSystem::deleteNodeImmediate(std::shared_ptr<SceneNode> node) {
+    if (!node || !activeScene) {
+        return;
+    }
+
+    if (node == activeScene->getRootNode()) {
+        return;
+    }
+
+    if (!node->getParent()) {
+        return;
+    }
+
     auto selected = selectedNode.lock();
-    if (selected == node) {
+    if (selected && isInSubtree(selected, node)) {
         clearSelection();
     }
-    
+
+    auto sceneSelected = activeScene->getSelectedNode();
+    if (sceneSelected && isInSubtree(sceneSelected, node)) {
+        activeScene->clearSelection();
+    }
+
     auto activeCamera = activeScene->getActiveCamera();
-    bool isDeletingActiveCamera = (activeCamera == node);
-    
-    if (isDeletingActiveCamera) {
+    const bool cameraInSubtree = activeCamera && isInSubtree(activeCamera, node);
+
+    auto activeSkybox = activeScene->getActiveSkybox();
+    const bool skyboxInSubtree = activeSkybox && isInSubtree(activeSkybox, node);
+
+    if (cameraInSubtree) {
         activeScene->setActiveCamera(nullptr);
     }
-    
-    auto& components = node->getAllComponents();
-    for (auto& component : components) {
-        if (component && component->isEnabled()) {
-            component->destroy();
-        }
+    if (skyboxInSubtree) {
+        activeScene->setActiveSkybox(nullptr);
     }
-    
-    std::function<bool(std::shared_ptr<SceneNode>)> findAndRemoveNode = 
-        [&](std::shared_ptr<SceneNode> currentNode) -> bool {
-            if (!currentNode) return false;
-            
-            for (size_t i = 0; i < currentNode->getChildCount(); ++i) {
-                if (currentNode->getChild(i) == node) {
-                    currentNode->removeChild(node);
-                    return true;
-                }
-                
-                if (findAndRemoveNode(currentNode->getChild(i))) {
-                    return true;
-                }
-            }
-            return false;
-        };
-    
-    findAndRemoveNode(activeScene->getRootNode());
-    
-    if (isDeletingActiveCamera) {
-        std::function<std::shared_ptr<SceneNode>(std::shared_ptr<SceneNode>)> findCamera = 
-            [&](std::shared_ptr<SceneNode> currentNode) -> std::shared_ptr<SceneNode> {
-                if (!currentNode) return nullptr;
-                
-                if (currentNode == node) return nullptr;
-                
-                if (currentNode->getComponent<CameraComponent>()) {
-                    return currentNode;
-                }
-                
-                for (size_t i = 0; i < currentNode->getChildCount(); ++i) {
-                    auto found = findCamera(currentNode->getChild(i));
-                    if (found) return found;
-                }
-                return nullptr;
-            };
-        
-        auto newCamera = findCamera(activeScene->getRootNode());
-        if (newCamera) {
+
+    destroyComponentsPostOrder(node);
+    detachNodeFromScene(node);
+
+    if (cameraInSubtree) {
+        if (auto newCamera = findFirstCameraExcluding(activeScene->getRootNode(), node)) {
             activeScene->setActiveCamera(newCamera);
         }
     }
+}
+
+bool EditorSystem::isInSubtree(std::shared_ptr<SceneNode> candidate, std::shared_ptr<SceneNode> subtreeRoot) const {
+    if (!candidate || !subtreeRoot) {
+        return false;
+    }
+    if (candidate == subtreeRoot) {
+        return true;
+    }
+    SceneNode* parent = candidate->getParent();
+    while (parent) {
+        if (parent == subtreeRoot.get()) {
+            return true;
+        }
+        parent = parent->getParent();
+    }
+    return false;
+}
+
+void EditorSystem::destroyComponentsPostOrder(std::shared_ptr<SceneNode> node) {
+    if (!node) {
+        return;
+    }
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        destroyComponentsPostOrder(node->getChild(i));
+    }
+    for (auto& component : node->getAllComponents()) {
+        if (component) {
+            component->destroy();
+        }
+    }
+}
+
+std::shared_ptr<SceneNode> EditorSystem::findFirstCameraExcluding(std::shared_ptr<SceneNode> current,
+                                                                  std::shared_ptr<SceneNode> excludedSubtree) const {
+    if (!current || isInSubtree(current, excludedSubtree)) {
+        return nullptr;
+    }
+    if (current->getComponent<CameraComponent>()) {
+        return current;
+    }
+    for (size_t i = 0; i < current->getChildCount(); ++i) {
+        if (auto found = findFirstCameraExcluding(current->getChild(i), excludedSubtree)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+bool EditorSystem::detachNodeFromScene(std::shared_ptr<SceneNode> node) {
+    if (!node || !activeScene) {
+        return false;
+    }
+    return detachNodeRecursive(activeScene->getRootNode(), node);
+}
+
+bool EditorSystem::detachNodeRecursive(std::shared_ptr<SceneNode> current, std::shared_ptr<SceneNode> target) {
+    if (!current || !target) {
+        return false;
+    }
+    for (size_t i = 0; i < current->getChildCount(); ++i) {
+        if (current->getChild(i) == target) {
+            current->removeChild(target);
+            return true;
+        }
+        if (detachNodeRecursive(current->getChild(i), target)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void EditorSystem::renderSceneToViewport() {
@@ -625,10 +894,21 @@ void EditorSystem::renderSceneToViewport() {
     
     viewportFramebuffer->bind();
     viewportFramebuffer->clear(glm::vec3(0.2f, 0.3f, 0.3f));
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
+    glDisable(GL_BLEND);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     
     auto& lightingManager = LightingManager::getInstance();
     lightingManager.update();
-    
+
+    lightingManager.beginPass();
+
     renderSceneDirectly(*activeScene, cameraComponent);
     if (showGrid) {
         renderGridInViewport(cameraComponent);
@@ -648,6 +928,7 @@ void EditorSystem::renderSceneDirectly(Scene& scene, CameraComponent* camera) {
     bool isEditorCamera = (cameraMode == CameraMode::EDITOR_CAMERA);
     
     auto rootNode = scene.getRootNode();
+    renderShadowPassDirectly(camera);
     renderSkyboxDirectly(scene, camera, viewMatrix, projectionMatrix);
     if (rootNode) {
         renderNodeDirectly(rootNode, glm::mat4(1.0f), viewMatrix, projectionMatrix, isEditorCamera, 1);
@@ -660,6 +941,123 @@ void EditorSystem::renderSceneDirectly(Scene& scene, CameraComponent* camera) {
     if (showNavMeshDebug) {
         renderNavMeshDebug(viewMatrix, projectionMatrix);
     }
+    if (rootNode) {
+        renderScreenSpaceTextDirectly(rootNode, isEditorCamera);
+    }
+}
+
+void EditorSystem::collectShadowCasters(std::shared_ptr<SceneNode> node, const glm::mat4& parentTransform) {
+    if (!node || !node->isVisible() || !node->isActive()) return;
+
+    glm::mat4 worldTransform = parentTransform * node->getLocalMatrix();
+
+    auto meshRenderer = node->getComponent<MeshRenderer>();
+    if (meshRenderer && meshRenderer->isEnabled() && meshRenderer->getCastShadows()) {
+        auto mesh = meshRenderer->getMesh();
+        if (mesh) {
+            shadowCasters.push_back({mesh, worldTransform});
+        }
+    }
+
+    auto modelRenderer = node->getComponent<ModelRenderer>();
+    if (modelRenderer && modelRenderer->isEnabled() && modelRenderer->getCastShadows()
+        && modelRenderer->isModelLoaded()) {
+        auto meshes = modelRenderer->getMeshes();
+        const auto& meshNodeTransforms = modelRenderer->getMeshNodeTransforms();
+        for (size_t i = 0; i < meshes.size(); ++i) {
+            if (!meshes[i]) continue;
+            glm::mat4 gltfNodeTransform = (i < meshNodeTransforms.size())
+                ? meshNodeTransforms[i]
+                : glm::mat4(1.0f);
+            shadowCasters.push_back({meshes[i], worldTransform * gltfNodeTransform});
+        }
+    }
+
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        auto child = node->getChild(i);
+        if (child) {
+            collectShadowCasters(child, worldTransform);
+        }
+    }
+}
+
+void EditorSystem::renderShadowPassDirectly(CameraComponent* camera) {
+    shadowAtlasReady = false;
+    LightingManager::getInstance().setShadowMapBound(false);
+
+    if (!camera || !activeScene) return;
+
+    auto& shadowManager = ShadowManager::getInstance();
+    const glm::vec3 cameraPosition = glm::vec3(glm::inverse(camera->getViewMatrix())[3]);
+    shadowManager.update(cameraPosition, camera->getForward());
+
+    const std::vector<ShadowView>& views = shadowManager.getViews();
+    if (views.empty()) {
+        return;
+    }
+
+    shadowCasters.clear();
+    collectShadowCasters(activeScene->getRootNode(), glm::mat4(1.0f));
+    if (shadowCasters.empty()) {
+        return;
+    }
+
+    auto shadowShader = Shader::getShadowDepthShader();
+    if (!shadowShader || !shadowShader->isValid()) {
+        return;
+    }
+
+    if (!shadowAtlas.ensureCreated(shadowManager.getAtlasWidth(), shadowManager.getAtlasHeight())) {
+        return;
+    }
+
+    // The scene is being drawn into the viewport framebuffer, so restore that
+    // rather than assuming the default one
+    GLint previousFramebuffer = 0;
+    GLint previousViewport[4] = {0, 0, 0, 0};
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+    glGetIntegerv(GL_VIEWPORT, previousViewport);
+
+    shadowAtlas.bindForWriting();
+
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    shadowShader->use();
+    // The editor draws models in bind pose, so the casters must not be skinned
+    // either or the shadow would not line up with the mesh on screen
+    shadowShader->setInt("u_NumBones", 0);
+
+    for (const ShadowView& view : views) {
+        const glm::ivec4 tile = shadowManager.getTileViewport(view.tile);
+        glViewport(tile.x, tile.y, tile.z, tile.w);
+
+        shadowShader->setMat4("u_LightViewProj", view.viewProjection);
+
+        for (const ShadowCaster& caster : shadowCasters) {
+            const glm::vec3 boundsMin = caster.mesh->getBoundsMin();
+            const glm::vec3 boundsMax = caster.mesh->getBoundsMax();
+            if (Frustum::areBoundsValid(boundsMin, boundsMax)
+                && !view.frustum.containsAABB(boundsMin, boundsMax, caster.modelMatrix)) {
+                continue;
+            }
+
+            shadowShader->setMat4("modelMatrix", caster.modelMatrix);
+            caster.mesh->draw();
+        }
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFramebuffer));
+    glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
+
+    shadowAtlas.bindTexture(kShadowMapTextureUnit);
+    glActiveTexture(GL_TEXTURE0);
+
+    shadowAtlasReady = true;
+    LightingManager::getInstance().setShadowMapBound(true);
 }
 
 void EditorSystem::renderSkyboxDirectly(Scene& scene, CameraComponent* camera, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
@@ -761,15 +1159,18 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
                     
                     glm::vec3 cameraPos = glm::vec3(glm::inverse(viewMatrix)[3]);
                     shader->setVec3("u_CameraPos", cameraPos);
-                    
+
+                    shader->setInt("u_ReceiveShadows",
+                        (shadowAtlasReady && meshRenderer->getReceiveShadows()) ? 1 : 0);
+
                     auto& lightingManager = LightingManager::getInstance();
                     size_t numLights = lightingManager.getActiveLightCount();
-                    
+
                     if (numLights > 0) {
                         try {
                             auto lightDataArray = lightingManager.getLightDataArray();
                             shader->setInt("u_NumLights", (int)numLights);
-                            
+
                             for (size_t i = 0; i < numLights; ++i) {
                                 const auto& lightData = lightDataArray[i];
                                 std::string lightName = "u_Lights[" + std::to_string(i) + "]";
@@ -802,62 +1203,109 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
         if (modelRenderer->isModelLoaded()) {
             auto meshes = modelRenderer->getMeshes();
             auto materials = modelRenderer->getMaterials();
+            const auto& meshMaterialIndices = modelRenderer->getMeshMaterialIndices();
+            const auto& meshNodeTransforms = modelRenderer->getMeshNodeTransforms();
             
             for (size_t i = 0; i < meshes.size(); ++i) {
                 auto mesh = meshes[i];
-                auto material = (i < materials.size()) ? materials[i] : nullptr;
-                
                 if (!mesh) continue;
-                bool opaque = !material || (material->getBlendMode() == BlendMode::Opaque);
+
+                std::shared_ptr<Material> material = nullptr;
+                if (i < meshMaterialIndices.size()) {
+                    int materialIndex = meshMaterialIndices[i];
+                    if (materialIndex >= 0 && materialIndex < static_cast<int>(materials.size())) {
+                        material = materials[materialIndex];
+                    }
+                }
+                if (!material) {
+                    material = Material::getDefaultMaterial();
+                }
+                if (!material) continue;
+
+                bool opaque = (material->getBlendMode() == BlendMode::Opaque);
                 if (renderPass == 1 && !opaque) continue;
                 if (renderPass == 2 && opaque) continue;
-                
-                if (material) {
-                    material->apply();
-                    
-                    auto shader = material->getShader();
-                    if (shader) {
-                        shader->setMat4("modelMatrix", worldTransform);
-                        shader->setMat4("viewMatrix", viewMatrix);
-                        shader->setMat4("projectionMatrix", projectionMatrix);
-                        
-                        glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(worldTransform)));
-                        shader->setMat3("normalMatrix", normalMatrix);
-                        
-                        glm::vec3 cameraPos = glm::vec3(glm::inverse(viewMatrix)[3]);
-                        shader->setVec3("u_CameraPosition", cameraPos);
-                        
-                        auto& lightingManager = LightingManager::getInstance();
-                        size_t numLights = lightingManager.getActiveLightCount();
-                        
-                        if (numLights > 0) {
-                            try {
-                                auto lightDataArray = lightingManager.getLightDataArray();
-                                shader->setInt("u_NumLights", (int)numLights);
-                                
-                                for (size_t j = 0; j < numLights; ++j) {
-                                    const auto& lightData = lightDataArray[j];
-                                    std::string lightName = "u_Lights[" + std::to_string(j) + "]";
-                                    
-                                    shader->setVec4(lightName + ".position", lightData.position);
-                                    shader->setVec4(lightName + ".direction", lightData.direction);
-                                    shader->setVec4(lightName + ".color", lightData.color);
-                                    shader->setVec4(lightName + ".params", lightData.params);
-                                    shader->setVec4(lightName + ".attenuation", lightData.attenuation);
-                                }
-                            } catch (const std::exception& e) {
-                                std::cerr << "Error setting light uniforms: " << e.what() << std::endl;
+
+                glm::mat4 gltfNodeTransform = (i < meshNodeTransforms.size())
+                    ? meshNodeTransforms[i]
+                    : glm::mat4(1.0f);
+                glm::mat4 modelMatrix = worldTransform * gltfNodeTransform;
+
+                GLboolean cullWasEnabled = glIsEnabled(GL_CULL_FACE);
+                if (material->getDoubleSided() && cullWasEnabled) {
+                    glDisable(GL_CULL_FACE);
+                }
+
+                if (activeScene) {
+                    auto activeSkyboxNode = activeScene->getActiveSkybox();
+                    if (activeSkyboxNode) {
+                        auto skyboxComp = activeSkyboxNode->getComponent<SkyboxComponent>();
+                        if (skyboxComp && skyboxComp->isActive()) {
+                            auto envMap = skyboxComp->getCubemapTexture();
+                            if (envMap) {
+                                material->setTexture("u_EnvironmentMap", envMap);
+                                material->setBool("u_HasEnvironmentMap", true);
+                            } else {
+                                material->setBool("u_HasEnvironmentMap", false);
                             }
                         } else {
-                            shader->setInt("u_NumLights", 0);
+                            material->setBool("u_HasEnvironmentMap", false);
                         }
+                    } else {
+                        material->setBool("u_HasEnvironmentMap", false);
                     }
+                }
+                
+                material->apply();
+                
+                auto shader = material->getShader();
+                if (shader) {
+                    shader->setMat4("modelMatrix", modelMatrix);
+                    shader->setMat4("viewMatrix", viewMatrix);
+                    shader->setMat4("projectionMatrix", projectionMatrix);
                     
-                    mesh->draw();
-                    if (material && !material->getDepthWrite()) {
-                        glDepthMask(GL_TRUE);
-                        glDepthFunc(GL_LESS);
+                    glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
+                    shader->setMat3("normalMatrix", normalMatrix);
+                    
+                    glm::vec3 cameraPos = glm::vec3(glm::inverse(viewMatrix)[3]);
+                    shader->setVec3("u_CameraPos", cameraPos);
+
+                    shader->setInt("u_ReceiveShadows",
+                        (shadowAtlasReady && modelRenderer->getReceiveShadows()) ? 1 : 0);
+
+                    auto& lightingManager = LightingManager::getInstance();
+                    size_t numLights = lightingManager.getActiveLightCount();
+
+                    if (numLights > 0) {
+                        try {
+                            auto lightDataArray = lightingManager.getLightDataArray();
+                            shader->setInt("u_NumLights", (int)numLights);
+
+                            for (size_t j = 0; j < numLights; ++j) {
+                                const auto& lightData = lightDataArray[j];
+                                std::string lightName = "u_Lights[" + std::to_string(j) + "]";
+                                
+                                shader->setVec4(lightName + ".position", lightData.position);
+                                shader->setVec4(lightName + ".direction", lightData.direction);
+                                shader->setVec4(lightName + ".color", lightData.color);
+                                shader->setVec4(lightName + ".params", lightData.params);
+                                shader->setVec4(lightName + ".attenuation", lightData.attenuation);
+                            }
+                        } catch (const std::exception& e) {
+                            std::cerr << "Error setting light uniforms: " << e.what() << std::endl;
+                        }
+                    } else {
+                        shader->setInt("u_NumLights", 0);
                     }
+                }
+                
+                mesh->draw();
+                if (!material->getDepthWrite()) {
+                    glDepthMask(GL_TRUE);
+                    glDepthFunc(GL_LESS);
+                }
+                if (material->getDoubleSided() && cullWasEnabled) {
+                    glEnable(GL_CULL_FACE);
                 }
             }
         }
@@ -877,17 +1325,13 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
     
     auto textComponent = node->getComponent<TextComponent>();
     if (textComponent && textComponent->isEnabled()) {
-        if (!isEditorCamera || textComponent->getRenderMode() == TextRenderMode::WORLD_SPACE) {
+        if (textComponent->getRenderMode() == TextRenderMode::WORLD_SPACE) {
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glEnable(GL_DEPTH_TEST);
-            
-            if (textComponent->getRenderMode() == TextRenderMode::WORLD_SPACE) {
-                textComponent->renderWorldSpaceDirectly(worldTransform, viewMatrix, projectionMatrix);
-            } else {
-                textComponent->renderScreenSpaceDirectly();
-            }
-            
+
+            textComponent->renderWorldSpaceDirectly(worldTransform, viewMatrix, projectionMatrix);
+
             glDisable(GL_BLEND);
         }
     }
@@ -1065,6 +1509,32 @@ void EditorSystem::renderPhysicsDebugShapes(const glm::mat4& viewMatrix, const g
 #endif
 }
 
+void EditorSystem::renderScreenSpaceTextDirectly(std::shared_ptr<SceneNode> node, bool isEditorCamera) {
+#ifndef EDITOR_BUILD
+    (void)node;
+    (void)isEditorCamera;
+    return;
+#else
+    if (!node || !node->isVisible() || !node->isActive()) {
+        return;
+    }
+
+    auto textComponent = node->getComponent<TextComponent>();
+    if (textComponent && textComponent->isEnabled() &&
+        textComponent->getRenderMode() == TextRenderMode::SCREEN_SPACE &&
+        !isEditorCamera) {
+        textComponent->renderScreenSpaceDirectly();
+    }
+
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        auto child = node->getChild(i);
+        if (child) {
+            renderScreenSpaceTextDirectly(child, isEditorCamera);
+        }
+    }
+#endif
+}
+
 void EditorSystem::syncNavGridFromScene() {
 #ifdef EDITOR_BUILD
     if (!activeScene) return;
@@ -1170,21 +1640,49 @@ void EditorSystem::setViewportSize(const glm::vec2& size) {
     }
 }
 
+void EditorSystem::compileSceneBinary(const std::string& jsonPath) {
+    const std::string binaryPath = SceneBinaryFormat::jsonPathToBinaryPath(jsonPath);
+    if (!SceneBinaryFormat::writeBinarySceneFromJsonFile(jsonPath, binaryPath)) {
+        std::cerr << "Failed to compile scene binary: " << binaryPath << std::endl;
+    }
+}
+
 bool EditorSystem::saveSceneToFile(const std::string& filepath) {
     if (!activeScene) {
         std::cerr << "No active scene to save" << std::endl;
         return false;
     }
-    
-    return SceneSerializer::saveSceneToFile(activeScene, filepath);
+
+    if (!SceneSerializer::saveSceneToFile(activeScene, filepath)) {
+        return false;
+    }
+
+    activeSceneFilePath_ = filepath;
+    compileSceneBinary(filepath);
+    return true;
+}
+
+bool EditorSystem::saveActiveScene() {
+    if (!activeScene || activeSceneFilePath_.empty()) {
+        return false;
+    }
+    if (!SceneSerializer::saveSceneToFile(activeScene, activeSceneFilePath_)) {
+        return false;
+    }
+    compileSceneBinary(activeSceneFilePath_);
+    return true;
 }
 
 bool EditorSystem::loadSceneFromFile(const std::string& filepath) {
     LightingManager::getInstance().clearLights();
+    // Drop cached ModelRenderer GPU/CPU meshes so materials (blend/cutoff/
+    // textures) are rebuilt from the current glTF loader path.
+    ModelRenderer::clearMeshCache();
 
     auto loadedScene = SceneSerializer::loadSceneFromFile(filepath);
     if (loadedScene) {
         setActiveScene(loadedScene);
+        activeSceneFilePath_ = filepath;
         return true;
     }
     return false;
@@ -1192,6 +1690,7 @@ bool EditorSystem::loadSceneFromFile(const std::string& filepath) {
 
 void EditorSystem::createNewScene() {
     createDefaultScene();
+    activeSceneFilePath_.clear();
     clearSelection();
 }
 

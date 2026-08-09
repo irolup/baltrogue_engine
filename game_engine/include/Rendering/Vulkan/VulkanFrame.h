@@ -21,6 +21,8 @@ public:
     void setRenderer(IRenderer* renderer) { renderer_ = renderer; }
     void setVulkanRenderer(VulkanRenderer* renderer) { vulkanRenderer_ = renderer; }
 
+    void waitUntilIdle();
+
     void drawFrame();
 
 private:

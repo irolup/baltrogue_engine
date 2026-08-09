@@ -17,11 +17,12 @@ public:
 
     virtual void start() override;
     virtual void destroy() override;
+    virtual void suspend() override;
+    virtual void resume() override;
 
     virtual void drawInspector() override;
 
 private:
-    std::vector<NavGrid*> gridsRegistered_;
 };
 
 } // namespace GameEngine

@@ -1,5 +1,8 @@
 TITLEID     := VSDK00420
-TARGET      := first_game_demo
+# Fallback build name, used only when config/build_settings.txt is missing or has
+# no name for the platform. The real names live there (pc:executableName,
+# vita:vpkName) and the editor writes them.
+TARGET      := Baltrogue
 EDITOR_TARGET := game_editor
 
 # Source directories
@@ -78,8 +81,29 @@ LINUX_EDITOR_LIBS = $(LINUX_LIBS)
 
 # Build directories
 BUILD_DIR := build
+ifeq ($(USE_VULKAN),1)
 LINUX_BUILD_DIR := build_linux
+else
+LINUX_BUILD_DIR := build_linux_gl
+endif
 EDITOR_BUILD_DIR := build_editor
+
+# Build names and Vita LiveArea assets.
+BUILD_SETTINGS := $(wildcard config/build_settings.txt)
+LIVEAREA_SCRIPT := scripts/build_livearea.sh
+LIVEAREA_MANIFEST := $(BUILD_DIR)/livearea_files.txt
+
+build_setting = $(if $(BUILD_SETTINGS),$(shell sed -n 's/^$(1)=//p' $(BUILD_SETTINGS) | tail -n 1))
+
+LINUX_TARGET := $(or $(call build_setting,pc:executableName),$(TARGET))
+LINUX_GAME := $(LINUX_BUILD_DIR)/$(LINUX_TARGET)
+
+VITA_TITLE := $(or $(call build_setting,vita:title),$(TARGET))
+VITA_TITLEID := $(or $(call build_setting,vita:titleId),$(TITLEID))
+VITA_APP_VERSION := $(or $(call build_setting,vita:appVersion),01.00)
+VITA_VPK := $(BUILD_DIR)/$(or $(call build_setting,vita:vpkName),$(TARGET)).vpk
+
+LIVEAREA_SOURCES := $(wildcard $(foreach key,icon0 pic0 bg0 startup,$(call build_setting,vita:$(key))))
 
 # Game source files
 GAME_CFILES := $(foreach dir,$(GAME_SOURCES), $(wildcard $(dir)/*.c))
@@ -112,12 +136,13 @@ TINYGLTF_CPPFILES := $(wildcard $(TINYGLTF_SOURCES)/*.cc)
 # Include SceneSerializer.cpp for JSON scene loading in Vita builds
 # Include pthread stub for Vita (provides pthread compatibility for libstdc++)
 ALL_CFILES := $(ENGINE_CFILES) game_engine/src/App/pthread_stub.c
-ALL_CPPFILES := game_engine/src/App/vita_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp
+ALL_CPPFILES := game_engine/src/App/vita_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp game_engine/src/Scene/SceneBinaryFormat.cpp
 
 # Linux game source files (new game main + engine + platform, excluding editor and old game files)
-# Include SceneSerializer.cpp for JSON scene loading in game builds
+# Include SceneSerializer.cpp for JSON scene loading in game builds, and
+# BuildSettings.cpp so the game can read its window title at startup
 LINUX_GAME_CFILES := $(ENGINE_CFILES)
-LINUX_GAME_CPPFILES := game_engine/src/App/game_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp $(VULKAN_CPPFILES)
+LINUX_GAME_CPPFILES := game_engine/src/App/game_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp game_engine/src/Editor/BuildSettings.cpp game_engine/src/Scene/SceneBinaryFormat.cpp $(VULKAN_CPPFILES)
 
 # Editor source files
 EDITOR_SOURCES := game_engine/src/Editor
@@ -139,6 +164,11 @@ LINUX_TINYGLTF_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(TINYGLTF_CPPFILES:.cc=.
 EDITOR_ALL_CPPFILES_WITH_VENDOR := $(EDITOR_ALL_CPPFILES) $(IMGUI_CPPFILES) $(IMGUIZMO_CPPFILES)
 EDITOR_OBJS := $(addprefix $(EDITOR_BUILD_DIR)/,$(EDITOR_ALL_CPPFILES_WITH_VENDOR:.cpp=.o))
 EDITOR_TINYGLTF_OBJS := $(addprefix $(EDITOR_BUILD_DIR)/,$(TINYGLTF_CPPFILES:.cc=.o))
+
+# Binary scene assets (JSON converted at build time; save_file stays JSON)
+SCENE_JSON_SOURCES := $(filter-out assets/scenes/save_file.json,$(wildcard assets/scenes/*.json))
+SCENE_BINARY_FILES := $(SCENE_JSON_SOURCES:.json=.bscn)
+SCENE_TO_BINARY := tools/scene_to_binary
 
 # Compiler settings
 PREFIX = arm-vita-eabi
@@ -178,15 +208,18 @@ lua-vita:
 
 
 # Vita build
-vita: lua-vita $(BUILD_DIR)/$(TARGET).vpk
+vita: lua-vita scene-binaries $(VITA_VPK)
+
+# LiveArea assets on their own, without building the game
+livearea: $(LIVEAREA_MANIFEST)
 
 
 # Linux game build
 ifeq ($(USE_VULKAN),1)
 linux: LINUX_CXXFLAGS += -DENABLE_VULKAN
-linux: $(VULKAN_SHADER_SPVS) $(LINUX_BUILD_DIR)/$(TARGET)
+linux: $(VULKAN_SHADER_SPVS) $(LINUX_GAME)
 else
-linux: $(LINUX_BUILD_DIR)/$(TARGET)
+linux: $(LINUX_GAME)
 endif
 
 # Linux editor build
@@ -203,88 +236,80 @@ $(EDITOR_BUILD_DIR):
 	@mkdir -p $(EDITOR_BUILD_DIR)
 
 # Vita VPK creation
-$(BUILD_DIR)/$(TARGET).vpk: $(BUILD_DIR)/eboot.bin
-	vita-mksfoex -s TITLE_ID=$(TITLEID) "$(TARGET)" $(BUILD_DIR)/param.sfo
+VPK_ASSETS := \
+	assets/shaders/lighting.vert=assets/shaders/lighting.vert \
+	assets/shaders/lighting.frag=assets/shaders/lighting.frag \
+	assets/shaders/text.vert=assets/shaders/text.vert \
+	assets/shaders/text.frag=assets/shaders/text.frag \
+	assets/shaders/skybox.vert=assets/shaders/skybox.vert \
+	assets/shaders/skybox.frag=assets/shaders/skybox.frag \
+	assets/shaders/shadow_depth.vert=assets/shaders/shadow_depth.vert \
+	assets/shaders/shadow_depth.frag=assets/shaders/shadow_depth.frag \
+	config/default_input_mappings.txt=config/default_input_mappings.txt \
+	assets/textures/memes/biden_diff_.png=biden_diff_.png \
+	assets/textures/terrain/Grass_01_diff.png=Grass_01_diff.png \
+	assets/textures/terrain/stonetiles_002_diff.png=stonetiles_002_diff.png \
+	assets/textures/skyboxes/skybox_1/right.jpg=right.jpg \
+	assets/textures/skyboxes/skybox_1/left.jpg=left.jpg \
+	assets/textures/skyboxes/skybox_1/top.jpg=top.jpg \
+	assets/textures/skyboxes/skybox_1/bottom.jpg=bottom.jpg \
+	assets/textures/skyboxes/skybox_1/front.jpg=front.jpg \
+	assets/textures/skyboxes/skybox_1/back.jpg=back.jpg \
+	assets/fonts/DroidSans.ttf=assets/fonts/DroidSans.ttf \
+	assets/models/hedge_small.glb=assets/models/hedge_small.glb \
+	assets/models/well.glb=assets/models/well.glb \
+	assets/models/SignPlate1.glb=assets/models/SignPlate1.glb \
+	assets/scenes/main_menu.bscn=assets/scenes/main_menu.bscn \
+	assets/scenes/level_1.bscn=assets/scenes/level_1.bscn \
+	assets/scenes/level_2.bscn=assets/scenes/level_2.bscn \
+	assets/scripts/main_menu.lua=assets/scripts/main_menu.lua \
+	assets/scripts/pause_menu.lua=assets/scripts/pause_menu.lua \
+	assets/scripts/ui/controls_panel.lua=assets/scripts/ui/controls_panel.lua \
+	assets/scripts/ui/level_signs.lua=assets/scripts/ui/level_signs.lua \
+	assets/scripts/ui/option_selector.lua=assets/scripts/ui/option_selector.lua \
+	assets/scripts/tire_game/config.lua=assets/scripts/tire_game/config.lua \
+	assets/scripts/tire_game/levels.lua=assets/scripts/tire_game/levels.lua \
+	assets/scripts/tire_game/player_controller.lua=assets/scripts/tire_game/player_controller.lua \
+	assets/scripts/tire_game/tire_camera.lua=assets/scripts/tire_game/tire_camera.lua \
+	assets/scripts/tire_game/tire_camera_collision.lua=assets/scripts/tire_game/tire_camera_collision.lua \
+	assets/scripts/tire_game/tire_checkpoint.lua=assets/scripts/tire_game/tire_checkpoint.lua \
+	assets/scripts/tire_game/tire_ground.lua=assets/scripts/tire_game/tire_ground.lua \
+	assets/scripts/tire_game/tire_hud.lua=assets/scripts/tire_game/tire_hud.lua \
+	assets/scripts/tire_game/tire_input.lua=assets/scripts/tire_game/tire_input.lua \
+	assets/scripts/tire_game/tire_level_flow.lua=assets/scripts/tire_game/tire_level_flow.lua \
+	assets/scripts/tire_game/tire_movement.lua=assets/scripts/tire_game/tire_movement.lua \
+	assets/scripts/tire_game/tire_physics.lua=assets/scripts/tire_game/tire_physics.lua \
+	assets/scripts/tire_game/tire_save.lua=assets/scripts/tire_game/tire_save.lua \
+	assets/scripts/tire_game/tire_spawn.lua=assets/scripts/tire_game/tire_spawn.lua
+
+VPK_OPTIONAL_ASSETS := textures.txt fonts.txt scripts.txt config/input_mappings.txt config/shadow_settings.txt
+VPK_OPTIONAL_PRESENT := $(wildcard $(VPK_OPTIONAL_ASSETS))
+
+VPK_ASSET_SOURCES := $(foreach pair,$(VPK_ASSETS),$(firstword $(subst =, ,$(pair))))
+
+$(LIVEAREA_MANIFEST): $(BUILD_SETTINGS) $(LIVEAREA_SOURCES) $(LIVEAREA_SCRIPT) | $(BUILD_DIR)
+	$(LIVEAREA_SCRIPT) $@
+
+$(VITA_VPK): $(BUILD_DIR)/eboot.bin $(LIVEAREA_MANIFEST) $(VPK_ASSET_SOURCES) $(VPK_OPTIONAL_PRESENT)
+	vita-mksfoex -s TITLE_ID=$(VITA_TITLEID) -s APP_VER=$(VITA_APP_VERSION) "$(VITA_TITLE)" $(BUILD_DIR)/param.sfo
 	vita-pack-vpk -s $(BUILD_DIR)/param.sfo -b $(BUILD_DIR)/eboot.bin \
-		-a assets/shaders/lambertian.vert=assets/shaders/lambertian.vert \
-		-a assets/shaders/lambertian.frag=assets/shaders/lambertian.frag \
-		-a assets/shaders/lambertian_hlsl.vert=assets/shaders/lambertian_hlsl.vert \
-		-a assets/shaders/lambertian_hlsl.frag=assets/shaders/lambertian_hlsl.frag \
-		-a assets/shaders/lighting.vert=assets/shaders/lighting.vert \
-		-a assets/shaders/lighting.frag=assets/shaders/lighting.frag \
-		-a assets/shaders/text.vert=assets/shaders/text.vert \
-		-a assets/shaders/text.frag=assets/shaders/text.frag \
-		-a assets/shaders/skybox.vert=assets/shaders/skybox.vert \
-		-a assets/shaders/skybox.frag=assets/shaders/skybox.frag \
-		-a assets/shaders/unlit_1.vert=assets/shaders/unlit_1.vert \
-		-a assets/shaders/unlit_1.frag=assets/shaders/unlit_1.frag \
-		-a assets/shaders/beam.vert=assets/shaders/beam.vert \
-		-a assets/shaders/beam.frag=assets/shaders/beam.frag \
-		-a assets/shaders/outline.vert=assets/shaders/outline.vert \
-		-a assets/shaders/outline.frag=assets/shaders/outline.frag \
-		$(if $(wildcard textures.txt),-a textures.txt=textures.txt ) \
-		$(if $(wildcard fonts.txt),-a fonts.txt=fonts.txt ) \
-		$(if $(wildcard scripts.txt),-a scripts.txt=scripts.txt ) \
-		$(if $(wildcard config/input_mappings.txt),-a config/input_mappings.txt=config/input_mappings.txt ) \
-		-a config/default_input_mappings.txt=config/default_input_mappings.txt \
-		-a assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_arm_1k.png=checkered_pavement_tiles_arm_1k.png \
-		-a assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_diff_1k.png=checkered_pavement_tiles_diff_1k.png \
-		-a assets/textures/checkered_pavement_tiles/checkered_pavement_tiles_nor_gl_1k.png=checkered_pavement_tiles_nor_gl_1k.png \
-		-a assets/textures/memes/asu_diff_.png=asu_diff_.png \
-		-a assets/textures/memes/yuri_diff_.png=yuri_diff_.png \
-		-a assets/textures/memes/asusad_diff_.png=asusad_diff_.png \
-		-a assets/textures/memes/biden_diff_.png=biden_diff_.png \
-		-a assets/textures/memes/spider_diff_.png=spider_diff_.png \
-		-a assets/textures/memes/saul_diff_.png=saul_diff_.png \
-		-a assets/textures/memes/retard_diff_.png=retard_diff_.png \
-		-a assets/textures/red_brick/red_brick_diff_1k.png=red_brick_diff_1k.png \
-		-a assets/textures/red_brick/red_brick_arm_1k.png=red_brick_arm_1k.png \
-		-a assets/textures/red_brick/red_brick_nor_gl_1k.png=red_brick_nor_gl_1k.png \
-		-a assets/textures/skyboxes/skybox_1/right.jpg=right.jpg \
-		-a assets/textures/skyboxes/skybox_1/left.jpg=left.jpg \
-		-a assets/textures/skyboxes/skybox_1/top.jpg=top.jpg \
-		-a assets/textures/skyboxes/skybox_1/bottom.jpg=bottom.jpg \
-		-a assets/textures/skyboxes/skybox_1/front.jpg=front.jpg \
-		-a assets/textures/skyboxes/skybox_1/back.jpg=back.jpg \
-		-a assets/textures/noise/Perlin.png=Perlin.png \
-		-a assets/fonts/DroidSans.ttf=assets/fonts/DroidSans.ttf \
-		-a assets/fonts/ProggyVector.ttf=assets/fonts/ProggyVector.ttf \
-		-a assets/fonts/ProggyClean.ttf=assets/fonts/ProggyClean.ttf \
-		-a assets/fonts/Ubuntu.ttf=assets/fonts/Ubuntu.ttf \
-		-a assets/fonts/sui.ttf=assets/fonts/sui.ttf \
-		-a assets/models/Player.glb=assets/models/Player.glb \
-		-a assets/models/lightning.glb=assets/models/lightning.glb \
-		-a assets/models/Pistol.glb=assets/models/Pistol.glb \
-		-a assets/audios/walk_sound.wav=assets/audios/walk_sound.wav \
-		-a assets/scripts/pause_menu.lua=assets/scripts/pause_menu.lua \
-		-a assets/scripts/collectible_behavior.lua=assets/scripts/collectible_behavior.lua \
-		-a assets/scripts/player_controller.lua=assets/scripts/player_controller.lua \
-		-a assets/scripts/main_menu.lua=assets/scripts/main_menu.lua \
-		-a assets/scripts/goal_controller.lua=assets/scripts/goal_controller.lua \
-		-a assets/scripts/animated_character.lua=assets/scripts/animated_character.lua \
-		-a assets/scripts/gravity_gun.lua=assets/scripts/gravity_gun.lua \
-		-a assets/scripts/impulse_pistol.lua=assets/scripts/impulse_pistol.lua \
-		-a assets/scripts/melee.lua=assets/scripts/melee.lua \
-		-a assets/scripts/gravity_prism.lua=assets/scripts/gravity_prism.lua \
-		-a assets/scripts/enemy_main.lua=assets/scripts/enemy_main.lua \
-		-a assets/scripts/enemy_chase.lua=assets/scripts/enemy_chase.lua \
-		-a assets/scripts/vision.lua=assets/scripts/vision.lua \
-		-a assets/scenes/main_menu.json=assets/scenes/main_menu.json \
-		-a assets/scenes/first_game_demo.json=assets/scenes/first_game_demo.json \
-		-a assets/scenes/playground.json=assets/scenes/playground.json \
+		$(addprefix -a ,$(VPK_ASSETS)) \
+		$(foreach f,$(VPK_OPTIONAL_PRESENT),-a $(f)=$(f)) \
+		$$(sed 's/^/-a /' $(LIVEAREA_MANIFEST)) \
 		$@
+
 $(BUILD_DIR)/eboot.bin: $(BUILD_DIR)/$(TARGET).velf
 	vita-make-fself -s $< $@
 
 $(BUILD_DIR)/%.velf: $(BUILD_DIR)/%.elf
-	vita-elf-create $< $@
+	vita-elf-create -s $< $@
 
 $(BUILD_DIR)/$(TARGET).elf: $(OBJS) $(TINYGLTF_OBJS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $^ $(BULLET_VITA_LIBS) $(VITA_LIBS) -o $@
 
 
 # Linux game executable
-$(LINUX_BUILD_DIR)/$(TARGET): $(LINUX_OBJS) $(LINUX_TINYGLTF_OBJS) | $(LINUX_BUILD_DIR)
+$(LINUX_GAME): $(LINUX_OBJS) $(LINUX_TINYGLTF_OBJS) | $(LINUX_BUILD_DIR)
 	$(LINUX_CXX) $(LINUX_CXXFLAGS) $^ $(LINUX_LIBS) $(BULLET_LINUX_LIBS) -o $@
 
 %.vert.spv: %.vert
@@ -320,6 +345,16 @@ $(LINUX_BUILD_DIR)/$(TARGET): $(LINUX_OBJS) $(LINUX_TINYGLTF_OBJS) | $(LINUX_BUI
 # Linux editor executable
 $(EDITOR_BUILD_DIR)/$(EDITOR_TARGET): $(EDITOR_OBJS) $(EDITOR_TINYGLTF_OBJS) | $(EDITOR_BUILD_DIR)
 	$(LINUX_CXX) $(LINUX_CXXFLAGS) $^ $(LINUX_EDITOR_LIBS) $(BULLET_LINUX_LIBS) -o $@
+
+# Convert JSON scenes to binary MessagePack format
+scene-binaries: $(SCENE_BINARY_FILES)
+
+$(SCENE_TO_BINARY): tools/scene_to_binary.cpp game_engine/src/Scene/SceneBinaryFormat.cpp
+	@mkdir -p $(dir $@)
+	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(LINUX_INCLUDES) -I$(ENGINE_INCLUDES) $^ -o $@
+
+assets/scenes/%.bscn: assets/scenes/%.json $(SCENE_TO_BINARY)
+	$(SCENE_TO_BINARY) $< $@
 
 # Build rules for C files (Vita)
 $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
@@ -373,13 +408,41 @@ $(EDITOR_BUILD_DIR)/vendor/imguizmo/%.o: vendor/imguizmo/%.cpp | $(EDITOR_BUILD_
 
 # Clean all builds
 clean:
-	@rm -rf $(BUILD_DIR) $(LINUX_BUILD_DIR) $(EDITOR_BUILD_DIR)
+	@rm -rf $(BUILD_DIR) build_linux build_linux_gl $(EDITOR_BUILD_DIR)
 	@find $(VULKAN_SHADER_DIR) -name "*.spv" -delete
+
+clean-vita:
+	@rm -rf $(BUILD_DIR)
+
+clean-linux:
+	@rm -rf build_linux build_linux_gl
+	@find $(VULKAN_SHADER_DIR) -name "*.spv" -delete
+
+clean-editor:
+	@rm -rf $(EDITOR_BUILD_DIR)
+
+# Also drop the generated binary scenes (only needed if the converter changed)
+clean-scenes:
+	@rm -f $(SCENE_BINARY_FILES) $(SCENE_TO_BINARY)
+
+# Clean + rebuild a single target, leaving the other build trees untouched.
+# Recursive make instead of prerequisites so the order holds under -j.
+rebuild-vita:
+	@$(MAKE) clean-vita
+	@$(MAKE) vita
+
+rebuild-linux:
+	@$(MAKE) clean-linux
+	@$(MAKE) linux
+
+rebuild-editor:
+	@$(MAKE) clean-editor
+	@$(MAKE) editor
 
 # Install Linux dependencies (Ubuntu/Debian)
 install-deps:
 	sudo apt-get update
-	sudo apt-get install -y libglfw3-dev libglew-dev libpng-dev libgl1-mesa-dev liblua5.3-dev libvulkan-dev vulkan-headers
+	sudo apt-get install -y libglfw3-dev libglew-dev libpng-dev libgl1-mesa-dev liblua5.3-dev libvulkan-dev vulkan-headers ffmpeg pngquant
 
 # Install editor dependencies (ImGui is compiled from vendor/ folder)
 install-editor-deps: install-deps
@@ -387,7 +450,7 @@ install-editor-deps: install-deps
 
 # Run Linux build
 run: linux
-	$(LINUX_BUILD_DIR)/$(TARGET)
+	$(LINUX_GAME)
 
 # Run editor build
 run-editor: editor
@@ -408,6 +471,7 @@ debug-editor: editor
 help:
 	@echo "Available targets:"
 	@echo "  vita           - Build for PS Vita (default)"
+	@echo "  livearea       - Build sce_sys/ from config/build_settings.txt only"
 	@echo "  linux          - Build game for Linux (includes Rendering/Vulkan/*.cpp)"
 	@echo "  editor         - Build editor for Linux"
 	@echo "  run            - Run Linux game build"
@@ -416,6 +480,13 @@ help:
 	@echo "  debug-editor   - Build Linux editor with debug symbols"
 	@echo "  build-bullet   - Build Bullet Physics libraries"
 	@echo "  clean          - Clean all build directories"
+	@echo "  clean-vita     - Clean only build/ (Vita objects + vpk)"
+	@echo "  clean-linux    - Clean only build_linux/, build_linux_gl/ and .spv shaders"
+	@echo "  clean-editor   - Clean only build_editor/"
+	@echo "  clean-scenes   - Remove generated .bscn files and the converter"
+	@echo "  rebuild-vita   - clean-vita then vita (other builds untouched)"
+	@echo "  rebuild-linux  - clean-linux then linux"
+	@echo "  rebuild-editor - clean-editor then editor"
 	@echo "  install-deps   - Install Linux dependencies"
 	@echo "  install-editor-deps - Install editor dependencies"
 	@echo "  lua-vita       - Build Lua 5.3 static library for PS Vita"
@@ -430,4 +501,4 @@ build-bullet:
 	@echo "  - Vita: Cross-compile using VitaSDK toolchain"
 	@echo "  - Place the built .a files in vendor/bullet/lib/"
 
-.PHONY: all vita linux editor run run-editor clean install-deps install-editor-deps debug-linux debug-editor help build-bullet lua-vita
+.PHONY: all vita livearea linux editor run run-editor clean clean-vita clean-linux clean-editor clean-scenes rebuild-vita rebuild-linux rebuild-editor install-deps install-editor-deps debug-linux debug-editor help build-bullet lua-vita scene-binaries

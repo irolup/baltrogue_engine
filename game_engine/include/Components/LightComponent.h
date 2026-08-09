@@ -25,6 +25,8 @@ public:
     void update(float deltaTime) override;
     void render(IRenderer& renderer) override;
     void destroy() override;
+    void suspend() override;
+    void resume() override;
     
     LightType getType() const { return type; }
     void setType(LightType newType);
@@ -59,22 +61,34 @@ public:
     float getQuadratic() const { return quadratic; }
     void setQuadratic(float newQuadratic) { quadratic = newQuadratic; }
     
+    bool getCastShadows() const { return castShadows; }
+    void setCastShadows(bool cast) { castShadows = cast; }
+
+    float getShadowStrength() const { return shadowStrength; }
+    void setShadowStrength(float strength) { shadowStrength = strength; }
+
+    float getShadowBias() const { return shadowBias; }
+    void setShadowBias(float bias) { shadowBias = bias; }
+
+    int getShadowViewIndex() const { return shadowViewIndex; }
+    void setShadowViewIndex(int index) { shadowViewIndex = index; }
+
     bool getShowGizmo() const { return showGizmo; }
-    void setShowGizmo(bool show) { showGizmo = show; }
+    void setShowGizmo(bool show);
     
     std::shared_ptr<Mesh> getGizmoMesh() const { return gizmoMesh; }
     std::shared_ptr<Material> getGizmoMaterial() const { return gizmoMaterial; }
     
-    std::string getTypeName() const override { return "LightComponent"; }
+    COMPONENT_TYPE(LightComponent)
     
     void drawInspector() override;
     
     struct LightData {
-        glm::vec4 position;
-        glm::vec4 direction;
-        glm::vec4 color;
-        glm::vec4 params;
-        glm::vec4 attenuation;
+        glm::vec4 position; // xyz = world position, w = light type
+        glm::vec4 direction; // xyz = world direction, w = intensity
+        glm::vec4 color; // rgb = colour, a = range
+        glm::vec4 params;  // cutOff, outerCutOff, constant, linear
+        glm::vec4 attenuation; // quadratic, shadow tile index (-1 = none), strength, bias
     };
     
     LightData getLightData() const;
@@ -95,7 +109,12 @@ private:
     float constant;
     float linear;
     float quadratic;
-    
+
+    bool castShadows;
+    float shadowStrength;
+    float shadowBias;
+    int shadowViewIndex;
+
     bool showGizmo;
     std::shared_ptr<Mesh> gizmoMesh;
     std::shared_ptr<Material> gizmoMaterial;

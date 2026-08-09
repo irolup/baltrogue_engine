@@ -33,6 +33,11 @@ SkyboxComponent::~SkyboxComponent() {
 }
 
 void SkyboxComponent::start() {
+#ifndef ENABLE_VULKAN
+    if (skyboxShader && cubemapTexture) {
+        return;
+    }
+#endif
     if (texturePaths.size() == 6 && !texturePaths[0].empty()) {
 #ifndef ENABLE_VULKAN
         loadCubemap();
@@ -41,6 +46,14 @@ void SkyboxComponent::start() {
         createSkyboxMaterial();
 #endif
     }
+}
+
+void SkyboxComponent::suspend() {
+    // Keep GPU resources alive for cached scene transitions.
+}
+
+void SkyboxComponent::resume() {
+    start();
 }
 
 void SkyboxComponent::update(float deltaTime) {

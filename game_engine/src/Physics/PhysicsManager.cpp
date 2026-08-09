@@ -2,6 +2,7 @@
 #include "Platform/VitaMath.h"
 #include "Components/Component.h"
 #include "Components/PhysicsComponent.h"
+#include "Components/JointComponent.h"
 #include "Components/Area3DComponent.h"
 #include "Scene/SceneNode.h"
 #include "Rendering/Mesh.h"
@@ -21,6 +22,7 @@
 #include "BulletCollision/CollisionDispatch/btCollisionDispatcherMt.h"
 #include "LinearMath/btThreads.h"
 #include <algorithm>
+#include <cmath>
 #include <thread>
 #include <iostream>
 
@@ -45,6 +47,7 @@ PhysicsManager::PhysicsManager()
     , broadphase(nullptr)
     , solver(nullptr)
     , ghostPairCallback(nullptr)
+    , scheduler(nullptr)
     , debugDrawEnabled(false)
 {   
 }
@@ -177,11 +180,17 @@ void PhysicsManager::shutdown() {
     }
 
     if (scheduler) {
+#if BT_THREADSAFE
+        if (btGetTaskScheduler() == scheduler) {
+            btSetTaskScheduler(nullptr);
+        }
+#endif
         delete scheduler;
         scheduler = nullptr;
     }
-    
+
     physicsComponents.clear();
+    jointComponents.clear();
 }
 
 // 60 Hz.
@@ -270,6 +279,32 @@ btCollisionShape* PhysicsManager::createCylinderShape(const glm::vec3& halfExten
     return new btCylinderShape(btVector3(halfExtents.x, halfExtents.y, halfExtents.z));
 }
 
+btCollisionShape* PhysicsManager::createRampShape(const glm::vec3& halfExtents) {
+    const float hx = halfExtents.x;
+    const float hy = halfExtents.y;
+    const float hz = halfExtents.z;
+    const float chamfer = std::min({ hx, hy, hz }) * 0.12f;
+
+    auto* hull = new btConvexHullShape();
+    const btVector3 points[] = {
+        btVector3(-hx, -hy, -hz),
+        btVector3( hx, -hy, -hz),
+        btVector3( hx, -hy,  hz),
+        btVector3(-hx, -hy,  hz),
+        btVector3(-hx,  hy, -hz),
+        btVector3( hx,  hy, -hz),
+        btVector3( 0.0f, -hy, hz + chamfer),
+        btVector3(-hx, -hy - chamfer, hz),
+        btVector3( hx, -hy - chamfer, hz),
+        btVector3(-hx, -hy + chamfer, hz - chamfer),
+        btVector3( hx, -hy + chamfer, hz - chamfer),
+    };
+    for (const btVector3& p : points) {
+        hull->addPoint(p);
+    }
+    return hull;
+}
+
 btCollisionShape* PhysicsManager::createPlaneShape(const glm::vec3& normal, float constant) {
     return new btStaticPlaneShape(btVector3(normal.x, normal.y, normal.z), constant);
 }
@@ -351,6 +386,35 @@ void PhysicsManager::unregisterPhysicsComponent(PhysicsComponent* component) {
     }
 }
 
+void PhysicsManager::registerJointComponent(JointComponent* component) {
+    if (component) {
+        auto it = std::find(jointComponents.begin(), jointComponents.end(), component);
+        if (it == jointComponents.end()) {
+            jointComponents.push_back(component);
+        }
+    }
+}
+
+void PhysicsManager::unregisterJointComponent(JointComponent* component) {
+    if (component) {
+        auto it = std::find(jointComponents.begin(), jointComponents.end(), component);
+        if (it != jointComponents.end()) {
+            jointComponents.erase(it);
+        }
+    }
+}
+
+void PhysicsManager::notifyRigidBodyDestroyed(btRigidBody* body) {
+    if (!body) {
+        return;
+    }
+    for (JointComponent* joint : jointComponents) {
+        if (joint) {
+            joint->releaseConstraintForBody(body);
+        }
+    }
+}
+
 void PhysicsManager::cleanupPhysicsObjects() {
 }
 
@@ -424,10 +488,23 @@ float PhysicsManager::raycastClosestObstacle(const glm::vec3& origin, const glm:
     return callback.m_closestHitFraction * maxDistance;
 }
 
+static PhysicsComponent* physicsComponentFromCollisionObject(const btCollisionObject* obj) {
+    if (!obj || !obj->getUserPointer()) return nullptr;
+    Component* comp = static_cast<Component*>(obj->getUserPointer());
+    if (!comp || comp->getTypeName() != "PhysicsComponent") return nullptr;
+    return static_cast<PhysicsComponent*>(comp);
+}
+
+static float surfaceFrictionFromCollisionObject(const btCollisionObject* obj) {
+    PhysicsComponent* comp = physicsComponentFromCollisionObject(obj);
+    return comp ? comp->getFriction() : 0.5f;
+}
+
 // For excluding two nodes max, we could use a bitmask instead of two separate strings.
 bool PhysicsManager::raycastGround(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
                                    const std::string& excludeNodeName, const std::string& excludeNodeName2,
-                                   glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance) {
+                                   glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance,
+                                   std::string* outHitNodeName, float* outSurfaceFriction) {
     hitPoint = origin;
     hitNormal = glm::vec3(0.0f, 1.0f, 0.0f);
     hitDistance = maxDistance;
@@ -452,15 +529,26 @@ bool PhysicsManager::raycastGround(const glm::vec3& origin, const glm::vec3& dir
     float nlen = glm::length(hitNormal);
     if (nlen > 1e-6f) hitNormal /= nlen;
     hitDistance = callback.m_closestHitFraction * maxDistance;
+    const btCollisionObject* obj = callback.m_collisionObject;
+    if (obj) {
+        PhysicsComponent* comp = physicsComponentFromCollisionObject(obj);
+        if (comp && comp->getOwner()) {
+            if (outHitNodeName) *outHitNodeName = comp->getOwner()->getName();
+            if (outSurfaceFriction) *outSurfaceFriction = comp->getFriction();
+        } else if (outSurfaceFriction) {
+            *outSurfaceFriction = surfaceFrictionFromCollisionObject(obj);
+        }
+    }
     return true;
 }
 
 struct MaskedRayResultCallback : public btCollisionWorld::ClosestRayResultCallback {
     MaskedRayResultCallback(const btVector3& rayFromWorld, const btVector3& rayToWorld)
-        : ClosestRayResultCallback(rayFromWorld, rayToWorld), excludeNode(nullptr) {}
+        : ClosestRayResultCallback(rayFromWorld, rayToWorld), excludeNode(nullptr), rigidBodiesOnly(false) {}
     MaskedRayResultCallback(const btVector3& rayFromWorld, const btVector3& rayToWorld, SceneNode* exclude)
-        : ClosestRayResultCallback(rayFromWorld, rayToWorld), excludeNode(exclude) {}
+        : ClosestRayResultCallback(rayFromWorld, rayToWorld), excludeNode(exclude), rigidBodiesOnly(false) {}
     SceneNode* excludeNode;
+    bool rigidBodiesOnly;
     static bool isNodeUnder(SceneNode* node, SceneNode* ancestor) {
         if (!node || !ancestor) return false;
         for (SceneNode* n = node; n; n = n->getParent())
@@ -468,8 +556,10 @@ struct MaskedRayResultCallback : public btCollisionWorld::ClosestRayResultCallba
         return false;
     }
     virtual btScalar addSingleResult(btCollisionWorld::LocalRayResult& rayResult, bool normalInWorldSpace) override {
+        const btCollisionObject* obj = rayResult.m_collisionObject;
+        if (rigidBodiesOnly && !btRigidBody::upcast(const_cast<btCollisionObject*>(obj)))
+            return btScalar(2.0);
         if (excludeNode) {
-            const btCollisionObject* obj = rayResult.m_collisionObject;
             if (obj && obj->getUserPointer()) {
                 Component* comp = static_cast<Component*>(obj->getUserPointer());
                 if (comp && comp->getOwner() && isNodeUnder(comp->getOwner(), excludeNode))
@@ -481,13 +571,14 @@ struct MaskedRayResultCallback : public btCollisionWorld::ClosestRayResultCallba
 };
 
 bool PhysicsManager::raycastFromTo(const glm::vec3& from, const glm::vec3& to, int collisionFilterMask,
-                                   bool& outHit, std::string& hitNodeName, glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance) {
-    return raycastFromTo(from, to, collisionFilterMask, outHit, hitNodeName, hitPoint, hitNormal, hitDistance, nullptr);
+                                   bool& outHit, std::string& hitNodeName, glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance,
+                                   float* outSurfaceFriction) {
+    return raycastFromTo(from, to, collisionFilterMask, outHit, hitNodeName, hitPoint, hitNormal, hitDistance, nullptr, outSurfaceFriction);
 }
 
 bool PhysicsManager::raycastFromTo(const glm::vec3& from, const glm::vec3& to, int collisionFilterMask,
                                    bool& outHit, std::string& hitNodeName, glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance,
-                                   SceneNode* excludeNode) {
+                                   SceneNode* excludeNode, float* outSurfaceFriction) {
     outHit = false;
     hitNodeName.clear();
     hitPoint = from;
@@ -504,49 +595,50 @@ bool PhysicsManager::raycastFromTo(const glm::vec3& from, const glm::vec3& to, i
     rayToTrans.setOrigin(rayTo);
     short rayMask = (collisionFilterMask >= 0)
         ? static_cast<short>(collisionFilterMask)
-        : static_cast<short>(btBroadphaseProxy::AllFilter | btBroadphaseProxy::SensorTrigger);
+        : static_cast<short>(btBroadphaseProxy::AllFilter & ~btBroadphaseProxy::SensorTrigger);
+    const bool includeSensors = (rayMask & btBroadphaseProxy::SensorTrigger) != 0;
 
-    // 1) Test sensors (ghosts) first with up-to-date world transform.
     MaskedRayResultCallback sensorCallback(rayFrom, rayTo, excludeNode);
-    sensorCallback.m_collisionFilterGroup = btBroadphaseProxy::DefaultFilter | btBroadphaseProxy::SensorTrigger;
-    sensorCallback.m_collisionFilterMask = rayMask;
-    int n = dynamicsWorld->getNumCollisionObjects();
-    for (int i = 0; i < n; ++i) {
-        btCollisionObject* colObj = dynamicsWorld->getCollisionObjectArray()[i];
-        btBroadphaseProxy* proxy = colObj->getBroadphaseHandle();
-        if (!proxy || !(proxy->m_collisionFilterGroup & btBroadphaseProxy::SensorTrigger))
-            continue;
-        const btCollisionShape* shape = colObj->getCollisionShape();
-        if (!shape) continue;
-        btTransform ghostWorldTrans = colObj->getWorldTransform();
-        void* userPtr = colObj->getUserPointer();
-        if (userPtr) {
-            Area3DComponent* areaComp = static_cast<Area3DComponent*>(userPtr);
-            if (areaComp && areaComp->getOwner()) {
-                glm::mat4 worldMat = areaComp->getOwner()->getWorldMatrix();
-                glm::vec3 pos = glm::vec3(worldMat[3]);
-                glm::mat3 rotMat = glm::mat3(worldMat);
-                glm::quat q = glm::quat_cast(rotMat);
-                ghostWorldTrans.setOrigin(btVector3(pos.x, pos.y, pos.z));
-                ghostWorldTrans.setRotation(btQuaternion(q.x, q.y, q.z, q.w));
+    if (includeSensors) {
+        // Optional: test trigger volumes (Area3D ghosts) when SensorTrigger is in the mask.
+        sensorCallback.m_collisionFilterGroup = btBroadphaseProxy::DefaultFilter | btBroadphaseProxy::SensorTrigger;
+        sensorCallback.m_collisionFilterMask = rayMask;
+        int n = dynamicsWorld->getNumCollisionObjects();
+        for (int i = 0; i < n; ++i) {
+            btCollisionObject* colObj = dynamicsWorld->getCollisionObjectArray()[i];
+            btBroadphaseProxy* proxy = colObj->getBroadphaseHandle();
+            if (!proxy || !(proxy->m_collisionFilterGroup & btBroadphaseProxy::SensorTrigger))
+                continue;
+            const btCollisionShape* shape = colObj->getCollisionShape();
+            if (!shape) continue;
+            btTransform ghostWorldTrans = colObj->getWorldTransform();
+            void* userPtr = colObj->getUserPointer();
+            if (userPtr) {
+                Area3DComponent* areaComp = static_cast<Area3DComponent*>(userPtr);
+                if (areaComp && areaComp->getOwner()) {
+                    glm::vec3 pos = glm::vec3(areaComp->getOwner()->getWorldMatrix()[3]);
+                    glm::quat q = areaComp->getOwner()->getWorldRotation();
+                    ghostWorldTrans.setOrigin(btVector3(pos.x, pos.y, pos.z));
+                    ghostWorldTrans.setRotation(btQuaternion(q.x, q.y, q.z, q.w));
+                }
             }
+            btCollisionWorld::rayTestSingle(rayFromTrans, rayToTrans, colObj,
+                shape, ghostWorldTrans, sensorCallback);
         }
-        btCollisionWorld::rayTestSingle(rayFromTrans, rayToTrans, colObj,
-            shape, ghostWorldTrans, sensorCallback);
     }
 
-    // 2) Test rigid bodies.
+    // Test rigid bodies only, triggers must not block movement raycasts.
     MaskedRayResultCallback rigidCallback(rayFrom, rayTo, excludeNode);
+    rigidCallback.rigidBodiesOnly = true;
     rigidCallback.m_collisionFilterGroup = btBroadphaseProxy::DefaultFilter | btBroadphaseProxy::SensorTrigger;
     rigidCallback.m_collisionFilterMask = rayMask;
     dynamicsWorld->rayTest(rayFrom, rayTo, rigidCallback);
 
-    // 3) Take the closest hit.
     const MaskedRayResultCallback* callback = nullptr;
-    if (sensorCallback.hasHit() && rigidCallback.hasHit()) {
+    if (includeSensors && sensorCallback.hasHit() && rigidCallback.hasHit()) {
         callback = (sensorCallback.m_closestHitFraction <= rigidCallback.m_closestHitFraction)
             ? &sensorCallback : &rigidCallback;
-    } else if (sensorCallback.hasHit()) {
+    } else if (includeSensors && sensorCallback.hasHit()) {
         callback = &sensorCallback;
     } else if (rigidCallback.hasHit()) {
         callback = &rigidCallback;
@@ -568,6 +660,9 @@ bool PhysicsManager::raycastFromTo(const glm::vec3& from, const glm::vec3& to, i
         Component* comp = static_cast<Component*>(obj->getUserPointer());
         if (comp && comp->getOwner())
             hitNodeName = comp->getOwner()->getName();
+    }
+    if (outSurfaceFriction) {
+        *outSurfaceFriction = surfaceFrictionFromCollisionObject(obj);
     }
     return true;
 }

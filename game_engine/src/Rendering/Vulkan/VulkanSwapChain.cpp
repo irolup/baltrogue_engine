@@ -82,7 +82,6 @@ void VulkanSwapChain::recreateSwapChain(VulkanResources& vulkanResources) {
     cleanupSwapChain();
     createSwapChain();
     createImageViews();
-    vulkanResources.createColorResources();
     vulkanResources.createDepthResources();
 }
 

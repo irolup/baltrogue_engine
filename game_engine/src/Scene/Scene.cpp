@@ -1,8 +1,10 @@
 #include "Scene/Scene.h"
 #include "Scene/SceneNode.h"
+#include "Scene/SceneScriptRuntime.h"
 #include "Rendering/Renderer.h"
 #include "Components/CameraComponent.h"
 #include "Components/SkyboxComponent.h"
+#include "Components/ScriptComponent.h"
 #include "Core/Engine.h"
 
 namespace GameEngine {
@@ -12,9 +14,27 @@ Scene::Scene(const std::string& name)
     , nodeCounter(0)
 {
     rootNode = std::make_shared<SceneNode>("Root");
+    rootNode->setOwningScene(this);
+    registerNode(rootNode);
 }
 
 Scene::~Scene() {
+    clearNodeNameIndex();
+    releaseScriptRuntime();
+}
+
+SceneScriptRuntime& Scene::getScriptRuntime() {
+    if (!scriptRuntime_) {
+        scriptRuntime_.reset(new SceneScriptRuntime());
+    }
+    return *scriptRuntime_;
+}
+
+void Scene::releaseScriptRuntime() {
+    if (scriptRuntime_) {
+        scriptRuntime_->shutdown();
+        scriptRuntime_.reset();
+    }
 }
 
 std::shared_ptr<SceneNode> Scene::createNode(const std::string& nodeName) {
@@ -56,14 +76,113 @@ void Scene::processPendingRemovals() {
     pendingNodeRemovals.clear();
 }
 
+void Scene::registerNode(const std::shared_ptr<SceneNode>& node) {
+    if (!node) {
+        return;
+    }
+    auto it = nodeByName_.find(node->getName());
+    if (it == nodeByName_.end() || it->second.expired()) {
+        nodeByName_[node->getName()] = node;
+    }
+}
+
+void Scene::unregisterNode(const std::shared_ptr<SceneNode>& node) {
+    if (!node) {
+        return;
+    }
+    auto it = nodeByName_.find(node->getName());
+    if (it == nodeByName_.end()) {
+        return;
+    }
+    auto locked = it->second.lock();
+    if (!locked || locked.get() == node.get()) {
+        nodeByName_.erase(it);
+    }
+}
+
+void Scene::registerNodeTree(const std::shared_ptr<SceneNode>& node) {
+    if (!node) {
+        return;
+    }
+    registerNode(node);
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        registerNodeTree(node->getChild(i));
+    }
+}
+
+void Scene::unregisterNodeTree(const std::shared_ptr<SceneNode>& node) {
+    if (!node) {
+        return;
+    }
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        unregisterNodeTree(node->getChild(i));
+    }
+    unregisterNode(node);
+}
+
+void Scene::onNodeRenamed(SceneNode* node, const std::string& oldName, const std::string& newName) {
+    if (!node || oldName == newName) {
+        return;
+    }
+
+    auto it = nodeByName_.find(oldName);
+    if (it != nodeByName_.end()) {
+        auto locked = it->second.lock();
+        if (!locked || locked.get() == node) {
+            nodeByName_.erase(it);
+        }
+    }
+
+    std::shared_ptr<SceneNode> shared;
+    if (node->getParent()) {
+        SceneNode* parent = node->getParent();
+        for (size_t i = 0; i < parent->getChildCount(); ++i) {
+            auto child = parent->getChild(i);
+            if (child.get() == node) {
+                shared = child;
+                break;
+            }
+        }
+    } else if (rootNode.get() == node) {
+        shared = rootNode;
+    }
+
+    if (!shared) {
+        return;
+    }
+
+    auto existingNew = nodeByName_.find(newName);
+    if (existingNew == nodeByName_.end() || existingNew->second.expired()) {
+        nodeByName_[newName] = shared;
+    }
+}
+
+void Scene::clearNodeNameIndex() {
+    nodeByName_.clear();
+}
+
 std::shared_ptr<SceneNode> Scene::findNode(const std::string& nodeName) {
-    if (!rootNode) return nullptr;
-    
+    auto it = nodeByName_.find(nodeName);
+    if (it != nodeByName_.end()) {
+        if (auto node = it->second.lock()) {
+            return node;
+        }
+        nodeByName_.erase(it);
+    }
+
+    // Fallback for any node that missed index registration
+    if (!rootNode) {
+        return nullptr;
+    }
     if (rootNode->getName() == nodeName) {
+        registerNode(rootNode);
         return rootNode;
     }
-    
-    return rootNode->findByName(nodeName, true);
+    auto found = rootNode->findByName(nodeName, true);
+    if (found) {
+        registerNode(found);
+    }
+    return found;
 }
 
 std::vector<std::shared_ptr<SceneNode>> Scene::findNodesByTag(const std::string& tag) {
@@ -73,7 +192,9 @@ std::vector<std::shared_ptr<SceneNode>> Scene::findNodesByTag(const std::string&
 }
 
 void Scene::start() {
+    suspended_ = false;
     if (rootNode) {
+        assignScriptComponentsToScene(rootNode);
         rootNode->start();
     }
 }
@@ -98,6 +219,7 @@ void Scene::lateUpdate(float deltaTime) {
 }
 
 void Scene::destroy() {
+    suspended_ = false;
     if (rootNode) {
         std::function<void(std::shared_ptr<SceneNode>)> destroyNode = 
             [&](std::shared_ptr<SceneNode> node) {
@@ -109,13 +231,67 @@ void Scene::destroy() {
                 
                 const auto& components = node->getAllComponents();
                 for (const auto& component : components) {
-                    if (component && component->isEnabled()) {
+                    if (component) {
                         component->destroy();
                     }
                 }
             };
         
         destroyNode(rootNode);
+    }
+}
+
+void Scene::restart() {
+    destroy();
+    prepareComponentsForRestart(rootNode);
+    start();
+}
+
+void Scene::suspend() {
+    suspended_ = true;
+    if (rootNode) {
+        rootNode->suspend();
+    }
+}
+
+void Scene::resume() {
+    suspended_ = false;
+    if (rootNode) {
+        assignScriptComponentsToScene(rootNode);
+        rootNode->resume();
+    }
+}
+
+void Scene::prepareComponentsForRestart(const std::shared_ptr<SceneNode>& node) {
+    if (!node) {
+        return;
+    }
+
+    const auto& components = node->getAllComponents();
+    for (const auto& component : components) {
+        if (component) {
+            component->prepareForRestart();
+        }
+    }
+
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        prepareComponentsForRestart(node->getChild(i));
+    }
+}
+
+void Scene::assignScriptComponentsToScene(const std::shared_ptr<SceneNode>& node) {
+    if (!node) {
+        return;
+    }
+
+    for (const auto& component : node->getAllComponents()) {
+        if (component && component->getTypeName() == ScriptComponent::StaticTypeName()) {
+            static_cast<ScriptComponent*>(component.get())->setOwningScene(this);
+        }
+    }
+
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        assignScriptComponentsToScene(node->getChild(i));
     }
 }
 
@@ -169,6 +345,10 @@ void Scene::setActiveCamera(std::shared_ptr<SceneNode> cameraNode) {
         renderer.setActiveCamera(cameraComponent);
         
         cameraComponent->setActive(true);
+    } else if (!cameraNode) {
+        activeCamera.reset();
+        auto& renderer = GetEngine().getRenderer();
+        renderer.setActiveCamera(nullptr);
     }
 }
 

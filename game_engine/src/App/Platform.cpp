@@ -114,7 +114,7 @@
     #endif
         
         #ifdef EDITOR_BUILD
-        window = glfwCreateWindow(VITA_WIDTH, VITA_HEIGHT, "Editor", nullptr, nullptr);
+        window = glfwCreateWindow(EDITOR_WINDOW_WIDTH, EDITOR_WINDOW_HEIGHT, "Editor", nullptr, nullptr);
         #elif defined(LINUX_BUILD)
         window = glfwCreateWindow(VITA_WIDTH, VITA_HEIGHT, "Linux Build", nullptr, nullptr);
         #elif defined(VITA_BUILD)
@@ -206,6 +206,12 @@
     void platformSleep(int microseconds) {
         usleep(microseconds);
     }
+
+    void platformWaitForGpuIdle() {
+#ifndef ENABLE_VULKAN
+        glFinish();
+#endif
+    }
     
 #else
     // Vita implementations
@@ -234,5 +240,9 @@
     
     void platformSleep(int microseconds) {
         sceKernelDelayThread(microseconds);
+    }
+
+    void platformWaitForGpuIdle() {
+        glFinish();
     }
 #endif

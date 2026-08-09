@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 #include "Scene/Scene.h"
 #include "../../vendor/json/single_include/nlohmann/json.hpp"
 
@@ -46,15 +47,17 @@ public:
 
     static std::shared_ptr<SceneNode> duplicateNodeSubtree(std::shared_ptr<SceneNode> node);
 
+    static nlohmann::json serializeNodeToJson(std::shared_ptr<SceneNode> node);
+    static std::shared_ptr<SceneNode> deserializeNodeFromJson(const nlohmann::json& nodeJson);
+
 private:
     static std::vector<std::shared_ptr<SceneNode>> getAllSceneNodesFromScene(std::shared_ptr<Scene> scene);
     static void collectAllNodesRecursive(std::shared_ptr<SceneNode> node, std::vector<std::shared_ptr<SceneNode>>& allNodes);
     static std::string sanitizeNodeName(const std::string& name);
-    
-    static nlohmann::json serializeNodeToJson(std::shared_ptr<SceneNode> node);
-    static std::shared_ptr<SceneNode> deserializeNodeFromJson(const nlohmann::json& nodeJson);
     static std::string serializeSceneToJson(std::shared_ptr<Scene> scene);
-    static std::shared_ptr<Scene> deserializeSceneFromJson(const std::string& jsonData);
+    static std::shared_ptr<Scene> deserializeSceneFromJson(const nlohmann::json& sceneJson);
+    static std::shared_ptr<Scene> deserializeSceneFromJsonText(const std::string& jsonData);
+    static std::shared_ptr<Scene> loadSceneFromBytes(const std::vector<uint8_t>& fileBytes, const std::string& sourceLabel);
 };
 
 } // namespace GameEngine

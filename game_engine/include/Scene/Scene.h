@@ -4,11 +4,16 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <glm/glm.hpp>
 #include "Scene/SceneNode.h"
 #include "Rendering/IRenderer.h"
 
+struct lua_State;
+
 namespace GameEngine {
+
+class SceneScriptRuntime;
 
 class Renderer;
 class Camera;
@@ -28,6 +33,11 @@ public:
     
     std::shared_ptr<SceneNode> findNode(const std::string& name);
     std::vector<std::shared_ptr<SceneNode>> findNodesByTag(const std::string& tag);
+
+    void registerNodeTree(const std::shared_ptr<SceneNode>& node);
+    void unregisterNodeTree(const std::shared_ptr<SceneNode>& node);
+    void onNodeRenamed(SceneNode* node, const std::string& oldName, const std::string& newName);
+    void clearNodeNameIndex();
     
     void start();
     void update(float deltaTime);
@@ -35,9 +45,25 @@ public:
     void lateUpdate(float deltaTime);
     void render(IRenderer& renderer);
     void destroy();
-    
+    void restart();
+    void suspend();
+    void resume();
+
     const std::string& getName() const { return name; }
     void setName(const std::string& newName) { name = newName; }
+
+    const std::string& getSourceFilepath() const { return sourceFilepath; }
+    void setSourceFilepath(const std::string& filepath) { sourceFilepath = filepath; }
+
+    SceneScriptRuntime& getScriptRuntime();
+
+    SceneScriptRuntime* getScriptRuntimeIfExists() const { return scriptRuntime_.get(); }
+    void releaseScriptRuntime();
+
+    bool hasEverStarted() const { return hasEverStarted_; }
+    void markEverStarted() { hasEverStarted_ = true; }
+
+    bool isSuspended() const { return suspended_; }
     
     std::shared_ptr<SceneNode> getActiveCamera() const { return activeCamera.lock(); }
     void setActiveCamera(std::shared_ptr<SceneNode> cameraNode);
@@ -58,10 +84,17 @@ public:
     
 private:
     std::string name;
+    std::string sourceFilepath;
+    // Declared before rootNode so it is destroyed after the node tree
+    // ScriptComponent destructors unload their scripts through this runtime.
+    std::unique_ptr<SceneScriptRuntime> scriptRuntime_;
     std::shared_ptr<SceneNode> rootNode;
+    bool hasEverStarted_ = false;
+    bool suspended_ = false;
     std::weak_ptr<SceneNode> activeCamera;
     std::weak_ptr<SceneNode> activeSkybox;
     std::weak_ptr<SceneNode> selectedNode;
+    std::unordered_map<std::string, std::weak_ptr<SceneNode>> nodeByName_;
     
     size_t nodeCounter;
     std::vector<std::string> pendingNodeRemovals;
@@ -69,6 +102,10 @@ private:
     std::string generateUniqueName(const std::string& baseName);
     size_t countNodes(const std::shared_ptr<SceneNode>& node) const;
     void processPendingRemovals();
+    void prepareComponentsForRestart(const std::shared_ptr<SceneNode>& node);
+    void assignScriptComponentsToScene(const std::shared_ptr<SceneNode>& node);
+    void registerNode(const std::shared_ptr<SceneNode>& node);
+    void unregisterNode(const std::shared_ptr<SceneNode>& node);
 };
 
 } // namespace GameEngine

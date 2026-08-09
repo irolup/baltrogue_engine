@@ -27,6 +27,7 @@ namespace GameEngine {
 namespace GameEngine {
 
 class PhysicsComponent;
+class JointComponent;
 
 
 class PhysicsManager {
@@ -63,6 +64,7 @@ public:
     btCollisionShape* createSphereShape(float radius);
     btCollisionShape* createCapsuleShape(float radius, float height);
     btCollisionShape* createCylinderShape(const glm::vec3& halfExtents);
+    btCollisionShape* createRampShape(const glm::vec3& halfExtents);
     btCollisionShape* createPlaneShape(const glm::vec3& normal, float constant);
     
     // Debug drawing
@@ -79,6 +81,11 @@ public:
     // Physics component registration
     void registerPhysicsComponent(PhysicsComponent* component);
     void unregisterPhysicsComponent(PhysicsComponent* component);
+
+    void registerJointComponent(JointComponent* component);
+    void unregisterJointComponent(JointComponent* component);
+    // Release any joint constraints referencing this body before it is deleted
+    void notifyRigidBodyDestroyed(btRigidBody* body);
     
     void raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
                  std::string& hitNodeName, glm::vec3& hitPoint, float& hitDistance);
@@ -88,13 +95,16 @@ public:
 
     bool raycastGround(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
                        const std::string& excludeNodeName, const std::string& excludeNodeName2,
-                       glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance);
+                       glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance,
+                       std::string* outHitNodeName = nullptr,
+                       float* outSurfaceFriction = nullptr);
 
     bool raycastFromTo(const glm::vec3& from, const glm::vec3& to, int collisionFilterMask,
-                       bool& hit, std::string& hitNodeName, glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance);
+                       bool& hit, std::string& hitNodeName, glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance,
+                       float* outSurfaceFriction = nullptr);
     bool raycastFromTo(const glm::vec3& from, const glm::vec3& to, int collisionFilterMask,
                        bool& hit, std::string& hitNodeName, glm::vec3& hitPoint, glm::vec3& hitNormal, float& hitDistance,
-                       class SceneNode* excludeNode);
+                       class SceneNode* excludeNode, float* outSurfaceFriction = nullptr);
 
 private:
     PhysicsManager();
@@ -111,6 +121,7 @@ private:
     
     // Physics components
     std::vector<PhysicsComponent*> physicsComponents;
+    std::vector<JointComponent*> jointComponents;
     
     // Debug drawing
     bool debugDrawEnabled;

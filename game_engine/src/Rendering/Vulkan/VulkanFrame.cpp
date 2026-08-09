@@ -3,6 +3,7 @@
 #include "Rendering/IRenderer.h"
 #include "Rendering/RenderBackend.h"
 #include "Scene/Scene.h"
+#include "Core/Engine.h"
 #include "Rendering/Vulkan/VulkanRenderer.h"
 #include "Rendering/RenderTypes.h"
 
@@ -59,10 +60,30 @@ void VulkanFrame::renderScene() {
     scene_->render(*renderer_);
 }
 
+void VulkanFrame::waitUntilIdle() {
+    if (!device_) {
+        return;
+    }
+
+    for (const auto& fence : inFlightFences_) {
+        if (*fence) {
+            (void)device_->getDevice().waitForFences({*fence}, VK_TRUE, UINT64_MAX);
+        }
+    }
+    for (const auto& fence : imagesInFlight_) {
+        if (fence != vk::Fence{}) {
+            (void)device_->getDevice().waitForFences({fence}, VK_TRUE, UINT64_MAX);
+        }
+    }
+    device_->getDevice().waitIdle();
+}
+
 void VulkanFrame::drawFrame() {
     if (!renderer_) {
         return;
     }
+
+    GetEngine().getSceneManager().flushDeferredGpuRelease();
     if (presentWaitSemaphores_.empty()) {
         throw std::runtime_error("VulkanFrame: present wait semaphores not initialized");
     }
@@ -91,6 +112,7 @@ void VulkanFrame::drawFrame() {
         device_->getDevice().waitIdle();
         swapChain_->recreateSwapChain(*resources_);
         resources_->createUniformBuffers(sizeof(PerFrameUniforms));
+        resources_->createAnimationUniformBuffers();
         pipeline_->recreateDescriptorSets();
         createSwapchainSyncObjects();
         frameIndex_ = 0;
@@ -103,6 +125,7 @@ void VulkanFrame::drawFrame() {
         device_->getDevice().waitIdle();
         swapChain_->recreateSwapChain(*resources_);
         resources_->createUniformBuffers(sizeof(PerFrameUniforms));
+        resources_->createAnimationUniformBuffers();
         pipeline_->recreateDescriptorSets();
         createSwapchainSyncObjects();
         frameIndex_ = 0;
@@ -145,6 +168,11 @@ void VulkanFrame::drawFrame() {
     vk::CommandBufferBeginInfo beginInfo{};
     beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
     cmdBuf.begin(beginInfo);
+
+    // Shadow atlas first: the lit pass samples it. No-op when nothing casts
+    if (vulkanRenderer_) {
+        vulkanRenderer_->recordShadowPass(static_cast<vk::CommandBuffer>(*cmdBuf), imageIndex);
+    }
 
     vk::ImageMemoryBarrier swapchainToColor{};
     swapchainToColor.oldLayout = swapchainImagePresented_[imageIndex] ? vk::ImageLayout::ePresentSrcKHR : vk::ImageLayout::eUndefined;
@@ -255,6 +283,7 @@ void VulkanFrame::drawFrame() {
         device_->getDevice().waitIdle();
         swapChain_->recreateSwapChain(*resources_);
         resources_->createUniformBuffers(sizeof(PerFrameUniforms));
+        resources_->createAnimationUniformBuffers();
         pipeline_->recreateDescriptorSets();
         createSwapchainSyncObjects();
         frameIndex_ = 0;
@@ -264,6 +293,7 @@ void VulkanFrame::drawFrame() {
         device_->getDevice().waitIdle();
         swapChain_->recreateSwapChain(*resources_);
         resources_->createUniformBuffers(sizeof(PerFrameUniforms));
+        resources_->createAnimationUniformBuffers();
         pipeline_->recreateDescriptorSets();
         createSwapchainSyncObjects();
         frameIndex_ = 0;

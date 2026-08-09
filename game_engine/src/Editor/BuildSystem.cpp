@@ -1,6 +1,7 @@
 #ifdef LINUX_BUILD
 
 #include "Editor/BuildSystem.h"
+#include "Editor/BuildSettings.h"
 #include <iostream>
 
 namespace GameEngine {
@@ -13,8 +14,11 @@ void BuildSystem::buildForLinux() {
     int result = system("make linux");
     
     if (result == 0) {
+        BuildSettings settings;
+        settings.load();
+
         std::cout << "Linux build completed successfully!" << std::endl;
-        std::cout << "Executable created at: build_linux/first_game" << std::endl;
+        std::cout << "Executable created at: build_linux/" << settings.pc.executableName << std::endl;
     } else {
         std::cerr << "Linux build failed with error code: " << result << std::endl;
         std::cerr << "Check that all dependencies are installed: libglfw3-dev, libglew-dev, libpng-dev" << std::endl;
@@ -29,8 +33,11 @@ void BuildSystem::buildForVita() {
     int result = system("make vita");
     
     if (result == 0) {
+        BuildSettings settings;
+        settings.load();
+
         std::cout << "Vita VPK build completed successfully!" << std::endl;
-        std::cout << "VPK created at: build/first_game.vpk" << std::endl;
+        std::cout << "VPK created at: build/" << settings.vita.vpkName << ".vpk" << std::endl;
         std::cout << "Install on Vita using VitaShell or similar homebrew" << std::endl;
     } else {
         std::cerr << "Vita VPK build failed with error code: " << result << std::endl;

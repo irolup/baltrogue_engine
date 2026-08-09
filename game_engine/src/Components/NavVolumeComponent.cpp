@@ -25,8 +25,8 @@ void NavVolumeComponent::start() {
     if (!owner) return;
     if (!grid_) {
         grid_ = std::unique_ptr<NavGrid>(new NavGrid());
-        NavGridRegistry::get().addGrid(grid_.get());
     }
+    NavGridRegistry::get().addGrid(grid_.get());
     syncToNavGrid();
 }
 
@@ -34,6 +34,14 @@ void NavVolumeComponent::destroy() {
     if (grid_) {
         NavGridRegistry::get().removeGrid(grid_.get());
     }
+}
+
+void NavVolumeComponent::suspend() {
+    destroy();
+}
+
+void NavVolumeComponent::resume() {
+    start();
 }
 
 void NavVolumeComponent::syncToNavGrid() {

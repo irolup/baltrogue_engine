@@ -27,10 +27,12 @@ JointComponent::JointComponent()
 
 JointComponent::~JointComponent() {
     destroyConstraint();
+    PhysicsManager::getInstance().unregisterJointComponent(this);
 }
 
 void JointComponent::start() {
     if (!enabled || bodyAName.empty() || bodyBName.empty()) return;
+    PhysicsManager::getInstance().registerJointComponent(this);
     createConstraint();
     if (!constraint) constraintCreatePending = true;
 }
@@ -45,6 +47,25 @@ void JointComponent::update(float deltaTime) {
 
 void JointComponent::destroy() {
     destroyConstraint();
+    PhysicsManager::getInstance().unregisterJointComponent(this);
+}
+
+void JointComponent::suspend() {
+    destroyConstraint();
+}
+
+void JointComponent::resume() {
+    start();
+}
+
+void JointComponent::releaseConstraintForBody(btRigidBody* body) {
+    if (!constraint || !body) {
+        return;
+    }
+    if (&constraint->getRigidBodyA() == body || &constraint->getRigidBodyB() == body) {
+        destroyConstraint();
+        constraintCreatePending = true;
+    }
 }
 
 void JointComponent::setBodyA(const std::string& nodeName) {

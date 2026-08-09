@@ -73,42 +73,10 @@ function update(deltaTime)
         return
     end
     
-    local playerBodies = playerArea3D.getBodiesInArea()
-    local speedBodies = speedArea3D.getBodiesInArea()
-    
-    if type(playerBodies) ~= "table" then
-        print("ERROR: playerBodies is not a table! Value: " .. tostring(playerBodies))
-        return
-    end
-    if type(speedBodies) ~= "table" then
-        print("ERROR: speedBodies is not a table! Value: " .. tostring(speedBodies))
-        return
-    end
-
-    local playerHasSpeed = false
-    local speedHasPlayer = false
-
-    if playerArea3D.isBodyInArea(speedAreaNodeName) then
-        playerHasSpeed = true
-    end
-    
-    for i = 1, #playerBodies do
-        if playerBodies[i] == speedAreaNodeName then
-            playerHasSpeed = true
-            break
-        end
-    end
-
-    if speedArea3D.isBodyInArea(playerAreaNodeName) then
-        speedHasPlayer = true
-    end
-
-    for i = 1, #speedBodies do
-        if speedBodies[i] == playerAreaNodeName then
-            speedHasPlayer = true
-            break
-        end
-    end
+    -- isBodyInArea already answers both directions; fetching and scanning
+    -- getBodiesInArea as well duplicated the same check every frame.
+    local playerHasSpeed = playerArea3D.isBodyInArea(speedAreaNodeName)
+    local speedHasPlayer = speedArea3D.isBodyInArea(playerAreaNodeName)
 
     local collisionDetected = playerHasSpeed or speedHasPlayer
     

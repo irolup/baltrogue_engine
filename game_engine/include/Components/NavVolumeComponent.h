@@ -18,6 +18,8 @@ public:
 
     virtual void start() override;
     virtual void destroy() override;
+    virtual void suspend() override;
+    virtual void resume() override;
 
     void setGridSizeX(int n) { gridSizeX_ = n; }
     void setGridSizeZ(int n) { gridSizeZ_ = n; }

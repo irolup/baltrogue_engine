@@ -143,6 +143,46 @@
                 "lineSpacing": 1.2000000476837158,
                 "renderMode": "SCREEN_SPACE",
                 "scale": 1.0,
+                "text": "Controls",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "MainMenuControls",
+            "transform": {
+              "position": [
+                0.0,
+                -4.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                -0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 32.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
                 "text": "Quit",
                 "type": "TextComponent"
               }
@@ -206,6 +246,167 @@
               ]
             },
             "visible": true
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [1.0, 1.0, 1.0, 1.0],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 36.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "Controls",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "ControlsPanelTitle",
+            "transform": {
+              "position": [0.0, 6.0, 0.0],
+              "rotation": [0.0, -0.0, 0.0],
+              "scale": [1.0, 1.0, 1.0]
+            },
+            "visible": false
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [1.0, 1.0, 1.0, 1.0],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 24.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "ControlsPanelLine1",
+            "transform": {
+              "position": [0.0, 3.5, 0.0],
+              "rotation": [0.0, -0.0, 0.0],
+              "scale": [1.0, 1.0, 1.0]
+            },
+            "visible": false
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [1.0, 1.0, 1.0, 1.0],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 24.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "ControlsPanelLine2",
+            "transform": {
+              "position": [0.0, 2.0, 0.0],
+              "rotation": [0.0, -0.0, 0.0],
+              "scale": [1.0, 1.0, 1.0]
+            },
+            "visible": false
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [1.0, 1.0, 1.0, 1.0],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 24.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "ControlsPanelLine3",
+            "transform": {
+              "position": [0.0, 0.5, 0.0],
+              "rotation": [0.0, -0.0, 0.0],
+              "scale": [1.0, 1.0, 1.0]
+            },
+            "visible": false
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [1.0, 1.0, 1.0, 1.0],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 24.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "ControlsPanelLine4",
+            "transform": {
+              "position": [0.0, -1.0, 0.0],
+              "rotation": [0.0, -0.0, 0.0],
+              "scale": [1.0, 1.0, 1.0]
+            },
+            "visible": false
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [1.0, 1.0, 1.0, 1.0],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 24.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "ControlsPanelLine5",
+            "transform": {
+              "position": [0.0, -2.5, 0.0],
+              "rotation": [0.0, -0.0, 0.0],
+              "scale": [1.0, 1.0, 1.0]
+            },
+            "visible": false
+          },
+          {
+            "active": true,
+            "components": [
+              {
+                "alignment": "CENTER",
+                "color": [1.0, 1.0, 1.0, 1.0],
+                "fontPath": "assets/fonts/DroidSans.ttf",
+                "fontSize": 20.0,
+                "lineSpacing": 1.2000000476837158,
+                "renderMode": "SCREEN_SPACE",
+                "scale": 1.0,
+                "text": "",
+                "type": "TextComponent"
+              }
+            ],
+            "name": "ControlsPanelBack",
+            "transform": {
+              "position": [0.0, -6.0, 0.0],
+              "rotation": [0.0, -0.0, 0.0],
+              "scale": [1.0, 1.0, 1.0]
+            },
+            "visible": false
           }
         ],
         "components": [

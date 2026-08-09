@@ -49,12 +49,16 @@
 #define VITA_WIDTH 960
 #define VITA_HEIGHT 544
 
+#define EDITOR_WINDOW_WIDTH 1920
+#define EDITOR_WINDOW_HEIGHT 1080
+
 // Platform-specific function declarations
 bool platformInit();
 void platformShutdown();
 void platformPollInput(SceCtrlData& pad);
 void platformSwapBuffers();
 void platformSetVSync(bool enabled);
+void platformWaitForGpuIdle();
 float platformGetTime(); // Returns time in seconds
 void platformSleep(int microseconds);
 

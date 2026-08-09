@@ -1,4 +1,5 @@
 #include "Editor/SceneSerializer.h"
+#include "Scene/SceneBinaryFormat.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneNode.h"
 #include "Components/CameraComponent.h"
@@ -127,19 +128,22 @@ std::string SceneSerializer::generateGameMainContent(std::shared_ptr<Scene> scen
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Rendering/TextureManager.h"
+#include "Editor/BuildSettings.h"
 #include <iostream>
 
 using namespace GameEngine;
 
 int main() {
     Engine engine;
-    
+
     if (!engine.initialize()) {
         std::cerr << "Failed to initialize game engine!" << std::endl;
         return -1;
     }
-    
-    engine.setWindowTitle("Game Engine - Linux Game Build");
+
+    BuildSettings buildSettings;
+    buildSettings.load();
+    engine.setWindowTitle(buildSettings.pc.title);
     
 #ifndef VITA_BUILD
     engine.getInputManager().setEditorMode(true);
@@ -308,7 +312,11 @@ int main() {
                             break;
                         case MeshType::CYLINDER:
                             meshType = "Cylinder";
-                            meshCreationCode = "Mesh::createCylinder(0.5f, 1.0f)";
+                            meshCreationCode = "Mesh::createCylinder(0.5f, 0.5f)";
+                            break;
+                        case MeshType::RAMP:
+                            meshType = "Ramp";
+                            meshCreationCode = "Mesh::createRamp()";
                             break;
                         case MeshType::LINE:
                             meshType = "Line";
@@ -521,6 +529,9 @@ int main() {
                         break;
                     case CollisionShapeType::CYLINDER:
                         content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::CYLINDER);\n";
+                        break;
+                    case CollisionShapeType::RAMP:
+                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::RAMP);\n";
                         break;
                     case CollisionShapeType::PLANE:
                         content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::PLANE);\n";
@@ -1030,7 +1041,11 @@ int main() {
                             break;
                         case MeshType::CYLINDER:
                             meshType = "Cylinder";
-                            meshCreationCode = "Mesh::createCylinder(0.5f, 1.0f)";
+                            meshCreationCode = "Mesh::createCylinder(0.5f, 0.5f)";
+                            break;
+                        case MeshType::RAMP:
+                            meshType = "Ramp";
+                            meshCreationCode = "Mesh::createRamp()";
                             break;
                         case MeshType::LINE:
                             meshType = "Line";
@@ -1238,6 +1253,9 @@ int main() {
                         break;
                     case CollisionShapeType::CYLINDER:
                         content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::CYLINDER);\n";
+                        break;
+                    case CollisionShapeType::RAMP:
+                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::RAMP);\n";
                         break;
                     case CollisionShapeType::PLANE:
                         content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::PLANE);\n";
@@ -1644,91 +1662,68 @@ bool SceneSerializer::saveSceneToFile(std::shared_ptr<Scene> scene, const std::s
 }
 
 std::shared_ptr<Scene> SceneSerializer::loadSceneFromFile(const std::string& filepath) {
+    const std::string loadPath = SceneBinaryFormat::resolveSceneLoadPath(filepath);
+    std::vector<uint8_t> fileBytes;
+    if (!SceneBinaryFormat::readFileBytes(loadPath, fileBytes) || fileBytes.empty()) {
 #ifdef VITA_BUILD
-    // Vita build: no exception handling
-    std::string jsonData;
-    
-    // Convert filepath to Vita format (app0:/path for VPK files)
-    std::string vitaPath = filepath;
-    
-    // Check if path already has a device prefix (app0:, ux0:, ur0:, etc.)
-    if (filepath.find("app0:") == std::string::npos && 
-        filepath.find("ux0:") == std::string::npos && 
-        filepath.find("ur0:") == std::string::npos &&
-        filepath.find("uma0:") == std::string::npos &&
-        filepath.find("imc0:") == std::string::npos &&
-        filepath.find("xmc0:") == std::string::npos &&
-        filepath.find("vs0:") == std::string::npos &&
-        filepath.find("vd0:") == std::string::npos) {
-        // No device prefix found, prepend app0: for VPK access
-        vitaPath = "app0:/" + filepath;
-    }
-    
-    // Use Vita file I/O
-    SceUID fd = sceIoOpen(vitaPath.c_str(), SCE_O_RDONLY, 0);
-    if (fd < 0) {
-        printf("Failed to open file for reading: %s (tried: %s, error: 0x%08X)\n", filepath.c_str(), vitaPath.c_str(), fd);
+        printf("Failed to read scene file: %s (resolved: %s)\n", filepath.c_str(), loadPath.c_str());
+#else
+        std::cerr << "Failed to read scene file: " << filepath << " (resolved: " << loadPath << ")" << std::endl;
+#endif
         return nullptr;
     }
-    
-    // Get file size
-    SceIoStat stat;
-    if (sceIoGetstat(vitaPath.c_str(), &stat) < 0) {
-        sceIoClose(fd);
-        printf("Failed to get file stat: %s (tried: %s)\n", filepath.c_str(), vitaPath.c_str());
-        return nullptr;
-    }
-    
-    // Read file content
-    std::vector<char> buffer(stat.st_size);
-    SceSSize bytesRead = sceIoRead(fd, buffer.data(), stat.st_size);
-    sceIoClose(fd);
-    
-    if (bytesRead < 0) {
-        printf("Failed to read file: %s (tried: %s, error: 0x%08X)\n", filepath.c_str(), vitaPath.c_str(), bytesRead);
-        return nullptr;
-    }
-    
-    jsonData = std::string(buffer.data(), bytesRead);
-    
-    if (jsonData.empty()) {
-        printf("File is empty: %s (tried: %s)\n", filepath.c_str(), vitaPath.c_str());
-        return nullptr;
-    }
-    
-    std::shared_ptr<Scene> scene = deserializeSceneFromJson(jsonData);
+
+    std::shared_ptr<Scene> scene = loadSceneFromBytes(fileBytes, loadPath);
     if (scene) {
-        printf("Scene loaded successfully from: %s\n", vitaPath.c_str());
+#ifdef VITA_BUILD
+        printf("Scene loaded successfully from: %s\n", loadPath.c_str());
+#else
+        std::cout << "Scene loaded successfully from: " << loadPath << std::endl;
+#endif
     }
-    
+
     return scene;
+}
+
+std::shared_ptr<Scene> SceneSerializer::loadSceneFromBytes(const std::vector<uint8_t>& fileBytes, const std::string& sourceLabel) {
+    if (SceneBinaryFormat::isBinaryPayload(fileBytes)) {
+        json sceneJson = json::from_msgpack(
+            fileBytes.data() + 8,
+            fileBytes.data() + fileBytes.size()
+#ifdef VITA_BUILD
+            , false, false
+#endif
+        );
+
+#ifdef VITA_BUILD
+        if (sceneJson.is_discarded()) {
+            printf("SceneSerializer: Failed to decode binary scene: %s\n", sourceLabel.c_str());
+            return nullptr;
+        }
+#else
+        (void)sourceLabel;
+#endif
+
+        return deserializeSceneFromJson(sceneJson);
+    }
+
+    const std::string jsonText(fileBytes.begin(), fileBytes.end());
+    return deserializeSceneFromJsonText(jsonText);
+}
+
+std::shared_ptr<Scene> SceneSerializer::deserializeSceneFromJsonText(const std::string& jsonData) {
+#ifdef VITA_BUILD
+    json sceneJson = json::parse(jsonData.begin(), jsonData.end(), nullptr, false);
+    if (sceneJson.is_discarded()) {
+        return nullptr;
+    }
+    return deserializeSceneFromJson(sceneJson);
 #else
     try {
-        std::string jsonData;
-        
-        std::ifstream file(filepath);
-        if (!file.is_open()) {
-            std::cerr << "Failed to open file for reading: " << filepath << std::endl;
-            return nullptr;
-        }
-        
-        jsonData = std::string((std::istreambuf_iterator<char>(file)),
-                              std::istreambuf_iterator<char>());
-        file.close();
-        
-        if (jsonData.empty()) {
-            std::cerr << "File is empty: " << filepath << std::endl;
-            return nullptr;
-        }
-        
-        std::shared_ptr<Scene> scene = deserializeSceneFromJson(jsonData);
-        if (scene) {
-            std::cout << "Scene loaded successfully from: " << filepath << std::endl;
-        }
-        
-        return scene;
+        json sceneJson = json::parse(jsonData);
+        return deserializeSceneFromJson(sceneJson);
     } catch (const std::exception& e) {
-        std::cerr << "Error loading scene from file: " << e.what() << std::endl;
+        std::cerr << "Error parsing JSON: " << e.what() << std::endl;
         return nullptr;
     }
 #endif
@@ -1769,12 +1764,10 @@ std::string SceneSerializer::serializeSceneToJson(std::shared_ptr<Scene> scene) 
     return sceneJson.dump(2);
 }
 
-std::shared_ptr<Scene> SceneSerializer::deserializeSceneFromJson(const std::string& jsonData) {
+std::shared_ptr<Scene> SceneSerializer::deserializeSceneFromJson(const json& sceneJson) {
 #ifndef VITA_BUILD
     try {
 #endif
-        json sceneJson = json::parse(jsonData);
-        
         std::string sceneName = sceneJson.value("name", "Loaded Scene");
         auto scene = std::make_shared<Scene>(sceneName);
         
@@ -1831,11 +1824,6 @@ std::shared_ptr<Scene> SceneSerializer::deserializeSceneFromJson(const std::stri
             }
         }
         
-#ifdef VITA_BUILD
-        printf("Scene loaded successfully from: %s\n", sceneName.c_str());
-#else
-        std::cout << "Scene loaded successfully from: " << sceneName << std::endl;
-#endif
         return scene;
 #ifndef VITA_BUILD
     } catch (const json::exception& e) {
@@ -1901,6 +1889,7 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                                 case MeshType::SPHERE: meshType = "SPHERE"; break;
                                 case MeshType::CAPSULE: meshType = "CAPSULE"; break;
                                 case MeshType::CYLINDER: meshType = "CYLINDER"; break;
+                                case MeshType::RAMP: meshType = "RAMP"; break;
                                 case MeshType::LINE: meshType = "LINE"; break;
                                 case MeshType::BEAM: meshType = "BEAM"; break;
                                 default: meshType = "CUBE"; break;
@@ -1917,6 +1906,12 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             materialJson["metallic"] = material->getMetallic();
                             materialJson["roughness"] = material->getRoughness();
                             materialJson["reflectionStrength"] = material->getReflectionStrength();
+                            materialJson["opacity"] = material->getOpacity();
+                            materialJson["depthWrite"] = material->getDepthWrite();
+                            auto uvScale = material->getUVScale();
+                            auto uvOffset = material->getUVOffset();
+                            materialJson["uvScale"] = {uvScale.x, uvScale.y};
+                            materialJson["uvOffset"] = {uvOffset.x, uvOffset.y};
                             switch (material->getBlendMode()) {
                                 case BlendMode::Opaque:  materialJson["blendMode"] = "Opaque"; break;
                                 case BlendMode::Alpha:   materialJson["blendMode"] = "Alpha"; break;
@@ -1994,6 +1989,12 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             materialJson["metallic"] = material->getMetallic();
                             materialJson["roughness"] = material->getRoughness();
                             materialJson["reflectionStrength"] = material->getReflectionStrength();
+                            materialJson["opacity"] = material->getOpacity();
+                            materialJson["depthWrite"] = material->getDepthWrite();
+                            auto uvScale = material->getUVScale();
+                            auto uvOffset = material->getUVOffset();
+                            materialJson["uvScale"] = {uvScale.x, uvScale.y};
+                            materialJson["uvOffset"] = {uvOffset.x, uvOffset.y};
                             switch (material->getBlendMode()) {
                                 case BlendMode::Opaque:   materialJson["blendMode"] = "Opaque"; break;
                                 case BlendMode::Alpha:    materialJson["blendMode"] = "Alpha"; break;
@@ -2052,6 +2053,9 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                         componentJson["constant"] = lightComp->getConstant();
                         componentJson["linear"] = lightComp->getLinear();
                         componentJson["quadratic"] = lightComp->getQuadratic();
+                        componentJson["castShadows"] = lightComp->getCastShadows();
+                        componentJson["shadowStrength"] = lightComp->getShadowStrength();
+                        componentJson["shadowBias"] = lightComp->getShadowBias();
                     }
                 } else if (component->getTypeName() == "PhysicsComponent") {
                     auto physicsComp = node->getComponent<PhysicsComponent>();
@@ -2070,6 +2074,7 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             case CollisionShapeType::SPHERE: shapeType = "SPHERE"; break;
                             case CollisionShapeType::CAPSULE: shapeType = "CAPSULE"; break;
                             case CollisionShapeType::CYLINDER: shapeType = "CYLINDER"; break;
+                            case CollisionShapeType::RAMP: shapeType = "RAMP"; break;
                             case CollisionShapeType::PLANE: shapeType = "PLANE"; break;
                         }
                         componentJson["collisionShapeType"] = shapeType;
@@ -2337,25 +2342,27 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     if (componentJson.contains("meshType")) {
                         std::string meshType = componentJson["meshType"];
                         std::shared_ptr<Mesh> mesh;
-                        
+
                         if (meshType == "QUAD") {
-                            mesh = Mesh::createQuad();
+                            mesh = Mesh::getPrimitive(MeshType::QUAD);
                         } else if (meshType == "PLANE") {
-                            mesh = Mesh::createPlane(1.0f, 1.0f, 1);
+                            mesh = Mesh::getPrimitive(MeshType::PLANE);
                         } else if (meshType == "CUBE") {
-                            mesh = Mesh::createCube();
+                            mesh = Mesh::getPrimitive(MeshType::CUBE);
                         } else if (meshType == "SPHERE") {
-                            mesh = Mesh::createSphere(32, 16);
+                            mesh = Mesh::getPrimitive(MeshType::SPHERE);
                         } else if (meshType == "CAPSULE") {
-                            mesh = Mesh::createCapsule(0.5f, 0.5f);
+                            mesh = Mesh::getPrimitive(MeshType::CAPSULE);
                         } else if (meshType == "CYLINDER") {
-                            mesh = Mesh::createCylinder(0.5f, 1.0f);
+                            mesh = Mesh::getPrimitive(MeshType::CYLINDER);
+                        } else if (meshType == "RAMP") {
+                            mesh = Mesh::getPrimitive(MeshType::RAMP);
                         } else if (meshType == "LINE") {
-                            mesh = Mesh::createLineSegment();
+                            mesh = Mesh::getPrimitive(MeshType::LINE);
                         } else {
-                            mesh = Mesh::createCube(); // Default
+                            mesh = Mesh::getPrimitive(MeshType::CUBE);
                         }
-                        
+
                         meshRenderer->setMesh(mesh);
                     }
                     
@@ -2383,6 +2390,20 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                             if (bm == "Alpha") material->setBlendMode(BlendMode::Alpha);
                             else if (bm == "Additive") material->setBlendMode(BlendMode::Additive);
                             else material->setBlendMode(BlendMode::Opaque);
+                        }
+                        if (materialJson.contains("opacity")) {
+                            material->setOpacity(materialJson["opacity"]);
+                        }
+                        if (materialJson.contains("depthWrite")) {
+                            material->setDepthWrite(materialJson["depthWrite"]);
+                        }
+                        if (materialJson.contains("uvScale") && materialJson["uvScale"].is_array() && materialJson["uvScale"].size() >= 2) {
+                            auto uvScale = materialJson["uvScale"];
+                            material->setUVScale(glm::vec2(uvScale[0], uvScale[1]));
+                        }
+                        if (materialJson.contains("uvOffset") && materialJson["uvOffset"].is_array() && materialJson["uvOffset"].size() >= 2) {
+                            auto uvOffset = materialJson["uvOffset"];
+                            material->setUVOffset(glm::vec2(uvOffset[0], uvOffset[1]));
                         }
                         
                         auto& textureManager = TextureManager::getInstance();
@@ -2494,6 +2515,20 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                             else if (bm == "Additive") material->setBlendMode(BlendMode::Additive);
                             else material->setBlendMode(BlendMode::Opaque);
                         }
+                        if (materialJson.contains("opacity")) {
+                            material->setOpacity(materialJson["opacity"]);
+                        }
+                        if (materialJson.contains("depthWrite")) {
+                            material->setDepthWrite(materialJson["depthWrite"]);
+                        }
+                        if (materialJson.contains("uvScale") && materialJson["uvScale"].is_array() && materialJson["uvScale"].size() >= 2) {
+                            auto uvScale = materialJson["uvScale"];
+                            material->setUVScale(glm::vec2(uvScale[0], uvScale[1]));
+                        }
+                        if (materialJson.contains("uvOffset") && materialJson["uvOffset"].is_array() && materialJson["uvOffset"].size() >= 2) {
+                            auto uvOffset = materialJson["uvOffset"];
+                            material->setUVOffset(glm::vec2(uvOffset[0], uvOffset[1]));
+                        }
                         bool loadedLinux = false, loadedVita = false;
                         if (materialJson.contains("shaderVertexPathLinux") && materialJson.contains("shaderFragmentPathLinux")) {
                             std::string v = materialJson["shaderVertexPathLinux"], f = materialJson["shaderFragmentPathLinux"];
@@ -2604,8 +2639,20 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     if (componentJson.contains("quadratic")) {
                         lightComp->setQuadratic(componentJson["quadratic"]);
                     }
-                    
+
+                    if (componentJson.contains("castShadows")) {
+                        lightComp->setCastShadows(componentJson["castShadows"]);
+                    }
+                    if (componentJson.contains("shadowStrength")) {
+                        lightComp->setShadowStrength(componentJson["shadowStrength"]);
+                    }
+                    if (componentJson.contains("shadowBias")) {
+                        lightComp->setShadowBias(componentJson["shadowBias"]);
+                    }
+
+#ifndef VITA_BUILD
                     lightComp->start(); // Initialize the light
+#endif
                 } else if (type == "PhysicsComponent") {
                     auto physicsComp = node->addComponent<PhysicsComponent>();
                     
@@ -2624,6 +2671,8 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                             physicsComp->setCollisionShape(CollisionShapeType::CAPSULE, dims);
                         } else if (shapeType == "CYLINDER") {
                             physicsComp->setCollisionShape(CollisionShapeType::CYLINDER, dims);
+                        } else if (shapeType == "RAMP") {
+                            physicsComp->setCollisionShape(CollisionShapeType::RAMP, dims);
                         } else if (shapeType == "PLANE") {
                             physicsComp->setCollisionShape(CollisionShapeType::PLANE, dims);
                         }
@@ -2728,7 +2777,9 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         textComp->setLineSpacing(componentJson["lineSpacing"]);
                     }
                     
+#ifndef VITA_BUILD
                     textComp->start(); // Initialize the text component
+#endif
                 } else if (type == "ScriptComponent") {
                     auto scriptComp = node->addComponent<ScriptComponent>();
                     
@@ -2740,7 +2791,7 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     }
                     
                     if (!scriptPath.empty()) {
-                        scriptComp->loadScript(scriptPath);
+                        scriptComp->assignScriptPath(scriptPath);
                     } else {
 #ifdef LINUX_BUILD
                         std::cout << "ScriptComponent on node \"" << name << "\" has empty script path, skipping start()" << std::endl;
@@ -2773,7 +2824,9 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         soundComp->setSoundFile(componentJson["soundFile"]);
                     }
                     
+#ifndef VITA_BUILD
                     soundComp->start();
+#endif
                 } else if (type == "SkyboxComponent") {
                     auto skyboxComp = node->addComponent<SkyboxComponent>();
                     
@@ -2796,7 +2849,9 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         skyboxComp->setBackTexture(componentJson["backTexture"]);
                     }
                     
+#ifndef VITA_BUILD
                     skyboxComp->start();
+#endif
                     
                     if (componentJson.contains("active")) {
                         bool active = componentJson["active"];
@@ -2859,7 +2914,9 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         area3DComp->setShowDebugShape(componentJson["showDebugShape"]);
                     }
                     
+#ifndef VITA_BUILD
                     area3DComp->start(); // Initialize the area3D component
+#endif
                 } else if (type == "RaycastComponent") {
                     auto raycastComp = node->addComponent<RaycastComponent>();
                     if (componentJson.contains("from") && componentJson["from"].is_array() && componentJson["from"].size() >= 3) {
@@ -2924,7 +2981,11 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         jointComp->setEnabled(componentJson["enabled"]);
                     }
                 } else if (type == "NavObstacleComponent") {
+#ifndef VITA_BUILD
                     node->addComponent<NavObstacleComponent>()->start();
+#else
+                    node->addComponent<NavObstacleComponent>();
+#endif
                 } else if (type == "NavAgentComponent") {
                     auto navAgent = node->addComponent<NavAgentComponent>();
                     if (componentJson.contains("speed")) {
@@ -2941,7 +3002,9 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     if (componentJson.contains("gridSizeX")) navVol->setGridSizeX(componentJson["gridSizeX"]);
                     if (componentJson.contains("gridSizeZ")) navVol->setGridSizeZ(componentJson["gridSizeZ"]);
                     if (componentJson.contains("cellSize")) navVol->setCellSize(componentJson["cellSize"]);
+#ifndef VITA_BUILD
                     navVol->start();
+#endif
                 }
             }
         }
@@ -3252,6 +3315,7 @@ void SceneSerializer::updateMakefileWithAssets(const std::vector<std::string>& d
         newVpkCommand += "\t\t-a fonts.txt=fonts.txt \\\n";
         newVpkCommand += "\t\t-a scripts.txt=scripts.txt \\\n";
         newVpkCommand += "\t\t-a config/input_mappings.txt=config/input_mappings.txt \\\n";
+        newVpkCommand += "\t\t-a config/shadow_settings.txt=config/shadow_settings.txt \\\n";
         
         // Add texture assets
         for (const auto& texturePath : discoveredTextures) {

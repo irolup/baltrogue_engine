@@ -9,9 +9,11 @@
 #include <glm/glm.hpp>
 #include "Rendering/Framebuffer.h"
 #include "Rendering/Shader.h"
+#include "Rendering/ShadowAtlasGL.h"
 #include "Components/CameraComponent.h"
 #include "Editor/SceneSerializer.h"
 #include "Editor/BuildSystem.h"
+#include "Editor/NodeTemplateSerializer.h"
 
 namespace GameEngine {
 
@@ -19,6 +21,7 @@ class Scene;
 class SceneNode;
 class Renderer;
 class EditorUI;
+class Mesh;
 
 class EditorSystem {
     friend class EditorUI;  // Allow EditorUI to access private members
@@ -56,12 +59,25 @@ public:
     std::string generateUniqueNodeName(const std::string& baseName);
     void deleteNode(std::shared_ptr<SceneNode> node);
     int getNodeDepth(std::shared_ptr<SceneNode> node);
+    int getSiblingIndex(std::shared_ptr<SceneNode> node) const;
+    bool canMoveNodeUp(std::shared_ptr<SceneNode> node) const;
+    bool canMoveNodeDown(std::shared_ptr<SceneNode> node) const;
     void moveNodeUp(std::shared_ptr<SceneNode> node);
     void moveNodeDown(std::shared_ptr<SceneNode> node);
+    bool reorderNodeBefore(std::shared_ptr<SceneNode> dragged, std::shared_ptr<SceneNode> target);
+    std::shared_ptr<SceneNode> findNodeShared(SceneNode* nodePtr) const;
     void selectAllChildren(std::shared_ptr<SceneNode> node);
+
+    std::shared_ptr<SceneNode> instantiateNodeSubtree(std::shared_ptr<SceneNode> source,
+                                                       std::shared_ptr<SceneNode> parent,
+                                                       const std::string& rootNameSuffix = "_Copy");
+    std::shared_ptr<SceneNode> instantiateTemplate(const std::string& filepath,
+                                                   std::shared_ptr<SceneNode> parent);
     
     bool saveSceneToFile(const std::string& filepath);
+    bool saveActiveScene();
     bool loadSceneFromFile(const std::string& filepath);
+    const std::string& getActiveSceneFilePath() const { return activeSceneFilePath_; }
     void createNewScene();
     
     glm::vec2 getViewportSize() const { return viewportSize; }
@@ -90,7 +106,9 @@ public:
 private:
     void buildGridMesh();
     void renderGridInViewport(CameraComponent* camera);
+    void compileSceneBinary(const std::string& jsonPath);
     std::shared_ptr<Scene> activeScene;
+    std::string activeSceneFilePath_;
     std::weak_ptr<SceneNode> selectedNode;
     
     CameraMode cameraMode;
@@ -118,7 +136,17 @@ private:
     GLsizei gridLineCount;
     std::shared_ptr<Shader> gridShader;
 
+    struct ShadowCaster {
+        std::shared_ptr<Mesh> mesh;
+        glm::mat4 modelMatrix;
+    };
+
+    ShadowAtlasGL shadowAtlas;
+    std::vector<ShadowCaster> shadowCasters;
+    bool shadowAtlasReady;
+
     void createDefaultScene();
+    void makeSubtreeNamesUnique(std::shared_ptr<SceneNode> node);
     void handleViewportInput();
     void handleGameCameraInput(float deltaTime);
     void renderSceneToViewport();
@@ -126,10 +154,25 @@ private:
     void renderSceneDirectly(Scene& scene, CameraComponent* camera);
     void renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm::mat4& parentTransform, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, bool isEditorCamera, int renderPass);
     void renderSkyboxDirectly(Scene& scene, CameraComponent* camera, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
+
+    void collectShadowCasters(std::shared_ptr<SceneNode> node, const glm::mat4& parentTransform);
+    
+    void renderShadowPassDirectly(CameraComponent* camera);
     
     void renderPhysicsDebugShapes(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
+    void renderScreenSpaceTextDirectly(std::shared_ptr<SceneNode> node, bool isEditorCamera);
     void renderNavMeshDebug(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
     void syncNavGridFromScene();
+    void processPendingNodeDeletions();
+    void deleteNodeImmediate(std::shared_ptr<SceneNode> node);
+    bool isInSubtree(std::shared_ptr<SceneNode> candidate, std::shared_ptr<SceneNode> subtreeRoot) const;
+    void destroyComponentsPostOrder(std::shared_ptr<SceneNode> node);
+    std::shared_ptr<SceneNode> findFirstCameraExcluding(std::shared_ptr<SceneNode> current,
+                                                        std::shared_ptr<SceneNode> excludedSubtree) const;
+    bool detachNodeFromScene(std::shared_ptr<SceneNode> node);
+    bool detachNodeRecursive(std::shared_ptr<SceneNode> current, std::shared_ptr<SceneNode> target);
+
+    std::vector<std::shared_ptr<SceneNode>> pendingNodeDeletions_;
 };
 
 } // namespace GameEngine

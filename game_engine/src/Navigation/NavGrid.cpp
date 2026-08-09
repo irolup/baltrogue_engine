@@ -3,6 +3,7 @@
 #include <cmath>
 #include <algorithm>
 #include <queue>
+#include <unordered_map>
 #include <unordered_set>
 #include <functional>
 
@@ -140,49 +141,41 @@ std::vector<glm::vec3> NavGrid::findPath(const glm::vec3& startWorld, const glm:
     worldToCell(startWorld.x, startWorld.z, startIx, startIz);
     worldToCell(endWorld.x, endWorld.z, endIx, endIz);
 
-    if (isTileObstacle(startIx, startIz)) {
-        int bestIx = -1, bestIz = -1;
-        int bestDist = 999999;
+    auto snapToNearestWalkable = [this](int& ix, int& iz) -> bool {
+        const int startX = ix, startZ = iz;
         const int maxR = std::max(sizeX_, sizeZ_);
-        for (int diz = -maxR; diz <= maxR; ++diz) {
-            for (int dix = -maxR; dix <= maxR; ++dix) {
-                if (dix == 0 && diz == 0) continue;
-                int nx = startIx + dix, nz = startIz + diz;
-                if (!isValidCell(nx, nz) || isTileObstacle(nx, nz)) continue;
-                int dist = std::abs(dix) + std::abs(diz);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    bestIx = nx;
-                    bestIz = nz;
+        int bestIx = -1, bestIz = -1, bestDist = 0;
+        for (int r = 1; r <= maxR; ++r) {
+            if (bestIx >= 0 && r > bestDist) break;
+            for (int dz = -r; dz <= r; ++dz) {
+                // Interior cells belong to a smaller ring already visited, so
+                // only the two edge columns are new on non-edge rows
+                const int stepX = (dz == -r || dz == r) ? 1 : 2 * r;
+                for (int dx = -r; dx <= r; dx += stepX) {
+                    const int nx = startX + dx, nz = startZ + dz;
+                    if (isTileObstacle(nx, nz)) continue;  // also rejects off-grid cells
+                    const int dist = std::abs(dx) + std::abs(dz);
+                    if (bestIx < 0 || dist < bestDist) {
+                        bestDist = dist;
+                        bestIx = nx;
+                        bestIz = nz;
+                    }
                 }
             }
         }
-        if (bestIx < 0) return result;
-        startIx = bestIx;
-        startIz = bestIz;
+        if (bestIx < 0) return false;
+        ix = bestIx;
+        iz = bestIz;
+        return true;
+    };
+
+    if (isTileObstacle(startIx, startIz) && !snapToNearestWalkable(startIx, startIz)) {
+        return result;
     }
 
     // If goal cell is blocked, snap to nearest walkable cell
-    if (isTileObstacle(endIx, endIz)) {
-        int bestIx = -1, bestIz = -1;
-        int bestDist = 999999;
-        const int maxR = std::max(sizeX_, sizeZ_);
-        for (int diz = -maxR; diz <= maxR; ++diz) {
-            for (int dix = -maxR; dix <= maxR; ++dix) {
-                if (dix == 0 && diz == 0) continue;
-                int nx = endIx + dix, nz = endIz + diz;
-                if (!isValidCell(nx, nz) || isTileObstacle(nx, nz)) continue;
-                int dist = std::abs(dix) + std::abs(diz);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    bestIx = nx;
-                    bestIz = nz;
-                }
-            }
-        }
-        if (bestIx < 0) return result;
-        endIx = bestIx;
-        endIz = bestIz;
+    if (isTileObstacle(endIx, endIz) && !snapToNearestWalkable(endIx, endIz)) {
+        return result;
     }
 
     const float sqrt2 = 1.414213562f;
@@ -193,6 +186,11 @@ std::vector<glm::vec3> NavGrid::findPath(const glm::vec3& startWorld, const glm:
     std::priority_queue<OpenEntry, std::vector<OpenEntry>, std::greater<OpenEntry>> open;
     open.push({ nodes[0].f, nodes[0].h, 0.0f, 0 });
     std::unordered_set<uint64_t> closed;
+    // Cheapest g seen per cell. Without it every cell is pushed once per
+    // neighbour that touches it, so the queue (and the node array behind it)
+    // grows several times larger than the reachable area
+    std::unordered_map<uint64_t, float> bestG;
+    bestG.emplace(cellKey(startIx, startIz), 0.0f);
 
     static const int dx[] = { -1, 1, 0, 0, -1, -1, 1, 1 };
     static const int dz[] = { 0, 0, -1, 1, -1, 1, -1, 1 };
@@ -204,7 +202,9 @@ std::vector<glm::vec3> NavGrid::findPath(const glm::vec3& startWorld, const glm:
     while (!open.empty()) {
         int curIndex = open.top().index;
         open.pop();
-        const AStarNode& cur = nodes[(size_t)curIndex];
+        // By value: the neighbour loop below push_back()s into nodes, and a
+        // reallocation there would leave a reference dangling mid-iteration
+        const AStarNode cur = nodes[(size_t)curIndex];
         uint64_t key = cellKey(cur.ix, cur.iz);
         if (closed.count(key)) continue;
         closed.insert(key);
@@ -235,6 +235,9 @@ std::vector<glm::vec3> NavGrid::findPath(const glm::vec3& startWorld, const glm:
             uint64_t nkey = cellKey(nx, nz);
             if (closed.count(nkey)) continue;
             float g = cur.g + cost[i];
+            auto seen = bestG.find(nkey);
+            if (seen != bestG.end() && g >= seen->second) continue;
+            bestG[nkey] = g;
             int dxAbs = std::abs(endIx - nx);
             int dzAbs = std::abs(endIz - nz);
 

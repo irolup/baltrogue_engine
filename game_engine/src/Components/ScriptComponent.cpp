@@ -1,7 +1,11 @@
 #include "Components/ScriptComponent.h"
 #include "Core/ScriptManager.h"
 #include "Core/Engine.h"
+#include "Scene/Scene.h"
+#include "Scene/SceneScriptRuntime.h"
 #include "Core/MenuManager.h"
+#include "Core/SaveFile.h"
+#include "../../vendor/json/single_include/nlohmann/json.hpp"
 #include "Components/TextComponent.h"
 #include "Components/Area3DComponent.h"
 #include "Components/PhysicsComponent.h"
@@ -60,11 +64,11 @@ static std::map<ScriptComponent*, std::string> scriptPathBuffers;
 
 ScriptComponent::ScriptComponent()
     : luaState(nullptr)
+    , owningScene(nullptr)
     , scriptLoaded(false)
     , scriptStarted(false)
     , pauseExempt(false)
 {
-    // Constructor debug output removed
 }
 
 ScriptComponent::~ScriptComponent() {
@@ -77,80 +81,28 @@ ScriptComponent::~ScriptComponent() {
 
 void ScriptComponent::start() {
     if (scriptPath.empty()) {
-        // No script path set - this is allowed (component exists but no script assigned)
         return;
     }
-    
-#ifdef VITA_BUILD
-    printf("ScriptComponent::start() called for script: %s\n", scriptPath.c_str());
-#else
-    std::cout << "ScriptComponent::start() called for script: " << scriptPath << std::endl;
-#endif
-    
-    if (!scriptLoaded || !luaState) {
-#ifdef VITA_BUILD
-        printf("ScriptComponent: Cannot start - script not loaded or no lua state\n");
-#else
-        std::cout << "ScriptComponent: Cannot start - script not loaded or no lua state" << std::endl;
-#endif
+
+    if (!ensureScriptLoaded()) {
         return;
     }
-    
+
     if (scriptStarted) {
-#ifdef VITA_BUILD
-        printf("ScriptComponent: Script already started, skipping start() call\n");
-#else
-        std::cout << "ScriptComponent: Script already started, skipping start() call" << std::endl;
-#endif
         return;
     }
-    
+
     if (hasScriptFunction("start")) {
-#ifdef VITA_BUILD
-        printf("ScriptComponent: Found start function, calling it\n");
-#else
-        std::cout << "ScriptComponent: Found start function, calling it" << std::endl;
-#endif
         callScriptFunction("start");
-        scriptStarted = true;
-        
-        if (luaState) {
-            const char* error = lua_tostring(luaState, -1);
-            if (error) {
-#ifdef VITA_BUILD
-                printf("ScriptComponent: Lua error in start(): %s\n", error);
-#else
-                std::cout << "ScriptComponent: Lua error in start(): " << error << std::endl;
-#endif
-                lua_pop(luaState, 1); // Remove error message from stack
-            }
-        }
-#ifdef VITA_BUILD
-        printf("ScriptComponent: Called start() for script: %s\n", scriptPath.c_str());
-#else
-        std::cout << "ScriptComponent: Called start() for script: " << scriptPath << std::endl;
-#endif
-    } else {
-#ifdef VITA_BUILD
-        printf("ScriptComponent: No start function found in script: %s\n", scriptPath.c_str());
-#else
-        std::cout << "ScriptComponent: No start function found in script: " << scriptPath << std::endl;
-#endif
     }
+    // Mark started even without a start() function, otherwise such a
+    // script never receives update()/fixedUpdate().
+    scriptStarted = true;
 }
 
 void ScriptComponent::update(float deltaTime) {
     if (!scriptLoaded || !luaState || !scriptStarted) {
         return;
-    }
-    
-    // Debug: Print if this is a pause-exempt script being updated while paused
-    static int debugFrameCount = 0;
-    if (pauseExempt && MenuManager::getInstance().isGamePaused()) {
-        if (++debugFrameCount % 60 == 0) {  // Print every 60 frames
-            std::cout << "ScriptComponent: Updating pause-exempt script: " << scriptPath 
-                      << " (pauseExempt=" << (pauseExempt ? "true" : "false") << ")" << std::endl;
-        }
     }
     
     if (hasScriptFunction("update")) {
@@ -195,43 +147,77 @@ void ScriptComponent::render(IRenderer& renderer) {
 }
 
 void ScriptComponent::destroy() {
-    if (!scriptLoaded || !luaState) {
-        return;
-    }
-    
-    if (hasScriptFunction("destroy")) {
+    if (scriptLoaded && luaState && hasScriptFunction("destroy")) {
         callScriptFunction("destroy");
-        std::cout << "ScriptComponent: Called destroy() for script: " << scriptPath << std::endl;
     }
-    
     scriptStarted = false;
 }
 
-bool ScriptComponent::loadScript(const std::string& scriptPath) {
+void ScriptComponent::suspend() {
+    destroy();
+}
+
+void ScriptComponent::resume() {
+    start();
+}
+
+void ScriptComponent::setOwningScene(Scene* scene) {
+    owningScene = scene;
+}
+
+bool ScriptComponent::ensureScriptLoaded() {
+    if (scriptLoaded && luaState) {
+        return true;
+    }
     if (scriptPath.empty()) {
+        return false;
+    }
+    return loadScript(scriptPath);
+}
+
+void ScriptComponent::assignScriptPath(const std::string& path) {
+    if (path == scriptPath && scriptLoaded) {
+        return;
+    }
+
+    if (scriptLoaded) {
+        cleanupLuaState();
+    }
+
+    scriptPath = path;
+    scriptLoaded = false;
+    scriptStarted = false;
+}
+
+bool ScriptComponent::loadScript(const std::string& path) {
+    if (path.empty()) {
         std::cerr << "ScriptComponent: Empty script path provided" << std::endl;
         return false;
     }
-    
-    cleanupLuaState();
-    
-    if (!initializeLuaState()) {
+
+    Scene* scene = owningScene;
+    if (!scene) {
+        auto currentScene = GetEngine().getSceneManager().getCurrentScene();
+        scene = currentScene.get();
+    }
+    if (!scene) {
+        std::cerr << "ScriptComponent: No owning scene for script load" << std::endl;
         return false;
     }
-    
-    int result = luaL_dofile(luaState, scriptPath.c_str());
-    if (result != LUA_OK) {
-        handleLuaError("loadScript");
-        cleanupLuaState();
+
+    owningScene = scene;
+    auto& runtime = scene->getScriptRuntime();
+    if (!runtime.loadScript(this, path)) {
+        luaState = nullptr;
+        scriptLoaded = false;
+        scriptStarted = false;
         return false;
     }
-    
-    this->scriptPath = scriptPath;
+
+    luaState = runtime.getLuaState();
+    scriptPath = path;
     scriptLoaded = true;
     scriptStarted = false;
-    
-    std::cout << "ScriptComponent: Successfully loaded script: " << scriptPath 
-              << " (pauseExempt=" << (pauseExempt ? "true" : "false") << ")" << std::endl;
     return true;
 }
 
@@ -251,43 +237,22 @@ void ScriptComponent::setScriptPath(const std::string& path) {
 }
 
 void ScriptComponent::callScriptFunction(const std::string& functionName) {
-    if (!luaState || !scriptLoaded) {
+    if (!scriptLoaded || !owningScene) {
         return;
     }
-    
-    // Get the function from Lua
-    lua_getglobal(luaState, functionName.c_str());
-    if (!lua_isfunction(luaState, -1)) {
-        lua_pop(luaState, 1); // Remove non-function value
-        return;
-    }
-    
-    // Call the function
-    int result = lua_pcall(luaState, 0, 0, 0);
-    if (result != LUA_OK) {
-        handleLuaError("callScriptFunction: " + functionName);
+
+    if (auto* runtime = owningScene->getScriptRuntimeIfExists()) {
+        runtime->callFunction(this, functionName);
     }
 }
 
 void ScriptComponent::callScriptFunction(const std::string& functionName, float param) {
-    if (!luaState || !scriptLoaded) {
+    if (!scriptLoaded || !owningScene) {
         return;
     }
-    
-    // Get the function from Lua
-    lua_getglobal(luaState, functionName.c_str());
-    if (!lua_isfunction(luaState, -1)) {
-        lua_pop(luaState, 1); // Remove non-function value
-        return;
-    }
-    
-    // Push parameter
-    lua_pushnumber(luaState, param);
-    
-    // Call the function
-    int result = lua_pcall(luaState, 1, 0, 0);
-    if (result != LUA_OK) {
-        handleLuaError("callScriptFunction: " + functionName);
+
+    if (auto* runtime = owningScene->getScriptRuntimeIfExists()) {
+        runtime->callFunction(this, functionName, param);
     }
 }
 
@@ -317,14 +282,12 @@ std::string ScriptComponent::getScriptProperty(const std::string& name) const {
 }
 
 bool ScriptComponent::hasScriptFunction(const std::string& functionName) {
-    if (!luaState || !scriptLoaded) {
+    if (!scriptLoaded || !owningScene) {
         return false;
     }
-    
-    lua_getglobal(luaState, functionName.c_str());
-    bool isFunction = lua_isfunction(luaState, -1);
-    lua_pop(luaState, 1);
-    return isFunction;
+
+    auto* runtime = owningScene->getScriptRuntimeIfExists();
+    return runtime && runtime->hasFunction(this, functionName);
 }
 
 void ScriptComponent::handleLuaError(const std::string& operation) {
@@ -342,27 +305,40 @@ void ScriptComponent::handleLuaError(const std::string& operation) {
     }
 }
 
+void ScriptComponent::installEngineBindings(lua_State* state) {
+    ScriptComponent helper;
+    helper.luaState = state;
+    helper.bindEngineToLua();
+}
+
 bool ScriptComponent::initializeLuaState() {
-    luaState = luaL_newstate();
-    if (!luaState) {
-        std::cerr << "ScriptComponent: Failed to create Lua state" << std::endl;
+    Scene* scene = owningScene;
+    if (!scene) {
+        auto currentScene = GetEngine().getSceneManager().getCurrentScene();
+        scene = currentScene.get();
+    }
+    if (!scene) {
         return false;
     }
-    
-    // Open standard libraries
-    luaL_openlibs(luaState);
-    
-    // Bind engine systems to Lua
-    bindEngineToLua();
-    
-    return true;
+
+    owningScene = scene;
+    if (!scene->getScriptRuntime().ensureInitialized()) {
+        return false;
+    }
+
+    luaState = scene->getScriptRuntime().getLuaState();
+    return luaState != nullptr;
 }
 
 void ScriptComponent::cleanupLuaState() {
-    if (luaState) {
-        lua_close(luaState);
-        luaState = nullptr;
+    // Non-creating accessor: during scene teardown the runtime is already
+    // released and must not be lazily recreated on a dying scene.
+    if (owningScene) {
+        if (auto* runtime = owningScene->getScriptRuntimeIfExists()) {
+            runtime->unloadScript(this);
+        }
     }
+    luaState = nullptr;
     scriptLoaded = false;
     scriptStarted = false;
 }
@@ -379,7 +355,6 @@ void ScriptComponent::bindEngineToLua() {
     bindTransformToLua();
     
     // Bind pickup zone system
-    bindPickupZoneToLua();
     
     // Bind Area3D component system
     bindArea3DToLua();
@@ -393,20 +368,20 @@ void ScriptComponent::bindEngineToLua() {
     bindAnimationToLua();
     bindSoundToLua();
     bindSkyboxToLua();
+    bindSaveFileToLua();
     
     // Bind MenuManager
     MenuManager::getInstance().bindToLua(luaState);
 }
 
 void ScriptComponent::bindTransformToLua() {
-    if (!luaState || !owner) {
+    if (!luaState) {
         return;
     }
-    
-    // Store this component pointer in a global variable for the functions to access
+
     lua_pushlightuserdata(luaState, this);
     lua_setglobal(luaState, "_currentScriptComponent");
-    
+
     // Use global functions without upvalues
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         lua_getglobal(L, "_currentScriptComponent");
@@ -2025,6 +2000,33 @@ void ScriptComponent::bindCommonFunctions() {
         return 3;
     });
     lua_setglobal(luaState, "getNodeVelocity");
+
+    // Get friction from a node's PhysicsComponent (Bullet material friction value).
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        lua_pushnumber(L, physicsComp->getFriction());
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushnil(L);
+        return 1;
+    });
+    lua_setglobal(luaState, "getNodePhysicsFriction");
     
     // Raycast against dynamic rigidbodies. Returns nodeName, hitX, hitY, hitZ, hitDistance or nil.
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
@@ -2113,9 +2115,11 @@ void ScriptComponent::bindCommonFunctions() {
 #endif
             glm::vec3 hitPoint, hitNormal;
             float hitDistance;
+            std::string hitNodeName;
+            float surfaceFriction = 0.5f;
             bool hit = PhysicsManager::getInstance().raycastGround(
                 glm::vec3(ox, oy, oz), glm::vec3(dx, dy, dz), maxDist, excludeNodeName, excludeNodeName2,
-                hitPoint, hitNormal, hitDistance);
+                hitPoint, hitNormal, hitDistance, &hitNodeName, &surfaceFriction);
             if (!hit) {
                 lua_pushnil(L);
                 return 1;
@@ -2127,7 +2131,9 @@ void ScriptComponent::bindCommonFunctions() {
             lua_pushnumber(L, hitNormal.y);
             lua_pushnumber(L, hitNormal.z);
             lua_pushnumber(L, hitDistance);
-            return 7;
+            lua_pushstring(L, hitNodeName.c_str());
+            lua_pushnumber(L, surfaceFriction);
+            return 9;
 #ifndef VITA_BUILD
         } catch (...) {
         }
@@ -2232,7 +2238,9 @@ void ScriptComponent::bindCommonFunctions() {
         std::string hitNodeName;
         glm::vec3 hitPoint, hitNormal;
         float hitDistance;
-        bool ok = PhysicsManager::getInstance().raycastFromTo(from, to, -1, hit, hitNodeName, hitPoint, hitNormal, hitDistance, excludeNode);
+        float surfaceFriction = 0.5f;
+        bool ok = PhysicsManager::getInstance().raycastFromTo(
+            from, to, -1, hit, hitNodeName, hitPoint, hitNormal, hitDistance, excludeNode, &surfaceFriction);
         if (!ok || !hit) {
             lua_pushnil(L);
             return 1;
@@ -2245,7 +2253,8 @@ void ScriptComponent::bindCommonFunctions() {
         lua_pushnumber(L, hitNormal.y);
         lua_pushnumber(L, hitNormal.z);
         lua_pushnumber(L, hitDistance);
-        return 8;
+        lua_pushnumber(L, surfaceFriction);
+        return 9;
     }));
     lua_setglobal(luaState, "raycastFromToWorld");
 
@@ -3377,240 +3386,6 @@ void ScriptComponent::drawInspector() {
 #endif
 }
 
-void ScriptComponent::bindPickupZoneToLua() {
-    if (!luaState) {
-        return;
-    }
-    
-    // Binding pickup zone system to individual Lua state
-    
-    // Create pickup zone table
-    lua_newtable(luaState);
-    
-    // Global pickup zone state
-    lua_pushstring(luaState, "zones");
-    lua_newtable(luaState);
-    lua_settable(luaState, -3);
-    
-    // Create pickup zone function
-    lua_pushstring(luaState, "createZone");
-    lua_pushcfunction(luaState, [](lua_State* L) -> int {
-        if (lua_gettop(L) != 7) {
-            lua_pushstring(L, "createZone requires 7 arguments: name, x, y, z, width, height, depth");
-            lua_error(L);
-            return 0;
-        }
-        
-        const char* name = lua_tostring(L, 1);
-        double x = lua_tonumber(L, 2);
-        double y = lua_tonumber(L, 3);
-        double z = lua_tonumber(L, 4);
-        double width = lua_tonumber(L, 5);
-        double height = lua_tonumber(L, 6);
-        double depth = lua_tonumber(L, 7);
-        
-        // Create zone table
-        lua_newtable(L);
-        
-        // Set properties
-        lua_pushstring(L, "name");
-        lua_pushstring(L, name);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "x");
-        lua_pushnumber(L, x);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "y");
-        lua_pushnumber(L, y);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "z");
-        lua_pushnumber(L, z);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "width");
-        lua_pushnumber(L, width);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "height");
-        lua_pushnumber(L, height);
-        lua_settable(L, -3);
-        
-        lua_pushstring(L, "depth");
-        lua_pushnumber(L, depth);
-        lua_settable(L, -3);
-        
-        // Store in global zones table
-        lua_getglobal(L, "pickupZone");
-        if (lua_istable(L, -1)) {
-            lua_pushstring(L, "zones");
-            lua_gettable(L, -2);
-            if (lua_istable(L, -1)) {
-                lua_pushstring(L, name);
-                lua_pushvalue(L, -4); // Copy the zone table
-                lua_settable(L, -3);
-            }
-            lua_pop(L, 1); // Pop zones table
-        }
-        lua_pop(L, 1); // Pop pickupZone table
-        
-        return 1; // Return the zone table
-    });
-    lua_settable(luaState, -3);
-    
-    // Check if object is in zone function
-    lua_pushstring(luaState, "isObjectInZone");
-    lua_pushcfunction(luaState, [](lua_State* L) -> int {
-        if (lua_gettop(L) != 2) {
-            lua_pushstring(L, "isObjectInZone requires 2 arguments: zoneName, objectName");
-            lua_error(L);
-            return 0;
-        }
-        
-        const char* zoneName = lua_tostring(L, 1);
-        const char* objectName = lua_tostring(L, 2);
-        
-        // Get zones table
-        lua_getglobal(L, "pickupZone");
-        lua_pushstring(L, "zones");
-        lua_gettable(L, -2);
-        lua_pushstring(L, zoneName);
-        lua_gettable(L, -2);
-        
-        if (lua_istable(L, -1)) {
-            lua_pushstring(L, "objects");
-            lua_gettable(L, -2);
-            if (lua_istable(L, -1)) {
-                lua_pushstring(L, objectName);
-                lua_gettable(L, -2);
-                bool exists = !lua_isnil(L, -1);
-                lua_pop(L, 1);
-                lua_pushboolean(L, exists);
-                lua_pop(L, 3); // Clean up stack
-                return 1;
-            }
-        }
-        
-        lua_pushboolean(L, false);
-        lua_pop(L, 2); // Clean up stack
-        return 1;
-    });
-    lua_settable(luaState, -3);
-    
-    // Add object to zone function
-    lua_pushstring(luaState, "addObjectToZone");
-    lua_pushcfunction(luaState, [](lua_State* L) -> int {
-        if (lua_gettop(L) != 2) {
-            lua_pushstring(L, "addObjectToZone requires 2 arguments: zoneName, objectName");
-            lua_error(L);
-            return 0;
-        }
-        
-        const char* zoneName = lua_tostring(L, 1);
-        const char* objectName = lua_tostring(L, 2);
-        
-        // Get zones table
-        lua_getglobal(L, "pickupZone");
-        lua_pushstring(L, "zones");
-        lua_gettable(L, -2);
-        lua_pushstring(L, zoneName);
-        lua_gettable(L, -2);
-        
-        if (lua_istable(L, -1)) {
-            lua_pushstring(L, "objects");
-            lua_gettable(L, -2);
-            if (!lua_istable(L, -1)) {
-                lua_pop(L, 1);
-                lua_newtable(L);
-                lua_pushstring(L, "objects");
-                lua_pushvalue(L, -2);
-                lua_settable(L, -4);
-            }
-            lua_pushstring(L, objectName);
-            lua_pushboolean(L, true);
-            lua_settable(L, -3);
-            lua_pop(L, 2); // Clean up stack
-        }
-        
-        lua_pop(L, 2); // Clean up stack
-        return 0;
-    });
-    lua_settable(luaState, -3);
-    
-    // Remove object from zone function
-    lua_pushstring(luaState, "removeObjectFromZone");
-    lua_pushcfunction(luaState, [](lua_State* L) -> int {
-        if (lua_gettop(L) != 2) {
-            lua_pushstring(L, "removeObjectFromZone requires 2 arguments: zoneName, objectName");
-            lua_error(L);
-            return 0;
-        }
-        
-        const char* zoneName = lua_tostring(L, 1);
-        const char* objectName = lua_tostring(L, 2);
-        
-        // Get zones table
-        lua_getglobal(L, "pickupZone");
-        lua_pushstring(L, "zones");
-        lua_gettable(L, -2);
-        lua_pushstring(L, zoneName);
-        lua_gettable(L, -2);
-        
-        if (lua_istable(L, -1)) {
-            lua_pushstring(L, "objects");
-            lua_gettable(L, -2);
-            if (lua_istable(L, -1)) {
-                lua_pushstring(L, objectName);
-                lua_pushnil(L);
-                lua_settable(L, -3);
-            }
-            lua_pop(L, 1);
-        }
-        
-        lua_pop(L, 2); // Clean up stack
-        return 0;
-    });
-    lua_settable(luaState, -3);
-    
-    // Get objects in zone function
-    lua_pushstring(luaState, "getObjectsInZone");
-    lua_pushcfunction(luaState, [](lua_State* L) -> int {
-        if (lua_gettop(L) != 1) {
-            lua_pushstring(L, "getObjectsInZone requires 1 argument: zoneName");
-            lua_error(L);
-            return 0;
-        }
-        
-        const char* zoneName = lua_tostring(L, 1);
-        
-        // Get zones table
-        lua_getglobal(L, "pickupZone");
-        lua_pushstring(L, "zones");
-        lua_gettable(L, -2);
-        lua_pushstring(L, zoneName);
-        lua_gettable(L, -2);
-        
-        if (lua_istable(L, -1)) {
-            lua_pushstring(L, "objects");
-            lua_gettable(L, -2);
-            if (lua_istable(L, -1)) {
-                lua_pop(L, 2); // Clean up stack, keep objects table
-                return 1; // Return objects table
-            }
-        }
-        
-        lua_newtable(L); // Return empty table
-        lua_pop(L, 2); // Clean up stack
-        return 1; // Return objects table
-    });
-    lua_settable(luaState, -3);
-    
-    lua_setglobal(luaState, "pickupZone");
-    
-    // Pickup zone system bound successfully
-}
-
 void ScriptComponent::bindArea3DToLua() {
     if (!luaState) {
         return;
@@ -4032,6 +3807,8 @@ void ScriptComponent::bindArea3DToLua() {
 namespace {
 void applyLuaTableToMaterial(GameEngine::Material* mat, lua_State* L, int tableIndex) {
     if (!mat || !lua_istable(L, tableIndex)) return;
+    bool hasDepthWrite = false;
+    bool depthWriteValue = true;
     lua_pushnil(L);
     while (lua_next(L, tableIndex) != 0) {
         const char* key = lua_tostring(L, -2);
@@ -4044,7 +3821,10 @@ void applyLuaTableToMaterial(GameEngine::Material* mat, lua_State* L, int tableI
                 else mat->setBlendMode(GameEngine::BlendMode::Opaque);
             }
         } else if (strcmp(key, "depthWrite") == 0) {
-            mat->setDepthWrite(lua_toboolean(L, -1) != 0);
+            hasDepthWrite = true;
+            depthWriteValue = lua_toboolean(L, -1) != 0;
+        } else if (strcmp(key, "opacity") == 0 && lua_isnumber(L, -1)) {
+            mat->setOpacity((float)lua_tonumber(L, -1));
         } else if (lua_isnumber(L, -1)) {
             mat->setFloat(key, (float)lua_tonumber(L, -1));
         } else if (lua_istable(L, -1)) {
@@ -4061,7 +3841,202 @@ void applyLuaTableToMaterial(GameEngine::Material* mat, lua_State* L, int tableI
         }
         lua_pop(L, 1);
     }
+    if (hasDepthWrite) {
+        mat->setDepthWrite(depthWriteValue);
+    }
 }
+}
+
+static void pushJsonToLua(lua_State* L, const nlohmann::json& value) {
+    if (value.is_null()) {
+        lua_pushnil(L);
+        return;
+    }
+    if (value.is_boolean()) {
+        lua_pushboolean(L, value.get<bool>() ? 1 : 0);
+        return;
+    }
+    if (value.is_number()) {
+        lua_pushnumber(L, value.get<double>());
+        return;
+    }
+    if (value.is_string()) {
+        lua_pushstring(L, value.get<std::string>().c_str());
+        return;
+    }
+    if (value.is_array()) {
+        lua_createtable(L, static_cast<int>(value.size()), 0);
+        for (size_t i = 0; i < value.size(); ++i) {
+            pushJsonToLua(L, value[i]);
+            lua_rawseti(L, -2, static_cast<int>(i + 1));
+        }
+        return;
+    }
+    if (value.is_object()) {
+        lua_createtable(L, 0, static_cast<int>(value.size()));
+        for (nlohmann::json::const_iterator it = value.begin(); it != value.end(); ++it) {
+            lua_pushstring(L, it.key().c_str());
+            pushJsonToLua(L, it.value());
+            lua_settable(L, -3);
+        }
+        return;
+    }
+    lua_pushnil(L);
+}
+
+static bool isLuaArrayTable(lua_State* L, int index) {
+    const int absIndex = lua_absindex(L, index);
+    size_t length = lua_rawlen(L, absIndex);
+
+    if (length == 0) {
+        lua_pushnil(L);
+        if (lua_next(L, absIndex) == 0) {
+            return true;
+        }
+        lua_pop(L, 2);
+        return false;
+    }
+
+    for (size_t i = 1; i <= length; ++i) {
+        lua_rawgeti(L, absIndex, static_cast<int>(i));
+        if (lua_isnil(L, -1)) {
+            lua_pop(L, 1);
+            return false;
+        }
+        lua_pop(L, 1);
+    }
+
+    lua_pushnil(L);
+    while (lua_next(L, absIndex) != 0) {
+        if (!lua_isnumber(L, -2)) {
+            lua_pop(L, 2);
+            return false;
+        }
+        int key = static_cast<int>(lua_tointeger(L, -2));
+        if (key < 1 || static_cast<size_t>(key) > length) {
+            lua_pop(L, 2);
+            return false;
+        }
+        lua_pop(L, 1);
+    }
+
+    return true;
+}
+
+static bool luaValueToJson(lua_State* L, int index, nlohmann::json& out) {
+    const int absIndex = lua_absindex(L, index);
+    int type = lua_type(L, absIndex);
+
+    switch (type) {
+        case LUA_TNIL:
+            out = nullptr;
+            return true;
+        case LUA_TBOOLEAN:
+            out = lua_toboolean(L, absIndex) != 0;
+            return true;
+        case LUA_TNUMBER:
+            out = lua_tonumber(L, absIndex);
+            return true;
+        case LUA_TSTRING:
+            out = std::string(lua_tostring(L, absIndex));
+            return true;
+        case LUA_TTABLE: {
+            if (isLuaArrayTable(L, absIndex)) {
+                out = nlohmann::json::array();
+                size_t length = lua_rawlen(L, absIndex);
+                for (size_t i = 1; i <= length; ++i) {
+                    lua_rawgeti(L, absIndex, static_cast<int>(i));
+                    nlohmann::json child;
+                    if (!luaValueToJson(L, -1, child)) {
+                        lua_pop(L, 1);
+                        return false;
+                    }
+                    out.push_back(child);
+                    lua_pop(L, 1);
+                }
+                return true;
+            }
+
+            out = nlohmann::json::object();
+            lua_pushnil(L);
+            while (lua_next(L, absIndex) != 0) {
+                if (!lua_isstring(L, -2)) {
+                    lua_pop(L, 2);
+                    return false;
+                }
+                std::string key(lua_tostring(L, -2));
+                nlohmann::json child;
+                if (!luaValueToJson(L, -1, child)) {
+                    lua_pop(L, 2);
+                    return false;
+                }
+                out[key] = child;
+                lua_pop(L, 1);
+            }
+            return true;
+        }
+        default:
+            return false;
+    }
+}
+
+void ScriptComponent::bindSaveFileToLua() {
+    if (!luaState) {
+        return;
+    }
+
+    lua_newtable(luaState);
+
+    lua_pushstring(luaState, "load");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* path = luaL_checkstring(L, 1);
+        if (!path) {
+            lua_newtable(L);
+            return 1;
+        }
+
+        std::string jsonText;
+        if (!SaveFile::loadFromFile(path, jsonText) || jsonText.empty()) {
+            lua_newtable(L);
+            return 1;
+        }
+
+        nlohmann::json root = nlohmann::json::parse(jsonText, nullptr, false);
+        if (root.is_discarded()) {
+#ifndef VITA_BUILD
+            std::cerr << "saveFile.load: Failed to parse " << path << std::endl;
+#endif
+            lua_newtable(L);
+            return 1;
+        }
+        pushJsonToLua(L, root);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
+    lua_pushstring(luaState, "save");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* path = luaL_checkstring(L, 1);
+        luaL_checktype(L, 2, LUA_TTABLE);
+        if (!path) {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+
+        nlohmann::json root;
+        if (!luaValueToJson(L, 2, root)) {
+            std::cerr << "saveFile.save: Unsupported Lua value in save table" << std::endl;
+            lua_pushboolean(L, false);
+            return 1;
+        }
+
+        const bool ok = SaveFile::saveToFile(path, root.dump(2));
+        lua_pushboolean(L, ok);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
+    lua_setglobal(luaState, "saveFile");
 }
 
 void ScriptComponent::bindSceneToLua() {
@@ -4107,8 +4082,37 @@ void ScriptComponent::bindSceneToLua() {
         auto& sceneManager = engine.getSceneManager();
         
         // Load scene from JSON file
-        bool success = sceneManager.loadSceneFromFile(sceneName, filepath);
+        bool success = sceneManager.requestLoadSceneFromFile(sceneName, filepath);
         lua_pushboolean(L, success);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
+    lua_pushstring(luaState, "preloadSceneFromFile");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* sceneName = luaL_checkstring(L, 1);
+        const char* filepath = luaL_checkstring(L, 2);
+
+        if (!sceneName || !filepath) {
+            lua_pushboolean(L, false);
+            return 1;
+        }
+
+        auto& sceneManager = GetEngine().getSceneManager();
+        lua_pushboolean(L, sceneManager.preloadSceneFromFile(sceneName, filepath));
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
+    lua_pushstring(luaState, "getName");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        auto& engine = GetEngine();
+        auto activeScene = engine.getSceneManager().getCurrentScene();
+        if (!activeScene) {
+            lua_pushnil(L);
+            return 1;
+        }
+        lua_pushstring(L, activeScene->getName().c_str());
         return 1;
     });
     lua_settable(luaState, -3);
@@ -4268,6 +4272,8 @@ void ScriptComponent::bindSceneToLua() {
             mesh = Mesh::createPlane(w, h, 1);
         } else if (shape == "quad") {
             mesh = Mesh::createQuad();
+        } else if (shape == "ramp") {
+            mesh = Mesh::createRamp();
         } else {
             lua_pushboolean(L, false);
             return 1;
@@ -4331,6 +4337,12 @@ void ScriptComponent::bindSceneToLua() {
             float halfH = luaL_optnumber(L, 5, 0.5f);
             dims = glm::vec3(r * 2.0f, halfH * 2.0f, r * 2.0f);
             massArg = 6;
+        } else if (st == "ramp") {
+            shapeType = CollisionShapeType::RAMP;
+            dims.x = luaL_optnumber(L, 4, 1.0f);
+            dims.y = luaL_optnumber(L, 5, 1.0f);
+            dims.z = luaL_optnumber(L, 6, 1.0f);
+            massArg = 7;
         } else if (st == "plane") {
             shapeType = CollisionShapeType::PLANE;
             dims.x = luaL_optnumber(L, 4, 10.0f);

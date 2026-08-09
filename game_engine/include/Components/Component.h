@@ -21,6 +21,9 @@ public:
     virtual void lateUpdate(float deltaTime) {} // Every frame after physics
     virtual void render(IRenderer& renderer) {}
     virtual void destroy() {}
+    virtual void prepareForRestart() {}
+    virtual void suspend() {}
+    virtual void resume() {}
     
     // Properties
     bool isEnabled() const { return enabled; }
@@ -31,7 +34,7 @@ public:
     void setOwner(SceneNode* node) { owner = node; }
     
     // Component type identification
-    virtual std::string getTypeName() const = 0;
+    virtual const std::string& getTypeName() const = 0;
     
     // Editor support
     virtual void drawInspector() {} // For editor property panels
@@ -43,7 +46,13 @@ protected:
 
 // Macro to help implement getTypeName for derived components
 #define COMPONENT_TYPE(ClassName) \
-    virtual std::string getTypeName() const override { return #ClassName; }
+    static const std::string& StaticTypeName() { \
+        static const std::string typeName = #ClassName; \
+        return typeName; \
+    } \
+    virtual const std::string& getTypeName() const override { \
+        return StaticTypeName(); \
+    }
 
 } // namespace GameEngine
 

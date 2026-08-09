@@ -27,6 +27,7 @@ public:
     virtual void start() override;
     virtual void update(float deltaTime) override;
     virtual void destroy() override;
+    virtual void suspend() override;
     
     // Sound file management
     void setSoundFile(const std::string& filePath);

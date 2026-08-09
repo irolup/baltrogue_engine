@@ -3,6 +3,8 @@
 
 #include <vector>
 #include <string>
+#include <functional>
+#include <unordered_map>
 #include <glm/glm.hpp>
 #include <memory>
 #include "Platform.h"
@@ -19,6 +21,7 @@ enum class MeshType {
     SPHERE,
     CAPSULE,
     CYLINDER,
+    RAMP,
     LINE,
     BEAM,
     CUSTOM
@@ -44,6 +47,9 @@ public:
     Mesh();
     Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices);
     ~Mesh();
+
+    Mesh(const Mesh& other);
+    Mesh& operator=(const Mesh& other);
     
     void setVertices(const std::vector<Vertex>& vertices);
     void setIndices(const std::vector<unsigned int>& indices);
@@ -80,11 +86,13 @@ public:
     static std::shared_ptr<Mesh> createQuad();
     static std::shared_ptr<Mesh> createPlane(float width = 1.0f, float height = 1.0f, int subdivisions = 1);    
     static std::shared_ptr<Mesh> createCube();
+    static std::shared_ptr<Mesh> createRamp();
     static std::shared_ptr<Mesh> createSphere(int segments, int rings, float radius = 0.5f);
     static std::shared_ptr<Mesh> createCapsule(float radius, float halfHeight, int segments = 16, int rings = 8);
     static std::shared_ptr<Mesh> createCylinder(float radius, float halfHeight, int segments = 16);
 
     static std::shared_ptr<Mesh> createWireframeBox(const glm::vec3& halfExtents = glm::vec3(0.5f));
+    static std::shared_ptr<Mesh> createWireframeRamp(const glm::vec3& halfExtents = glm::vec3(0.5f));
     static std::shared_ptr<Mesh> createWireframeSphere(float radius = 0.5f, int segments = 16);
     static std::shared_ptr<Mesh> createWireframeCapsule(float radius = 0.5f, float height = 1.0f, int segments = 16);
     static std::shared_ptr<Mesh> createWireframeCylinder(float radius = 0.5f, float height = 1.0f, int segments = 16);
@@ -94,8 +102,16 @@ public:
     static std::shared_ptr<Mesh> createBeam();
 
     static std::shared_ptr<Mesh> loadFromFile(const std::string& filepath);
-    
+
+    static std::shared_ptr<Mesh> getPrimitive(MeshType type);
+
 private:
+    static std::shared_ptr<Mesh> getOrCreatePrototype(
+        const std::string& cacheKey,
+        const std::function<std::shared_ptr<Mesh>()>& builder);
+
+    static std::unordered_map<std::string, std::shared_ptr<Mesh>>& prototypeCache();
+
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
     
