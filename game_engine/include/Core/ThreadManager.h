@@ -288,7 +288,7 @@ public:
     
     ThreadHandle createThread(const std::string& name, std::function<void()> func);
     
-    void joinThread(ThreadHandle& handle);
+    bool joinThread(ThreadHandle& handle, unsigned int timeoutMs = 0);
     
     bool isValid(const ThreadHandle& handle) const;
     

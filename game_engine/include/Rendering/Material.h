@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 #include <utility>
+#include <cstdint>
 #include <glm/glm.hpp>
 #include "Platform.h"
 #include "Rendering/RenderTypes.h"
@@ -19,6 +20,50 @@ enum class BlendMode {
     Opaque,
     Alpha,
     Additive
+};
+
+struct MaterialOverride {
+    bool overrideBaseColor = false;
+    glm::vec3 baseColor{1.0f, 1.0f, 1.0f};
+
+    bool overrideMetallic = false;
+    float metallic = 0.0f;
+
+    bool overrideRoughness = false;
+    float roughness = 0.5f;
+
+    bool overrideReflectionStrength = false;
+    float reflectionStrength = 0.0f;
+
+    bool overrideOpacity = false;
+    float opacity = 1.0f;
+
+    bool overrideAlphaCutoff = false;
+    float alphaCutoff = 0.0f;
+
+    bool overrideBlendMode = false;
+    BlendMode blendMode = BlendMode::Opaque;
+
+    bool overrideDoubleSided = false;
+    bool doubleSided = false;
+
+    bool overrideUVTransform = false;
+    glm::vec2 uvScale{1.0f, 1.0f};
+    glm::vec2 uvOffset{0.0f, 0.0f};
+
+    std::string diffuseTexturePath;
+    std::string normalTexturePath;
+    std::string armTexturePath;
+
+    std::string shaderVertexPathLinux;
+    std::string shaderFragmentPathLinux;
+    std::string shaderVertexPathVita;
+    std::string shaderFragmentPathVita;
+    std::string shaderVertexPathVulkan;
+    std::string shaderFragmentPathVulkan;
+
+    /** True when nothing is overridden, so the base material can be used as-is. */
+    bool isEmpty() const;
 };
 
 class Material {
@@ -69,10 +114,10 @@ public:
     void setAlphaCutoff(float cutoff);
 
     bool getDoubleSided() const { return doubleSided; }
-    void setDoubleSided(bool enabled) { doubleSided = enabled; }
+    void setDoubleSided(bool enabled) { doubleSided = enabled; bumpRevision(); }
 
     bool getDepthWrite() const { return depthWrite; }
-    void setDepthWrite(bool write) { depthWrite = write; }
+    void setDepthWrite(bool write) { depthWrite = write; bumpRevision(); }
 
     glm::vec2 getUVScale() const { return uvScale; }
     void setUVScale(const glm::vec2& scale) { uvScale = scale; setVec2("u_UVScale", uvScale); }
@@ -95,16 +140,16 @@ public:
     void setEnvironmentTexture(std::shared_ptr<Texture> texture, const std::string& path = "");
     
     std::string getDiffuseTexturePath() const { return diffuseTexturePath; }
-    void setDiffuseTexturePath(const std::string& path) { diffuseTexturePath = path; }
-    
+    void setDiffuseTexturePath(const std::string& path) { diffuseTexturePath = path; bumpRevision(); }
+
     std::string getNormalTexturePath() const { return normalTexturePath; }
-    void setNormalTexturePath(const std::string& path) { normalTexturePath = path; }
-    
+    void setNormalTexturePath(const std::string& path) { normalTexturePath = path; bumpRevision(); }
+
     std::string getARMTexturePath() const { return armTexturePath; }
-    void setARMTexturePath(const std::string& path) { armTexturePath = path; }
+    void setARMTexturePath(const std::string& path) { armTexturePath = path; bumpRevision(); }
 
     std::string getEnvironmentTexturePath() const { return environmentTexturePath; }
-    void setEnvironmentTexturePath(const std::string& path) { environmentTexturePath = path; }
+    void setEnvironmentTexturePath(const std::string& path) { environmentTexturePath = path; bumpRevision(); }
     
     bool hasDiffuseTexture() const {
     #ifndef ENABLE_VULKAN
@@ -149,6 +194,15 @@ public:
     bool isUsingCustomShader() const;
     void useDefaultLitShader();
 
+    // Copy sharing this material's shader and textures, safe to override per instance
+    std::shared_ptr<Material> clone() const;
+
+    void applyOverride(const MaterialOverride& overrides);
+
+    // Bumped by every property change. Backends that cache GPU state per material
+    // compare it to know when their copy went stale
+    uint32_t getRevision() const { return revision; }
+
 #ifdef ENABLE_VULKAN
     bool isBeamMaterial() const;
     VulkanShaderPipelineKind getVulkanShaderPipelineKind() const;
@@ -166,7 +220,13 @@ public:
     void setCustomTextureUniformPath(const std::string& uniformName, const std::string& texturePath);
     
     void drawInspector();
-    
+
+    // Editor shader picker, shared with MaterialComponent's inspector
+    static bool drawShaderAssignPopup(const char* popupId,
+                                      std::string& outVertexPath,
+                                      std::string& outFragmentPath,
+                                      std::string& outPlatform);
+
     void setupLightingUniforms() const;
     void setCameraPosition(const glm::vec3& cameraPos);
     void setupShadowUniforms() const;
@@ -213,10 +273,19 @@ private:
     std::string shaderFragmentPathLinux;
     std::string shaderVertexPathVita;
     std::string shaderFragmentPathVita;
+    std::string shaderVertexPathVulkan;
+    std::string shaderFragmentPathVulkan;
     
     std::vector<CustomTextureUniform> customTextureUniforms;
-    
+
+    // Copying a material copies a stale revision, so the counter is global
+    uint32_t revision = 0;
+    static uint32_t nextRevision;
+    void bumpRevision() { revision = ++nextRevision; }
+
     void applyProperties() const;
+    void rebindTextureFromPath(const std::string& path,
+                               void (Material::*setTextureFn)(std::shared_ptr<Texture>, const std::string&));
 };
 
 } // namespace GameEngine

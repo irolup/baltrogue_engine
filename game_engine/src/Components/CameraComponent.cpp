@@ -245,6 +245,47 @@ glm::mat4 CameraComponent::getViewProjectionMatrix() {
     return getProjectionMatrix() * getViewMatrix();
 }
 
+Ray CameraComponent::screenPointToRay(const glm::vec2& screenPoint, const glm::vec2& viewportSize) {
+    const glm::vec3 cameraPosition = owner ? glm::vec3(owner->getWorldMatrix()[3]) : glm::vec3(0.0f);
+    if (viewportSize.x <= 0.0f || viewportSize.y <= 0.0f) {
+        return Ray(cameraPosition, getForward());
+    }
+
+    // Screen space puts (0,0) at the top-left
+    const glm::vec2 ndc(
+        (2.0f * screenPoint.x / viewportSize.x) - 1.0f,
+        1.0f - (2.0f * screenPoint.y / viewportSize.y));
+
+    const glm::mat4 inverseViewProjection = glm::inverse(getViewProjectionMatrix());
+    glm::vec4 nearPoint = inverseViewProjection * glm::vec4(ndc.x, ndc.y, -1.0f, 1.0f);
+    glm::vec4 farPoint = inverseViewProjection * glm::vec4(ndc.x, ndc.y, 1.0f, 1.0f);
+    if (nearPoint.w == 0.0f || farPoint.w == 0.0f) {
+        return Ray(cameraPosition, getForward());
+    }
+
+    nearPoint /= nearPoint.w;
+    farPoint /= farPoint.w;
+
+    return Ray(glm::vec3(nearPoint), glm::vec3(farPoint - nearPoint));
+}
+
+bool CameraComponent::worldToScreenPoint(const glm::vec3& worldPoint, const glm::vec2& viewportSize, glm::vec2& outScreenPoint) {
+    if (viewportSize.x <= 0.0f || viewportSize.y <= 0.0f) {
+        return false;
+    }
+
+    const glm::vec4 clipPoint = getViewProjectionMatrix() * glm::vec4(worldPoint, 1.0f);
+    if (clipPoint.w <= 0.0f) {
+        return false;
+    }
+
+    const glm::vec3 ndc = glm::vec3(clipPoint) / clipPoint.w;
+    outScreenPoint = glm::vec2(
+        (ndc.x + 1.0f) * 0.5f * viewportSize.x,
+        (1.0f - ndc.y) * 0.5f * viewportSize.y);
+    return true;
+}
+
 glm::vec3 CameraComponent::getForward() const {
     if (!owner) return glm::vec3(0, 0, -1);
     return owner->getTransform().getForward();

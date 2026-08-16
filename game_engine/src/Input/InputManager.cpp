@@ -11,8 +11,12 @@
 namespace GameEngine {
 
 InputManager::InputManager()
+    : pointerPosition(0.0f)
+    , pointerActive(false)
+    , pointerDown(false)
+    , pointerDownPrevious(false)
 #ifdef LINUX_BUILD
-    : editorMode(false)
+    , editorMode(false)
     , mouseCaptured(false)
     , debugMouseInput(false)
     , mousePosition(0.0f)
@@ -33,6 +37,12 @@ InputManager::~InputManager() {
 
 bool InputManager::initialize() {
     inputMappingManager->initialize();
+
+#ifdef VITA_BUILD
+    sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
+    sceTouchEnableTouchForce(SCE_TOUCH_PORT_FRONT);
+#endif
+
     return true;
 }
 
@@ -57,11 +67,44 @@ void InputManager::update() {
     }
 #endif
     
+    updatePointerInput();
+
     if (inputMappingManager) {
         inputMappingManager->checkForFileChanges();
     }
     
     processInputEvents();
+}
+
+void InputManager::updatePointerInput() {
+    pointerDownPrevious = pointerDown;
+
+#ifdef VITA_BUILD
+    SceTouchData touch;
+    if (sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1) < 0 || touch.reportNum == 0) {
+        pointerActive = false;
+        pointerDown = false;
+        return;
+    }
+    pointerPosition = glm::vec2(
+        static_cast<float>(touch.report[0].x) * (static_cast<float>(VITA_WIDTH) / 1920.0f),
+        static_cast<float>(touch.report[0].y) * (static_cast<float>(VITA_HEIGHT) / 1088.0f));
+    pointerActive = true;
+    pointerDown = true;
+#else
+    if (!window) {
+        pointerActive = false;
+        pointerDown = false;
+        return;
+    }
+
+    double cursorX = 0.0;
+    double cursorY = 0.0;
+    glfwGetCursorPos(window, &cursorX, &cursorY);
+    pointerPosition = glm::vec2(static_cast<float>(cursorX), static_cast<float>(cursorY));
+    pointerActive = true;
+    pointerDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+#endif
 }
 
 bool InputManager::isButtonPressed(uint32_t button) const {

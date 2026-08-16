@@ -2,8 +2,11 @@
 
 #include "Core/Engine.h"
 #include "Rendering/TextureManager.h"
+#include "Audio/AudioManager.h"
+#include "Editor/BuildSettings.h"
 #include <vitasdk.h>
 #include <vitaGL.h>
+#include <psp2/kernel/processmgr.h>
 
 using namespace GameEngine;
 
@@ -13,21 +16,26 @@ int main() {
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
 
     Engine engine;
+
     if (!engine.initialize()) {
-        return -1;
+        sceClibPrintf("vita_main: Failed to initialize engine\n");
+    } else {
+        TextureManager::getInstance().discoverAllTextures("assets/textures");
+
+        BuildSettings buildSettings;
+        buildSettings.load();
+
+        auto& sceneManager = engine.getSceneManager();
+        if (sceneManager.loadSceneFromFile("Main Menu", buildSettings.mainScene)) {
+            engine.run();
+        } else {
+            sceClibPrintf("vita_main: Failed to load main menu scene\n");
+        }
     }
+    AudioManager::getInstance().shutdown();
 
-    TextureManager::getInstance().discoverAllTextures("assets/textures");
-
-    auto& sceneManager = engine.getSceneManager();
-    if (!sceneManager.loadSceneFromFile("Main Menu", "assets/scenes/main_menu.json")) {
-#ifdef VITA_BUILD
-        printf("vita_main: Failed to load main menu scene\n");
-#endif
-        return -1;
-    }
-
-    engine.run();
     vglEnd();
+
+    sceKernelExitProcess(0);
     return 0;
 }

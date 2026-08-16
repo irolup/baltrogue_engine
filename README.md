@@ -252,5 +252,6 @@ use `make clean-scenes` if the converter itself changed.
 ## Documentation
 
 - [Full Documentation](docs/DOCUMENTATION.md)
+- [Lua API Reference](docs/LUA_API.md)
 - [TextComponent API](docs/TEXT_COMPONENT_API.md)
 - [ModelRenderer Guide](docs/README_ModelRenderer.md)

@@ -1,6 +1,7 @@
 #ifdef LINUX_BUILD
 
 #include "Editor/NodeTemplateSerializer.h"
+#include "Core/AssetPaths.h"
 #include "Editor/SceneSerializer.h"
 #include <fstream>
 #include <iostream>
@@ -83,7 +84,7 @@ std::shared_ptr<SceneNode> NodeTemplateSerializer::loadNodeTemplate(const std::s
     }
 
     try {
-        std::ifstream file(filepath);
+        std::ifstream file(AssetPaths::resolve(filepath));
         if (!file.is_open()) {
             std::cerr << "Failed to open template file for reading: " << filepath << std::endl;
             return nullptr;

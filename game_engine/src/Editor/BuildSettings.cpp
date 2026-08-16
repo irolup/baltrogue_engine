@@ -1,6 +1,5 @@
-#ifdef LINUX_BUILD
-
 #include "Editor/BuildSettings.h"
+#include "Core/AssetPaths.h"
 
 #include <cctype>
 #include <cstdio>
@@ -35,11 +34,26 @@ bool isDigits(const std::string& value, size_t offset, size_t count) {
 }
 
 // Unknown keys are ignored so a file written by a newer editor still loads
+int parsePositiveInt(const std::string& value, int fallback) {
+    const int parsed = std::atoi(value.c_str());
+    return (parsed > 0) ? parsed : fallback;
+}
+
 void applyPcSetting(PcBuildSettings& pc, const std::string& key, const std::string& value) {
     if (key == "title") {
         pc.title = value;
     } else if (key == "executableName") {
         pc.executableName = value;
+    } else if (key == "windowWidth") {
+        pc.windowWidth = parsePositiveInt(value, pc.windowWidth);
+    } else if (key == "windowHeight") {
+        pc.windowHeight = parsePositiveInt(value, pc.windowHeight);
+    } else if (key == "fullscreen") {
+        pc.fullscreen = (value == "1" || value == "true");
+    } else if (key == "targetFrameRate") {
+        pc.targetFrameRate = std::atoi(value.c_str());
+    } else if (key == "renderer") {
+        pc.renderer = (value == "opengl") ? "opengl" : "vulkan";
     }
 }
 
@@ -90,6 +104,11 @@ std::string validateImageSource(const char* label, const std::string& path) {
 void writePcBlock(std::ofstream& file, const PcBuildSettings& pc) {
     file << "pc:title=" << pc.title << "\n";
     file << "pc:executableName=" << pc.executableName << "\n";
+    file << "pc:windowWidth=" << pc.windowWidth << "\n";
+    file << "pc:windowHeight=" << pc.windowHeight << "\n";
+    file << "pc:fullscreen=" << (pc.fullscreen ? "1" : "0") << "\n";
+    file << "pc:targetFrameRate=" << pc.targetFrameRate << "\n";
+    file << "pc:renderer=" << pc.renderer << "\n";
 }
 
 void writeVitaBlock(std::ofstream& file, const VitaBuildSettings& vita) {
@@ -107,7 +126,7 @@ void writeVitaBlock(std::ofstream& file, const VitaBuildSettings& vita) {
 } // namespace
 
 bool BuildSettings::load(const std::string& filepath) {
-    std::ifstream file(filepath);
+    std::ifstream file(AssetPaths::resolve(filepath));
     if (!file.is_open()) {
         return false;
     }
@@ -136,6 +155,8 @@ bool BuildSettings::load(const std::string& filepath) {
             applyPcSetting(pc, key, value);
         } else if (platform == "vita") {
             applyVitaSetting(vita, key, value);
+        } else if (platform == "project" && key == "mainScene") {
+            mainScene = value;
         }
     }
 
@@ -154,7 +175,10 @@ bool BuildSettings::save(const std::string& filepath) const {
     file << "# Written by the editor (View > Build Settings). Each build reads its own block:\n";
     file << "#   pc   - window title of the Linux game, and build_linux/<executableName>\n";
     file << "#   vita - param.sfo, build/<vpkName>.vpk, and sce_sys/ built by " << kLiveAreaScriptPath << "\n";
+    file << "# project - settings both platforms share, such as the scene they boot into.\n";
     file << "# An empty Vita image source ships the VPK without that asset.\n\n";
+
+    file << "project:mainScene=" << mainScene << "\n\n";
 
     writePcBlock(file, pc);
     file << "\n";
@@ -222,6 +246,7 @@ std::string BuildSettings::validate() const {
     return "";
 }
 
+#ifdef LINUX_BUILD
 bool BuildSettings::generateLiveAreaAssets(std::string& output) {
     output.clear();
 
@@ -243,7 +268,6 @@ bool BuildSettings::generateLiveAreaAssets(std::string& output) {
 bool BuildSettings::converterToolsAvailable() {
     return std::system("command -v ffmpeg > /dev/null 2>&1 && command -v pngquant > /dev/null 2>&1") == 0;
 }
+#endif
 
 }
-
-#endif

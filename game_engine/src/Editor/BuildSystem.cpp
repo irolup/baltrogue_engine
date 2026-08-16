@@ -2,47 +2,204 @@
 
 #include "Editor/BuildSystem.h"
 #include "Editor/BuildSettings.h"
+#include "Editor/EditorConsole.h"
+
+#include <filesystem>
+#include <vector>
 #include <iostream>
 
 namespace GameEngine {
 
-void BuildSystem::buildForLinux() {
-    std::cout << "Building for Linux..." << std::endl;
-    std::cout << "Using OpenGL 2.0 compatible shaders from assets/linux_shaders/" << std::endl;
-    
-    // Execute make command for Linux build
-    int result = system("make linux");
-    
-    if (result == 0) {
-        BuildSettings settings;
-        settings.load();
-
-        std::cout << "Linux build completed successfully!" << std::endl;
-        std::cout << "Executable created at: build_linux/" << settings.pc.executableName << std::endl;
-    } else {
-        std::cerr << "Linux build failed with error code: " << result << std::endl;
-        std::cerr << "Check that all dependencies are installed: libglfw3-dev, libglew-dev, libpng-dev" << std::endl;
-    }
+BuildSystem::BuildSystem()
+    : buildTarget(Target::Linux)
+    , startGameAfterBuild(false)
+{
+    buildProcess.setOutputCallback([](const std::string& line) {
+        EditorConsole::getInstance().logProcessOutput(line);
+    });
+    gameProcess.setOutputCallback([](const std::string& line) {
+        EditorConsole::getInstance().logProcessOutput("[game] " + line);
+    });
 }
 
-void BuildSystem::buildForVita() {
-    std::cout << "Building VPK for PS Vita..." << std::endl;
-    std::cout << "Using VitaGL (OpenGL 2.0) with CG/HLSL shaders from assets/shaders/" << std::endl;
-    
-    // Execute make command for Vita build
-    int result = system("make vita");
-    
-    if (result == 0) {
+BuildSystem::~BuildSystem() {
+    gameProcess.stop();
+    buildProcess.stop();
+}
+
+std::string BuildSystem::getGameExecutablePath() const {
+    BuildSettings settings;
+    settings.load();
+    const std::string directory = (settings.pc.renderer == "opengl") ? "build_linux_gl/" : "build_linux/";
+    return directory + settings.pc.executableName;
+}
+
+bool BuildSystem::gameExecutableExists() const {
+    std::error_code error;
+    return std::filesystem::exists(getGameExecutablePath(), error);
+}
+
+bool BuildSystem::isGameExecutableStale() const {
+    std::error_code error;
+    const std::string executable = getGameExecutablePath();
+    if (!std::filesystem::exists(executable, error)) {
+        return true;
+    }
+
+    const auto executableTime = std::filesystem::last_write_time(executable, error);
+    if (error) {
+        return true;
+    }
+
+    const char* const watched[] = { "game_engine/src", "game_engine/include" };
+    for (const char* directory : watched) {
+        if (!std::filesystem::exists(directory, error)) {
+            continue;
+        }
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory, error)) {
+            if (!entry.is_regular_file(error)) {
+                continue;
+            }
+            const auto sourceTime = std::filesystem::last_write_time(entry.path(), error);
+            if (!error && sourceTime > executableTime) {
+                return true;
+            }
+        }
+    }
+
+    const auto makefileTime = std::filesystem::last_write_time("Makefile", error);
+    return !error && makefileTime > executableTime;
+}
+
+bool BuildSystem::isBuilding() const {
+    return buildProcess.isRunning();
+}
+
+bool BuildSystem::isGameRunning() const {
+    return gameProcess.isRunning();
+}
+
+bool BuildSystem::startBuild(Target target) {
+    if (isBuilding()) {
+        EditorConsole::getInstance().logWarning("Build already running");
+        return false;
+    }
+
+    buildTarget = target;
+
+    const char* rule = (target == Target::Linux) ? "linux" : "vita";
+
+    std::vector<std::string> command = { "make", rule };
+    if (target == Target::Linux) {
         BuildSettings settings;
         settings.load();
+        if (settings.pc.renderer == "opengl") {
+            command.push_back("USE_VULKAN=0");
+        }
+    }
 
-        std::cout << "Vita VPK build completed successfully!" << std::endl;
-        std::cout << "VPK created at: build/" << settings.vita.vpkName << ".vpk" << std::endl;
-        std::cout << "Install on Vita using VitaShell or similar homebrew" << std::endl;
+    std::string description;
+    for (const std::string& part : command) {
+        description += (description.empty() ? "" : " ") + part;
+    }
+    EditorConsole::getInstance().logInfo("Building: " + description);
+
+    if (!buildProcess.start(command)) {
+        EditorConsole::getInstance().logError("Failed to start make");
+        startGameAfterBuild = false;
+        return false;
+    }
+
+    return true;
+}
+
+bool BuildSystem::launchGameProcess() {
+    const std::string executable = getGameExecutablePath();
+
+    std::error_code error;
+    if (!std::filesystem::exists(executable, error)) {
+        EditorConsole::getInstance().logError("Game executable not found: " + executable);
+        return false;
+    }
+
+    if (!gameProcess.start({ "./" + executable })) {
+        EditorConsole::getInstance().logError("Failed to start " + executable);
+        return false;
+    }
+
+    EditorConsole::getInstance().logInfo("Running " + executable);
+    return true;
+}
+
+bool BuildSystem::startGame() {
+    if (isGameRunning()) {
+        EditorConsole::getInstance().logWarning("Game is already running");
+        return false;
+    }
+    return launchGameProcess();
+}
+
+bool BuildSystem::buildAndStartGame() {
+    if (isGameRunning()) {
+        EditorConsole::getInstance().logWarning("Game is already running");
+        return false;
+    }
+
+    if (!startBuild(Target::Linux)) {
+        return false;
+    }
+
+    startGameAfterBuild = true;
+    return true;
+}
+
+void BuildSystem::stopGame() {
+    if (!isGameRunning()) {
+        return;
+    }
+
+    EditorConsole::getInstance().logInfo("Stopping game");
+    gameProcess.stop();
+}
+
+void BuildSystem::onBuildFinished() {
+    const int exitCode = buildProcess.getExitCode();
+
+    if (exitCode == 0) {
+        EditorConsole::getInstance().logInfo("Build succeeded");
+
+        if (buildTarget == Target::Vita) {
+            BuildSettings settings;
+            settings.load();
+            EditorConsole::getInstance().logInfo("VPK: build/" + settings.vita.vpkName + ".vpk");
+        }
+
+        if (startGameAfterBuild) {
+            launchGameProcess();
+        }
     } else {
-        std::cerr << "Vita VPK build failed with error code: " << result << std::endl;
-        std::cerr << "Check that VitaSDK is properly installed and configured" << std::endl;
-        std::cerr << "Required: vitaGL, vitashark, and CG shader support" << std::endl;
+        EditorConsole::getInstance().logError("Build failed with exit code " + std::to_string(exitCode));
+    }
+
+    startGameAfterBuild = false;
+}
+
+void BuildSystem::update() {
+    const bool wasBuilding = buildProcess.isRunning();
+    buildProcess.update();
+    if (wasBuilding && !buildProcess.isRunning()) {
+        onBuildFinished();
+    }
+
+    const bool wasRunning = gameProcess.isRunning();
+    gameProcess.update();
+    if (wasRunning && !gameProcess.isRunning()) {
+        const int exitCode = gameProcess.getExitCode();
+        if (exitCode == 0) {
+            EditorConsole::getInstance().logInfo("Game exited");
+        } else {
+            EditorConsole::getInstance().logWarning("Game exited with code " + std::to_string(exitCode));
+        }
     }
 }
 

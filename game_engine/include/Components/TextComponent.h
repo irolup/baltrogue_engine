@@ -87,6 +87,8 @@ public:
     void setLineSpacing(float spacing);
     float getLineSpacing() const { return lineSpacing; }
     
+    bool getScreenRect(const glm::vec2& viewportSize, glm::vec4& outRect) const;
+
     glm::vec2 getTextBounds() const;
     float getTextWidth() const;
     float getTextHeight() const;

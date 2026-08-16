@@ -1,4 +1,5 @@
 #include "Rendering/TextureManager.h"
+#include "Core/AssetPaths.h"
 #include <iostream>
 #include <algorithm>
 #include <fstream>
@@ -150,7 +151,7 @@ bool TextureManager::discoverTexturesInDirectory(const std::string& directory) {
 bool TextureManager::discoverTexturesRecursively(const std::string& rootDirectory) {
 #ifdef LINUX_BUILD
     try {
-        std::filesystem::path rootPath(rootDirectory);
+        std::filesystem::path rootPath(AssetPaths::resolve(rootDirectory));
         if (!std::filesystem::exists(rootPath) || !std::filesystem::is_directory(rootPath)) {
             std::cerr << "Root directory does not exist: " << rootDirectory << std::endl;
             return false;
@@ -190,7 +191,7 @@ bool TextureManager::discoverTexturesRecursively(const std::string& rootDirector
 
 #ifndef LINUX_BUILD
 bool TextureManager::readTextureManifest() {
-    SceUID fd = sceIoOpen("app0:/textures.txt", SCE_O_RDONLY, 0);
+    SceUID fd = sceIoOpen(AssetPaths::resolve("textures.txt").c_str(), SCE_O_RDONLY, 0);
     if (fd < 0) {
         return false;
     }

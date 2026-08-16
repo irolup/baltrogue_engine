@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include "Rendering/Framebuffer.h"
 #include "Rendering/Shader.h"
 #include "Rendering/ShadowAtlasGL.h"
@@ -54,6 +55,9 @@ public:
     
     bool isViewportFocused() const { return viewportFocused; }
     void setViewportFocused(bool focused) { viewportFocused = focused; }
+    bool isViewportHovered() const { return viewportHovered; }
+    void setViewportHovered(bool hovered) { viewportHovered = hovered; }
+    bool isCameraFlyActive() const { return cameraFlyActive; }
     bool isAnyWindowHovered() const;
     
     std::string generateUniqueNodeName(const std::string& baseName);
@@ -83,6 +87,8 @@ public:
     glm::vec2 getViewportSize() const { return viewportSize; }
     void setViewportSize(const glm::vec2& size);
     std::unique_ptr<Framebuffer>& getViewportFramebuffer() { return viewportFramebuffer; }
+
+    BuildSystem& getBuildSystem() { return buildSystem; }
 
     void setGridOrigin(const glm::vec3& origin) { gridOrigin = origin; gridMeshDirty = true; }
     glm::vec3 getGridOrigin() const { return gridOrigin; }
@@ -115,11 +121,17 @@ private:
     std::shared_ptr<SceneNode> editorCamera;
     
     bool viewportFocused;
-    
+    bool viewportHovered;
+    bool cameraFlyActive;
+    float cameraYaw;
+    float cameraPitch;
+
     std::unique_ptr<Framebuffer> viewportFramebuffer;
     glm::vec2 viewportSize;
     
     std::unique_ptr<EditorUI> ui;
+
+    BuildSystem buildSystem;
 
     glm::vec3 gridOrigin;
     float gridCellSize;
@@ -147,6 +159,10 @@ private:
 
     void createDefaultScene();
     void makeSubtreeNamesUnique(std::shared_ptr<SceneNode> node);
+    void updateCameraFlyState();
+    void beginCameraFly();
+    void endCameraFly();
+    glm::quat updateFlyRotation(const glm::vec2& mouseDelta);
     void handleViewportInput();
     void handleGameCameraInput(float deltaTime);
     void renderSceneToViewport();

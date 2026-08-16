@@ -1,4 +1,5 @@
 #include "Rendering/Shader.h"
+#include "Core/AssetPaths.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -296,10 +297,7 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
         lightingShader = std::make_shared<Shader>();
 
 #ifdef LINUX_BUILD
-        // Try to load the external lighting shaders first
-        // Try multiple possible paths for the editor
         if (lightingShader->loadFromFiles("assets/linux_shaders/lighting.vert", "assets/linux_shaders/lighting.frag")) {
-            // Verify bone matrix uniform exists in external shader
             lightingShader->use();
             GLint boneMatLoc = glGetUniformLocation(lightingShader->getProgram(), "u_BoneMatrices");
             GLint numBonesLoc = glGetUniformLocation(lightingShader->getProgram(), "u_NumBones");
@@ -313,35 +311,7 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
             lightingShader->unuse();
             return lightingShader;
         }
-        
-        // Try relative to current directory
-        if (lightingShader->loadFromFiles("./assets/linux_shaders/lighting.vert", "./assets/linux_shaders/lighting.frag")) {
-            // Verify bone matrix uniform exists
-            lightingShader->use();
-            GLint boneMatLoc = glGetUniformLocation(lightingShader->getProgram(), "u_BoneMatrices");
-            GLint numBonesLoc = glGetUniformLocation(lightingShader->getProgram(), "u_NumBones");
-            if (boneMatLoc == -1) {
-                std::cerr << "WARNING: u_BoneMatrices uniform NOT FOUND in EXTERNAL shader (./assets/linux_shaders/lighting.vert)" << std::endl;
-            }
-            if (numBonesLoc == -1) {
-                std::cerr << "WARNING: u_NumBones uniform NOT FOUND in EXTERNAL shader" << std::endl;
-            }
-            lightingShader->unuse();
-            return lightingShader;
-        }
-        
-        // Try from project root
-        if (lightingShader->loadFromFiles("../assets/linux_shaders/lighting.vert", "../assets/linux_shaders/lighting.frag")) {
-            // Verify bone matrix uniform exists
-            lightingShader->use();
-            GLint boneMatLoc = glGetUniformLocation(lightingShader->getProgram(), "u_BoneMatrices");
-            if (boneMatLoc == -1) {
-                std::cerr << "WARNING: u_BoneMatrices uniform NOT FOUND in EXTERNAL shader" << std::endl;
-            }
-            lightingShader->unuse();
-            return lightingShader;
-        }
-        
+
         std::cout << "External lighting shaders not found, using embedded fallback" << std::endl;
         
         // Fallback to embedded lighting shader if files can't be loaded
@@ -473,7 +443,7 @@ std::shared_ptr<Shader> Shader::getLightingShader() {
         }
     #else
         // Vita builds use CG/HLSL shaders
-        if (lightingShader->loadFromFiles("app0:/assets/shaders/lighting.vert", "app0:/assets/shaders/lighting.frag")) {
+        if (lightingShader->loadFromFiles("assets/shaders/lighting.vert", "assets/shaders/lighting.frag")) {
             return lightingShader;
         }
         
@@ -505,31 +475,17 @@ std::shared_ptr<Shader> Shader::getShadowDepthShader() {
     shadowShader = std::make_shared<Shader>();
 
 #ifdef VITA_BUILD
-    if (!shadowShader->loadFromFiles("app0:/assets/shaders/shadow_depth.vert",
-                                     "app0:/assets/shaders/shadow_depth.frag")) {
-        std::cerr << "Shader: shadow depth shader not found, shadows disabled" << std::endl;
-        shadowShader.reset();
-    }
+    const char* vertexPath = "assets/shaders/shadow_depth.vert";
+    const char* fragmentPath = "assets/shaders/shadow_depth.frag";
 #else
-    static const char* const searchPaths[][2] = {
-        {"assets/linux_shaders/shadow_depth.vert", "assets/linux_shaders/shadow_depth.frag"},
-        {"./assets/linux_shaders/shadow_depth.vert", "./assets/linux_shaders/shadow_depth.frag"},
-        {"../assets/linux_shaders/shadow_depth.vert", "../assets/linux_shaders/shadow_depth.frag"},
-    };
+    const char* vertexPath = "assets/linux_shaders/shadow_depth.vert";
+    const char* fragmentPath = "assets/linux_shaders/shadow_depth.frag";
+#endif
 
-    bool loaded = false;
-    for (const auto& paths : searchPaths) {
-        if (shadowShader->loadFromFiles(paths[0], paths[1])) {
-            loaded = true;
-            break;
-        }
-    }
-
-    if (!loaded) {
+    if (!shadowShader->loadFromFiles(vertexPath, fragmentPath)) {
         std::cerr << "Shader: shadow depth shader not found, shadows disabled" << std::endl;
         shadowShader.reset();
     }
-#endif
 
     return shadowShader;
 }
@@ -542,7 +498,7 @@ std::shared_ptr<Shader> Shader::getTextShader() {
 
 #ifdef VITA_BUILD
         textShader->needsTranspose = true;
-        if (textShader->loadFromFiles("app0:/assets/shaders/text.vert", "app0:/assets/shaders/text.frag")) {
+        if (textShader->loadFromFiles("assets/shaders/text.vert", "assets/shaders/text.frag")) {
             return textShader;
         }
 
@@ -718,7 +674,7 @@ GLint Shader::getUniformLocation(const std::string& name) const {
 }
 
 std::string Shader::readFile(const std::string& filepath) {
-    std::ifstream file(filepath);
+    std::ifstream file(AssetPaths::resolve(filepath));
     if (!file.is_open()) {
         
         return "";

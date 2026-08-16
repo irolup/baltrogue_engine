@@ -1,4 +1,5 @@
  #include "Rendering/Texture.h"
+#include "Core/AssetPaths.h"
 #include <iostream>
 #include <fstream>
 
@@ -192,9 +193,10 @@ bool Texture::loadSTBImage(const std::string& filepath) {
 }
 #endif
 
-bool Texture::loadFromFile(const std::string& filepath) {
+bool Texture::loadFromFile(const std::string& requestedPath) {
+    const std::string filepath = AssetPaths::resolveTexture(requestedPath);
     this->filepath = filepath;
-    
+
 #ifdef LINUX_BUILD
 #if defined(ENABLE_VULKAN)
     return loadSTBImage(filepath);
@@ -202,15 +204,15 @@ bool Texture::loadFromFile(const std::string& filepath) {
     if (loadSTBImage(filepath)) {
         return true;
     }
-    
+
     std::cout << "STB Image failed, trying PNG-specific loading for: " << filepath << std::endl;
-    
+
     FILE* file = fopen(filepath.c_str(), "rb");
     if (!file) {
         std::cerr << "Failed to open texture file: " << filepath << std::endl;
         return false;
     }
-    
+
     unsigned char header[8];
     if (fread(header, 1, 8, file) != 8) {
         std::cerr << "Failed to read PNG header: " << filepath << std::endl;
@@ -359,26 +361,11 @@ bool Texture::loadFromFile(const std::string& filepath) {
     return true;
 #endif
 #else
-    std::string vitaPath = filepath;
-    
-    if (filepath.find("assets/textures/") != std::string::npos) {
-        size_t lastSlash = filepath.find_last_of("/");
-        if (lastSlash != std::string::npos) {
-            vitaPath = "app0:/" + filepath.substr(lastSlash + 1);
-        } else {
-            vitaPath = "app0:/" + filepath;
-        }
-    } else if (filepath.find("app0:/") == std::string::npos) {
-        vitaPath = "app0:/" + filepath;
-    }
-    
-    std::cout << "Vita: Attempting to load texture from: " << vitaPath << std::endl;
-    
-    if (loadSTBImage(vitaPath)) {
+    if (loadSTBImage(filepath)) {
         return true;
     }
-    
-    std::cerr << "STB Image loading failed for: " << vitaPath << std::endl;
+
+    std::cerr << "STB Image loading failed for: " << filepath << std::endl;
     return false;
 #endif
 }
@@ -455,22 +442,13 @@ bool Texture::createCubemap(const std::vector<std::string>& facePaths) {
     for (unsigned int i = 0; i < 6; i++) {
         int w, h, channels;
         unsigned char* imageData = nullptr;
-        
+        const std::string facePath = AssetPaths::resolveTexture(facePaths[i]);
+
 #ifdef LINUX_BUILD
-        imageData = stbi_load(facePaths[i].c_str(), &w, &h, &channels, 0);
+        imageData = stbi_load(facePath.c_str(), &w, &h, &channels, 0);
 #else
-        std::string vitaPath = facePaths[i];
-        if (vitaPath.find("assets/textures/") != std::string::npos) {
-            size_t lastSlash = vitaPath.find_last_of("/");
-            if (lastSlash != std::string::npos) {
-                vitaPath = "app0:/" + vitaPath.substr(lastSlash + 1);
-            } else {
-                vitaPath = "app0:/" + vitaPath;
-            }
-        } else if (vitaPath.find("app0:/") == std::string::npos) {
-            vitaPath = "app0:/" + vitaPath;
-        }
-        
+        const std::string& vitaPath = facePath;
+
         SceUID fd = sceIoOpen(vitaPath.c_str(), SCE_O_RDONLY, 0);
         if (fd < 0) {
             std::cerr << "Failed to open cubemap face: " << vitaPath << std::endl;
@@ -501,7 +479,7 @@ bool Texture::createCubemap(const std::vector<std::string>& facePaths) {
 #endif
         
         if (!imageData) {
-            std::cerr << "Failed to load cubemap face " << i << ": " << facePaths[i] << std::endl;
+            std::cerr << "Failed to load cubemap face " << i << ": " << facePath << std::endl;
             continue;
         }
         

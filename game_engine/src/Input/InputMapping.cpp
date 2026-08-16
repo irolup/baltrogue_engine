@@ -1,6 +1,7 @@
 #include "Input/InputMapping.h"
 #include "Input/InputManager.h"
 #include "Core/Engine.h"
+#include "Core/AssetPaths.h"
 #include <fstream>
 #include <iostream>
 #include <algorithm>
@@ -34,7 +35,7 @@ void InputMappingManager::initialize() {
     shutdownCalled = false;
     
     // Check if saved mappings file exists
-    std::ifstream savedFile("config/input_mappings.txt");
+    std::ifstream savedFile(AssetPaths::resolve("config/input_mappings.txt"));
     bool hasSavedMappings = savedFile.is_open();
     savedFile.close();
     
@@ -212,7 +213,7 @@ void InputMappingManager::setDefaultMappings() {
 }
 
 void InputMappingManager::loadMappingsFromFile(const std::string& filePath, bool clearExisting) {
-    std::ifstream file(filePath);
+    std::ifstream file(AssetPaths::resolve(filePath));
     if (!file.is_open()) {
         // File doesn't exist, that's okay - we'll use defaults
         std::cout << "InputMappingManager: No saved mappings found at " << filePath << ", using defaults" << std::endl;

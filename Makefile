@@ -38,7 +38,7 @@ endif
 VITA_LIBS = -lvitaGL -lSceLibKernel_stub -lSceAppMgr_stub -lSceAppUtil_stub -lSceIofilemgr_stub -lmathneon \
     -lc -lSceCommonDialog_stub -lm -lSceGxm_stub -lSceDisplay_stub -lSceSysmodule_stub \
     -lvitashark -lSceShaccCg_stub -lSceKernelDmacMgr_stub -lstdc++ -lSceCtrl_stub \
-    -lSceAudio_stub -ltoloader -lSceShaccCgExt -ltaihen_stub -lm -L$(VENDOR_SOURCES)/lua/lib -llua -lz
+    -lSceAudio_stub -lSceTouch_stub -ltoloader -lSceShaccCgExt -ltaihen_stub -lm -L$(VENDOR_SOURCES)/lua/lib -llua -lz
 
 # Linux-specific libraries (LINUX_VULKAN_LIBS set below when Vulkan sources exist)
 ifeq ($(USE_VULKAN),1)
@@ -136,7 +136,7 @@ TINYGLTF_CPPFILES := $(wildcard $(TINYGLTF_SOURCES)/*.cc)
 # Include SceneSerializer.cpp for JSON scene loading in Vita builds
 # Include pthread stub for Vita (provides pthread compatibility for libstdc++)
 ALL_CFILES := $(ENGINE_CFILES) game_engine/src/App/pthread_stub.c
-ALL_CPPFILES := game_engine/src/App/vita_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp game_engine/src/Scene/SceneBinaryFormat.cpp
+ALL_CPPFILES := game_engine/src/App/vita_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp game_engine/src/Editor/BuildSettings.cpp game_engine/src/Scene/SceneBinaryFormat.cpp
 
 # Linux game source files (new game main + engine + platform, excluding editor and old game files)
 # Include SceneSerializer.cpp for JSON scene loading in game builds, and
@@ -164,6 +164,14 @@ LINUX_TINYGLTF_OBJS := $(addprefix $(LINUX_BUILD_DIR)/,$(TINYGLTF_CPPFILES:.cc=.
 EDITOR_ALL_CPPFILES_WITH_VENDOR := $(EDITOR_ALL_CPPFILES) $(IMGUI_CPPFILES) $(IMGUIZMO_CPPFILES)
 EDITOR_OBJS := $(addprefix $(EDITOR_BUILD_DIR)/,$(EDITOR_ALL_CPPFILES_WITH_VENDOR:.cpp=.o))
 EDITOR_TINYGLTF_OBJS := $(addprefix $(EDITOR_BUILD_DIR)/,$(TINYGLTF_CPPFILES:.cc=.o))
+
+DEPFLAGS := -MMD -MP
+
+DEPFILES := $(OBJS:.o=.d) $(TINYGLTF_OBJS:.o=.d) \
+            $(LINUX_OBJS:.o=.d) $(LINUX_TINYGLTF_OBJS:.o=.d) \
+            $(EDITOR_OBJS:.o=.d) $(EDITOR_TINYGLTF_OBJS:.o=.d)
+
+-include $(DEPFILES)
 
 # Binary scene assets (JSON converted at build time; save_file stays JSON)
 SCENE_JSON_SOURCES := $(filter-out assets/scenes/save_file.json,$(wildcard assets/scenes/*.json))
@@ -246,6 +254,7 @@ VPK_ASSETS := \
 	assets/shaders/shadow_depth.vert=assets/shaders/shadow_depth.vert \
 	assets/shaders/shadow_depth.frag=assets/shaders/shadow_depth.frag \
 	config/default_input_mappings.txt=config/default_input_mappings.txt \
+	config/build_settings.txt=config/build_settings.txt \
 	assets/textures/memes/biden_diff_.png=biden_diff_.png \
 	assets/textures/terrain/Grass_01_diff.png=Grass_01_diff.png \
 	assets/textures/terrain/stonetiles_002_diff.png=stonetiles_002_diff.png \
@@ -259,6 +268,7 @@ VPK_ASSETS := \
 	assets/models/hedge_small.glb=assets/models/hedge_small.glb \
 	assets/models/well.glb=assets/models/well.glb \
 	assets/models/SignPlate1.glb=assets/models/SignPlate1.glb \
+	assets/models/coin.glb=assets/models/coin.glb \
 	assets/scenes/main_menu.bscn=assets/scenes/main_menu.bscn \
 	assets/scenes/level_1.bscn=assets/scenes/level_1.bscn \
 	assets/scenes/level_2.bscn=assets/scenes/level_2.bscn \
@@ -281,6 +291,7 @@ VPK_ASSETS := \
 	assets/scripts/tire_game/tire_physics.lua=assets/scripts/tire_game/tire_physics.lua \
 	assets/scripts/tire_game/tire_save.lua=assets/scripts/tire_game/tire_save.lua \
 	assets/scripts/tire_game/tire_spawn.lua=assets/scripts/tire_game/tire_spawn.lua
+
 
 VPK_OPTIONAL_ASSETS := textures.txt fonts.txt scripts.txt config/input_mappings.txt config/shadow_settings.txt
 VPK_OPTIONAL_PRESENT := $(wildcard $(VPK_OPTIONAL_ASSETS))
@@ -349,7 +360,7 @@ $(EDITOR_BUILD_DIR)/$(EDITOR_TARGET): $(EDITOR_OBJS) $(EDITOR_TINYGLTF_OBJS) | $
 # Convert JSON scenes to binary MessagePack format
 scene-binaries: $(SCENE_BINARY_FILES)
 
-$(SCENE_TO_BINARY): tools/scene_to_binary.cpp game_engine/src/Scene/SceneBinaryFormat.cpp
+$(SCENE_TO_BINARY): tools/scene_to_binary.cpp game_engine/src/Scene/SceneBinaryFormat.cpp game_engine/src/Core/AssetPaths.cpp
 	@mkdir -p $(dir $@)
 	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(LINUX_INCLUDES) -I$(ENGINE_INCLUDES) $^ -o $@
 
@@ -359,52 +370,52 @@ assets/scenes/%.bscn: assets/scenes/%.json $(SCENE_TO_BINARY)
 # Build rules for C files (Vita)
 $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(VITA_INCLUDES) -DVITA_BUILD -DLUA_USE_C89 -c $< -o $@
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(VITA_INCLUDES) -DVITA_BUILD -DLUA_USE_C89 -c $< -o $@
 
 # Build rules for C++ files (Vita)
 $(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(VITA_INCLUDES) -DVITA_BUILD -DLUA_USE_C89 -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(VITA_INCLUDES) -DVITA_BUILD -DLUA_USE_C89 -c $< -o $@
 
 # Build rules for .cc files (Vita)
 $(BUILD_DIR)/%.o: %.cc | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(VITA_INCLUDES) -DVITA_BUILD -DLUA_USE_C89 -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(VITA_INCLUDES) -DVITA_BUILD -DLUA_USE_C89 -c $< -o $@
 
 # Build rules for C files (Linux Game)
 $(LINUX_BUILD_DIR)/%.o: %.c | $(LINUX_BUILD_DIR)
 	@mkdir -p $(dir $@)
-	$(LINUX_CC) $(LINUX_CFLAGS) $(ALL_INCLUDES) -DLINUX_BUILD -c $< -o $@
+	$(LINUX_CC) $(LINUX_CFLAGS) $(DEPFLAGS) $(ALL_INCLUDES) -DLINUX_BUILD -c $< -o $@
 
 # Build rules for C++ files (Linux Game)
 $(LINUX_BUILD_DIR)/%.o: %.cpp | $(LINUX_BUILD_DIR)
 	@mkdir -p $(dir $@)
-	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(ALL_INCLUDES) -DLINUX_BUILD -c $< -o $@
+	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(DEPFLAGS) $(ALL_INCLUDES) -DLINUX_BUILD -c $< -o $@
 
 # Build rules for .cc files (Linux Game)
 $(LINUX_BUILD_DIR)/%.o: %.cc | $(LINUX_BUILD_DIR)
 	@mkdir -p $(dir $@)
-	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(ALL_INCLUDES) -DLINUX_BUILD -c $< -o $@
+	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(DEPFLAGS) $(ALL_INCLUDES) -DLINUX_BUILD -c $< -o $@
 
 # Build rules for C files (Linux Editor)
 $(EDITOR_BUILD_DIR)/%.o: %.c | $(EDITOR_BUILD_DIR)
 	@mkdir -p $(dir $@)
-	$(LINUX_CC) $(LINUX_CFLAGS) $(EDITOR_INCLUDES) -DLINUX_BUILD -DEDITOR_BUILD -c $< -o $@
+	$(LINUX_CC) $(LINUX_CFLAGS) $(DEPFLAGS) $(EDITOR_INCLUDES) -DLINUX_BUILD -DEDITOR_BUILD -c $< -o $@
 
 # Build rules for C++ files (Linux Editor)
 $(EDITOR_BUILD_DIR)/%.o: %.cpp | $(EDITOR_BUILD_DIR)
 	@mkdir -p $(dir $@)
-	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(EDITOR_INCLUDES) -DLINUX_BUILD -DEDITOR_BUILD -c $< -o $@
+	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(DEPFLAGS) $(EDITOR_INCLUDES) -DLINUX_BUILD -DEDITOR_BUILD -c $< -o $@
 
 # Build rules for .cc files (Linux Editor)
 $(EDITOR_BUILD_DIR)/%.o: %.cc | $(EDITOR_BUILD_DIR)
 	@mkdir -p $(dir $@)
-	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(EDITOR_INCLUDES) -DLINUX_BUILD -DEDITOR_BUILD -c $< -o $@
+	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(DEPFLAGS) $(EDITOR_INCLUDES) -DLINUX_BUILD -DEDITOR_BUILD -c $< -o $@
 
 # Special build rules for vendor/imguizmo (suppress warnings from third-party code)
 $(EDITOR_BUILD_DIR)/vendor/imguizmo/%.o: vendor/imguizmo/%.cpp | $(EDITOR_BUILD_DIR)
 	@mkdir -p $(dir $@)
-	$(LINUX_CXX) $(LINUX_CXXFLAGS) -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable $(EDITOR_INCLUDES) -DLINUX_BUILD -DEDITOR_BUILD -c $< -o $@
+	$(LINUX_CXX) $(LINUX_CXXFLAGS) $(DEPFLAGS) -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable $(EDITOR_INCLUDES) -DLINUX_BUILD -DEDITOR_BUILD -c $< -o $@
 
 # Clean all builds
 clean:
@@ -438,6 +449,18 @@ rebuild-linux:
 rebuild-editor:
 	@$(MAKE) clean-editor
 	@$(MAKE) editor
+
+# Build every config that ships, stopping at the first failure
+check-all:
+	@echo "==> [1/4] linux (Vulkan)"
+	@$(MAKE) linux
+	@echo "==> [2/4] linux (OpenGL, USE_VULKAN=0)"
+	@$(MAKE) linux USE_VULKAN=0
+	@echo "==> [3/4] editor"
+	@$(MAKE) editor
+	@echo "==> [4/4] vita"
+	@$(MAKE) vita
+	@echo "==> all four configs built"
 
 # Install Linux dependencies (Ubuntu/Debian)
 install-deps:
@@ -487,6 +510,7 @@ help:
 	@echo "  rebuild-vita   - clean-vita then vita (other builds untouched)"
 	@echo "  rebuild-linux  - clean-linux then linux"
 	@echo "  rebuild-editor - clean-editor then editor"
+	@echo "  check-all      - build all four configs (linux vulkan, linux GL, editor, vita)"
 	@echo "  install-deps   - Install Linux dependencies"
 	@echo "  install-editor-deps - Install editor dependencies"
 	@echo "  lua-vita       - Build Lua 5.3 static library for PS Vita"
@@ -501,4 +525,4 @@ build-bullet:
 	@echo "  - Vita: Cross-compile using VitaSDK toolchain"
 	@echo "  - Place the built .a files in vendor/bullet/lib/"
 
-.PHONY: all vita livearea linux editor run run-editor clean clean-vita clean-linux clean-editor clean-scenes rebuild-vita rebuild-linux rebuild-editor install-deps install-editor-deps debug-linux debug-editor help build-bullet lua-vita scene-binaries
+.PHONY: all vita livearea linux editor run run-editor clean clean-vita clean-linux clean-editor clean-scenes rebuild-vita rebuild-linux rebuild-editor check-all install-deps install-editor-deps debug-linux debug-editor help build-bullet lua-vita scene-binaries

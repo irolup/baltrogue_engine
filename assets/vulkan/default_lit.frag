@@ -369,7 +369,7 @@ void main() {
     float alpha = uMaterial.baseColor.a;
     if (uMaterial.textureFlags.x > 0.5) {
         vec4 diffuseSample = texture(uDiffuseTexture, uv);
-        albedo = diffuseSample.rgb;
+        albedo *= diffuseSample.rgb;
         alpha *= diffuseSample.a;
     }
 

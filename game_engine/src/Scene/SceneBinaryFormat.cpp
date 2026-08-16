@@ -1,5 +1,7 @@
 #include "Scene/SceneBinaryFormat.h"
 
+#include "Core/AssetPaths.h"
+
 #include "../../vendor/json/single_include/nlohmann/json.hpp"
 
 #include <cstring>
@@ -41,22 +43,7 @@ std::string replaceExtension(const std::string& path, const char* newExtension) 
 }
 
 #ifdef VITA_BUILD
-std::string toVitaPath(const std::string& path) {
-    if (path.find("app0:") == 0 || path.find("ux0:") == 0 || path.find("ur0:") == 0 ||
-        path.find("uma0:") == 0 || path.find("imc0:") == 0 || path.find("xmc0:") == 0 ||
-        path.find("vs0:") == 0 || path.find("vd0:") == 0) {
-        return path;
-    }
-    return "app0:/" + path;
-}
-
-bool vitaFileExists(const std::string& path) {
-    SceIoStat stat;
-    return sceIoGetstat(toVitaPath(path).c_str(), &stat) >= 0;
-}
-
-bool readVitaFileBytes(const std::string& path, std::vector<uint8_t>& outBytes) {
-    const std::string vitaPath = toVitaPath(path);
+bool readVitaFileBytes(const std::string& vitaPath, std::vector<uint8_t>& outBytes) {
     SceUID fd = sceIoOpen(vitaPath.c_str(), SCE_O_RDONLY, 0);
     if (fd < 0) {
         return false;
@@ -72,13 +59,6 @@ bool readVitaFileBytes(const std::string& path, std::vector<uint8_t>& outBytes) 
     const SceSSize bytesRead = sceIoRead(fd, outBytes.data(), stat.st_size);
     sceIoClose(fd);
     return bytesRead == stat.st_size;
-}
-#endif
-
-#ifndef VITA_BUILD
-bool hostFileExists(const std::string& path) {
-    std::ifstream file(path.c_str(), std::ios::binary);
-    return file.good();
 }
 #endif
 
@@ -98,16 +78,9 @@ std::string SceneBinaryFormat::resolveSceneLoadPath(const std::string& requested
     }
 
     const std::string binaryPath = jsonPathToBinaryPath(requestedPath);
-
-#ifdef VITA_BUILD
-    if (vitaFileExists(binaryPath)) {
+    if (AssetPaths::exists(AssetPaths::resolve(binaryPath))) {
         return binaryPath;
     }
-#else
-    if (hostFileExists(binaryPath)) {
-        return binaryPath;
-    }
-#endif
 
     return requestedPath;
 }
@@ -132,10 +105,12 @@ bool SceneBinaryFormat::isBinaryPayload(const std::vector<uint8_t>& data) {
 bool SceneBinaryFormat::readFileBytes(const std::string& filepath, std::vector<uint8_t>& outBytes) {
     outBytes.clear();
 
+    const std::string resolvedPath = AssetPaths::resolve(filepath);
+
 #ifdef VITA_BUILD
-    return readVitaFileBytes(filepath, outBytes);
+    return readVitaFileBytes(resolvedPath, outBytes);
 #else
-    std::ifstream file(filepath.c_str(), std::ios::binary);
+    std::ifstream file(resolvedPath.c_str(), std::ios::binary);
     if (!file.is_open()) {
         return false;
     }

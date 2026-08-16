@@ -33,7 +33,7 @@ public:
     void recordShadowPass(vk::CommandBuffer cmdBuf, uint32_t imageIndex);
     void recordTextRenderCommand(vk::CommandBuffer cmdBuf, const TextRenderCommand& tc);
     void recordSkyboxRenderCommand(vk::CommandBuffer cmdBuf, uint32_t imageIndex);
-    void recordShaderMaterialRenderCommand(vk::CommandBuffer cmdBuf, uint32_t imageIndex, const RenderCommand& rc, float totalTime);
+    void recordShaderMaterialRenderCommand(vk::CommandBuffer cmdBuf, uint32_t imageIndex, const RenderCommand& rc, float totalTime, size_t drawIndex = 0);
 
     // Set the current swapchain image index (frame owner `VulkanFrame` sets this)
     void setCurrentImageIndex(uint32_t idx) { currentImageIndex = idx; }

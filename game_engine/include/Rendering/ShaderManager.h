@@ -33,6 +33,9 @@ public:
     static std::string getShaderDirectory(const std::string& platform);
     
     static std::vector<std::string> discoverShaders(const std::string& directory, const std::string& extension = ".vert");
+
+    // Returns true if the .spv already exists
+    static bool compileVulkanGlslToSpv(const std::string& glslPath, std::string* errorOut = nullptr);
     
 private:
     ShaderManager() = default;

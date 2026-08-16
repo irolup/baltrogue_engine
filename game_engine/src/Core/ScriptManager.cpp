@@ -6,13 +6,17 @@
 #include "Scene/Scene.h"
 #include "Components/CameraComponent.h"
 #include "Components/MeshRenderer.h"
+#include "Components/ModelRenderer.h"
+#include "Components/MaterialComponent.h"
 #include "Rendering/Material.h"
 #include "Core/Engine.h"
 #include "Core/MenuManager.h"
+#include "Core/AssetPaths.h"
 #include <iostream>
 #include <ctime>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #ifndef VITA_BUILD
 #include <filesystem>
 #include <chrono>
@@ -70,6 +74,98 @@ static void applyLuaTableToMaterial(Material* mat, lua_State* L, int tableIndex)
     if (hasDepthWrite) {
         mat->setDepthWrite(depthWriteValue);
     }
+}
+
+static bool readLuaNumberField(lua_State* L, int tableIndex, const char* key, float& outValue) {
+    lua_getfield(L, tableIndex, key);
+    const bool found = lua_isnumber(L, -1) != 0;
+    if (found) outValue = static_cast<float>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+    return found;
+}
+
+static bool readLuaBoolField(lua_State* L, int tableIndex, const char* key, bool& outValue) {
+    lua_getfield(L, tableIndex, key);
+    const bool found = lua_isboolean(L, -1) != 0;
+    if (found) outValue = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1);
+    return found;
+}
+
+static bool readLuaStringField(lua_State* L, int tableIndex, const char* key, std::string& outValue) {
+    lua_getfield(L, tableIndex, key);
+    const bool found = lua_isstring(L, -1) != 0;
+    if (found) outValue = lua_tostring(L, -1);
+    lua_pop(L, 1);
+    return found;
+}
+
+static bool readLuaVectorField(lua_State* L, int tableIndex, const char* key, float* outValues, int count) {
+    lua_getfield(L, tableIndex, key);
+    bool found = false;
+    if (lua_istable(L, -1) && static_cast<int>(lua_rawlen(L, -1)) >= count) {
+        for (int i = 0; i < count; ++i) {
+            lua_rawgeti(L, -1, i + 1);
+            outValues[i] = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+        }
+        found = true;
+    }
+    lua_pop(L, 1);
+    return found;
+}
+
+static void applyLuaTableToMaterialOverride(MaterialOverride& overrides, lua_State* L, int tableIndex) {
+    if (!lua_istable(L, tableIndex)) return;
+
+    overrides.overrideBaseColor = readLuaVectorField(L, tableIndex, "baseColor", &overrides.baseColor.x, 3);
+    overrides.overrideMetallic = readLuaNumberField(L, tableIndex, "metallic", overrides.metallic);
+    overrides.overrideRoughness = readLuaNumberField(L, tableIndex, "roughness", overrides.roughness);
+    overrides.overrideReflectionStrength =
+        readLuaNumberField(L, tableIndex, "reflectionStrength", overrides.reflectionStrength);
+    overrides.overrideOpacity = readLuaNumberField(L, tableIndex, "opacity", overrides.opacity);
+    overrides.overrideAlphaCutoff = readLuaNumberField(L, tableIndex, "alphaCutoff", overrides.alphaCutoff);
+    overrides.overrideDoubleSided = readLuaBoolField(L, tableIndex, "doubleSided", overrides.doubleSided);
+
+    std::string blendMode;
+    if (readLuaStringField(L, tableIndex, "blendMode", blendMode)) {
+        overrides.overrideBlendMode = true;
+        if (blendMode == "Alpha") overrides.blendMode = BlendMode::Alpha;
+        else if (blendMode == "Additive") overrides.blendMode = BlendMode::Additive;
+        else overrides.blendMode = BlendMode::Opaque;
+    }
+
+    const bool hasUVScale = readLuaVectorField(L, tableIndex, "uvScale", &overrides.uvScale.x, 2);
+    const bool hasUVOffset = readLuaVectorField(L, tableIndex, "uvOffset", &overrides.uvOffset.x, 2);
+    overrides.overrideUVTransform = hasUVScale || hasUVOffset;
+
+    readLuaStringField(L, tableIndex, "diffuseTexture", overrides.diffuseTexturePath);
+    readLuaStringField(L, tableIndex, "normalTexture", overrides.normalTexturePath);
+    readLuaStringField(L, tableIndex, "armTexture", overrides.armTexturePath);
+
+    readLuaStringField(L, tableIndex, "shaderVertexPathLinux", overrides.shaderVertexPathLinux);
+    readLuaStringField(L, tableIndex, "shaderFragmentPathLinux", overrides.shaderFragmentPathLinux);
+    readLuaStringField(L, tableIndex, "shaderVertexPathVita", overrides.shaderVertexPathVita);
+    readLuaStringField(L, tableIndex, "shaderFragmentPathVita", overrides.shaderFragmentPathVita);
+    readLuaStringField(L, tableIndex, "shaderVertexPathVulkan", overrides.shaderVertexPathVulkan);
+    readLuaStringField(L, tableIndex, "shaderFragmentPathVulkan", overrides.shaderFragmentPathVulkan);
+}
+
+static int forEachRendererNode(SceneNode* node, const std::function<void(SceneNode*)>& visitor) {
+    if (!node) return 0;
+
+    int count = 0;
+    if (node->getComponent<MeshRenderer>() || node->getComponent<ModelRenderer>()) {
+        visitor(node);
+        count++;
+    }
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        auto child = node->getChild(i);
+        if (child) {
+            count += forEachRendererNode(child.get(), visitor);
+        }
+    }
+    return count;
 }
 
 std::unique_ptr<ScriptManager> ScriptManager::instance = nullptr;
@@ -137,7 +233,7 @@ bool ScriptManager::executeScript(const std::string& scriptPath) {
     
     std::cout << "ScriptManager: Executing script: " << scriptPath << std::endl;
     
-    int result = luaL_dofile(globalLuaState, scriptPath.c_str());
+    int result = luaL_dofile(globalLuaState, AssetPaths::resolve(scriptPath).c_str());
     if (result != LUA_OK) {
         handleLuaError("executeScript: " + scriptPath);
         return false;
@@ -914,7 +1010,53 @@ void ScriptManager::bindSceneSystem() {
         return 1;
     }, 0);
     lua_settable(globalLuaState, -3);
-    
+
+    lua_pushstring(globalLuaState, "setNodeMaterialProperties");
+    lua_pushcclosure(globalLuaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        if (!nodeName || !lua_istable(L, 2)) { lua_pushboolean(L, false); return 1; }
+        auto activeScene = GetEngine().getSceneManager().getCurrentScene();
+        if (!activeScene) { lua_pushboolean(L, false); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushboolean(L, false); return 1; }
+
+        MaterialOverride overrides;
+        applyLuaTableToMaterialOverride(overrides, L, 2);
+
+        const int rendererCount = forEachRendererNode(node.get(), [&overrides](SceneNode* n) {
+            MaterialComponent* materialComponent = n->getComponent<MaterialComponent>();
+            if (!materialComponent) {
+                materialComponent = n->addComponent<MaterialComponent>();
+            }
+            materialComponent->setOverrides(overrides);
+        });
+
+        lua_pushboolean(L, rendererCount > 0);
+        return 1;
+    }, 0);
+    lua_settable(globalLuaState, -3);
+
+    lua_pushstring(globalLuaState, "clearNodeMaterialProperties");
+    lua_pushcclosure(globalLuaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        if (!nodeName) { lua_pushboolean(L, false); return 1; }
+        auto activeScene = GetEngine().getSceneManager().getCurrentScene();
+        if (!activeScene) { lua_pushboolean(L, false); return 1; }
+        auto node = activeScene->findNode(nodeName);
+        if (!node) { lua_pushboolean(L, false); return 1; }
+
+        const int rendererCount = forEachRendererNode(node.get(), [](SceneNode* n) {
+            MaterialComponent* materialComponent = n->getComponent<MaterialComponent>();
+            if (materialComponent) {
+                materialComponent->clearOverrides();
+            }
+        });
+
+        lua_pushboolean(L, rendererCount > 0);
+        return 1;
+    }, 0);
+    lua_settable(globalLuaState, -3);
+
     lua_setglobal(globalLuaState, "scene");
 }
 

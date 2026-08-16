@@ -1,4 +1,5 @@
 #include "Rendering/Vulkan/VulkanResources.h"
+#include "Core/AssetPaths.h"
 #include "Rendering/Material.h"
 #include "../../vendor/tinygltf/stb_image.h"
 #include <stdexcept>
@@ -20,69 +21,70 @@ void VulkanResources::create(VulkanDevice& device, VulkanSwapChain& swapChain){
     createAnimationUniformBuffers();
 }
 
-void VulkanResources::ensureMaterialUniformBuffer(const Material* material, const MaterialUniforms& data) {
-    if (!material) return;
-    auto it = materialUniformBuffers_.find(material);
-    vk::DeviceSize dataSize = sizeof(MaterialUniforms);
-    if (it != materialUniformBuffers_.end()) {
-        // Update existing buffer
-        auto& mb = it->second;
-        if (mb.size == dataSize) {
-            void* mem = mb.memory.mapMemory(0, dataSize);
-            memcpy(mem, &data, static_cast<size_t>(dataSize));
-            mb.memory.unmapMemory();
-            return;
-        }
-    }
-
-    vk::raii::Buffer buf = nullptr;
-    vk::raii::DeviceMemory mem = nullptr;
-    createBuffer(dataSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buf, mem);
-    void* mapped = mem.mapMemory(0, dataSize);
-    memcpy(mapped, &data, static_cast<size_t>(dataSize));
-    mem.unmapMemory();
-
-    MaterialBuffer mb{};
-    mb.buffer = std::move(buf);
-    mb.memory = std::move(mem);
-    mb.size = dataSize;
-
-    materialUniformBuffers_.emplace(material, std::move(mb));
+uint32_t VulkanResources::getFrameSlotCount() const {
+    return swapChain_ ? static_cast<uint32_t>(swapChain_->getImages().size()) : 1;
 }
 
-void VulkanResources::ensureShaderMaterialUniformBuffer(const Material* material, const ShaderMaterialUniforms& data) {
+void VulkanResources::ensureMaterialUniformBuffer(const Material* material, uint32_t imageIndex, const MaterialUniforms& data) {
     if (!material) return;
-    auto it = shaderMaterialUniformBuffers_.find(material);
-    const vk::DeviceSize dataSize = sizeof(ShaderMaterialUniforms);
-    if (it != shaderMaterialUniformBuffers_.end()) {
-        auto& mb = it->second;
-        if (mb.size == dataSize) {
-            void* mem = mb.memory.mapMemory(0, dataSize);
-            memcpy(mem, &data, static_cast<size_t>(dataSize));
-            mb.memory.unmapMemory();
-            return;
-        }
+
+    const uint32_t slotCount = getFrameSlotCount();
+    if (imageIndex >= slotCount) return;
+
+    std::vector<MaterialBuffer>& buffers = materialUniformBuffers_[material];
+    if (buffers.size() != slotCount) {
+        buffers.clear();
+        buffers.resize(slotCount);
     }
 
-    vk::raii::Buffer buf = nullptr;
-    vk::raii::DeviceMemory mem = nullptr;
-    createBuffer(dataSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buf, mem);
-    void* mapped = mem.mapMemory(0, dataSize);
+    const vk::DeviceSize dataSize = sizeof(MaterialUniforms);
+    MaterialBuffer& materialBuffer = buffers[imageIndex];
+    if (materialBuffer.size != dataSize) {
+        createBuffer(
+            dataSize,
+            vk::BufferUsageFlagBits::eUniformBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            materialBuffer.buffer,
+            materialBuffer.memory);
+        materialBuffer.size = dataSize;
+    }
+
+    void* mapped = materialBuffer.memory.mapMemory(0, dataSize);
     memcpy(mapped, &data, static_cast<size_t>(dataSize));
-    mem.unmapMemory();
+    materialBuffer.memory.unmapMemory();
+}
 
-    ShaderMaterialBuffer mb{};
-    mb.buffer = std::move(buf);
-    mb.memory = std::move(mem);
-    mb.size = dataSize;
+void VulkanResources::ensureShaderMaterialUniformBuffer(const Material* material, uint32_t imageIndex, const ShaderMaterialUniforms& data) {
+    if (!material) return;
 
-    shaderMaterialUniformBuffers_.emplace(material, std::move(mb));
+    const uint32_t slotCount = getFrameSlotCount();
+    if (imageIndex >= slotCount) return;
+
+    std::vector<ShaderMaterialBuffer>& buffers = shaderMaterialUniformBuffers_[material];
+    if (buffers.size() != slotCount) {
+        buffers.clear();
+        buffers.resize(slotCount);
+    }
+
+    const vk::DeviceSize dataSize = sizeof(ShaderMaterialUniforms);
+    ShaderMaterialBuffer& materialBuffer = buffers[imageIndex];
+    if (materialBuffer.size != dataSize) {
+        createBuffer(
+            dataSize,
+            vk::BufferUsageFlagBits::eUniformBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            materialBuffer.buffer,
+            materialBuffer.memory);
+        materialBuffer.size = dataSize;
+    }
+
+    void* mapped = materialBuffer.memory.mapMemory(0, dataSize);
+    memcpy(mapped, &data, static_cast<size_t>(dataSize));
+    materialBuffer.memory.unmapMemory();
 }
 
 void VulkanResources::createAnimationUniformBuffers() {
-    const uint32_t imageCount = swapChain_
-        ? static_cast<uint32_t>(swapChain_->getImages().size())
-        : 1;
+    const uint32_t imageCount = getFrameSlotCount();
     const uint32_t totalSlots = kMaxSkinnedDrawsPerFrame * imageCount;
 
     animationUniformBuffers_.resize(totalSlots);
@@ -159,25 +161,29 @@ void VulkanResources::ensureTextMaterialUniformBuffer(const TextMaterial* materi
     textMaterialUniformBuffers_.emplace(material, std::move(mb));
 }
 
-vk::DescriptorBufferInfo VulkanResources::getMaterialDescriptorBufferInfo(const Material* material) const {
+vk::DescriptorBufferInfo VulkanResources::getMaterialDescriptorBufferInfo(const Material* material, uint32_t imageIndex) const {
     vk::DescriptorBufferInfo info{};
     if (!material) return info;
     auto it = materialUniformBuffers_.find(material);
-    if (it == materialUniformBuffers_.end()) return info;
-    info.buffer = *it->second.buffer;
+    if (it == materialUniformBuffers_.end() || imageIndex >= it->second.size()) return info;
+    const MaterialBuffer& materialBuffer = it->second[imageIndex];
+    if (materialBuffer.size == 0) return info;
+    info.buffer = *materialBuffer.buffer;
     info.offset = 0;
-    info.range = it->second.size;
+    info.range = materialBuffer.size;
     return info;
 }
 
-vk::DescriptorBufferInfo VulkanResources::getShaderMaterialDescriptorBufferInfo(const Material* material) const {
+vk::DescriptorBufferInfo VulkanResources::getShaderMaterialDescriptorBufferInfo(const Material* material, uint32_t imageIndex) const {
     vk::DescriptorBufferInfo info{};
     if (!material) return info;
     auto it = shaderMaterialUniformBuffers_.find(material);
-    if (it == shaderMaterialUniformBuffers_.end()) return info;
-    info.buffer = *it->second.buffer;
+    if (it == shaderMaterialUniformBuffers_.end() || imageIndex >= it->second.size()) return info;
+    const ShaderMaterialBuffer& materialBuffer = it->second[imageIndex];
+    if (materialBuffer.size == 0) return info;
+    info.buffer = *materialBuffer.buffer;
     info.offset = 0;
-    info.range = it->second.size;
+    info.range = materialBuffer.size;
     return info;
 }
 
@@ -408,7 +414,8 @@ vk::Format VulkanResources::findDepthFormat() {
 
 void VulkanResources::createTextureImage(std::string texturePath) {
     int texWidth, texHeight, texChannels;
-    stbi_uc* pixels = stbi_load(texturePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    const std::string resolvedPath = resolveTexturePath(texturePath);
+    stbi_uc* pixels = stbi_load(resolvedPath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     vk::DeviceSize imageSize = texWidth * texHeight * 4;
     mipLevels_ = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 
@@ -439,49 +446,10 @@ std::string VulkanResources::resolveTexturePath(const std::string& path) {
         return path;
     }
 
-    std::string normalized;
-    normalized.reserve(path.size());
-    for (char c : path) {
-        normalized += (c == '\\') ? '/' : c;
-    }
-
-    std::vector<std::string> parts;
-    std::string segment;
-    for (size_t i = 0; i <= normalized.size(); ++i) {
-        const char c = (i < normalized.size()) ? normalized[i] : '/';
-        if (c == '/') {
-            if (!segment.empty() && segment != ".") {
-                if (segment == "..") {
-                    if (!parts.empty() && parts.back() != "..") {
-                        parts.pop_back();
-                    } else {
-                        parts.push_back(segment);
-                    }
-                } else {
-                    parts.push_back(segment);
-                }
-            }
-            segment.clear();
-        } else {
-            segment += c;
-        }
-    }
-
-    std::string resolved;
-    for (size_t i = 0; i < parts.size(); ++i) {
-        if (i > 0) {
-            resolved += '/';
-        }
-        resolved += parts[i];
-    }
-
+    const std::string resolved = AssetPaths::resolveTexture(path);
     std::error_code ec;
     const std::filesystem::path canonical = std::filesystem::weakly_canonical(resolved, ec);
-    if (!ec) {
-        return canonical.generic_string();
-    }
-
-    return resolved;
+    return ec ? resolved : canonical.generic_string();
 }
 
 bool VulkanResources::isEmbeddedTextureKey(const std::string& key) {
@@ -699,10 +667,16 @@ const VulkanResources::VulkanTexture& VulkanResources::getDefaultCubemapTexture(
     return getDefaultCubemap();
 }
 
-const VulkanResources::VulkanTexture& VulkanResources::getOrCreateCubemapTexture(const std::vector<std::string>& facePaths) {
+const VulkanResources::VulkanTexture& VulkanResources::getOrCreateCubemapTexture(const std::vector<std::string>& requestedFacePaths) {
 
-    if (isInvalidCubemapPaths(facePaths)) {
+    if (isInvalidCubemapPaths(requestedFacePaths)) {
         return getDefaultCubemap();
+    }
+
+    std::vector<std::string> facePaths;
+    facePaths.reserve(requestedFacePaths.size());
+    for (const auto& path : requestedFacePaths) {
+        facePaths.push_back(resolveTexturePath(path));
     }
 
     auto key = makeCubemapCacheKey(facePaths);

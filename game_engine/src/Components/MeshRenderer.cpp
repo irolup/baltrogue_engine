@@ -1,4 +1,5 @@
 #include "Components/MeshRenderer.h"
+#include "Components/MaterialComponent.h"
 #include "Rendering/Renderer.h"
 #include "Rendering/TextureManager.h"
 #include "Scene/SceneNode.h"
@@ -30,13 +31,14 @@ void MeshRenderer::render(IRenderer& renderer) {
     if (!mesh || !material || !owner) {
         return;
     }
-    
+
     glm::mat4 modelMatrix = owner->getWorldMatrix();
     glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
-    
+
     RenderCommand command;
     command.mesh = mesh;
-    command.material = material;
+    command.material = getRenderMaterial();
+    command.disableCulling = command.material && command.material->getDoubleSided();
     command.modelMatrix = modelMatrix;
     command.normalMatrix = normalMatrix;
     command.castShadows = castShadows;
@@ -54,6 +56,14 @@ void MeshRenderer::render(IRenderer& renderer) {
         outlineCmd.receiveShadows = false;
         renderer.submitRenderCommand(outlineCmd);
     }
+}
+
+std::shared_ptr<Material> MeshRenderer::getRenderMaterial() {
+    MaterialComponent* materialComponent = owner ? owner->getComponent<MaterialComponent>() : nullptr;
+    if (!materialComponent || !materialComponent->isEnabled()) {
+        return material;
+    }
+    return materialComponent->resolveMaterial(material);
 }
 
 void MeshRenderer::setMesh(std::shared_ptr<Mesh> newMesh) {

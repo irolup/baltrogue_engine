@@ -2,6 +2,7 @@
 #define CAMERA_COMPONENT_H
 
 #include "Components/Component.h"
+#include "Core/Ray.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <memory>
@@ -48,6 +49,10 @@ public:
     float getOrthographicSize() const { return orthographicSize; }
     void setOrthographicSize(float size) { orthographicSize = size; updateProjection(); }
     
+    Ray screenPointToRay(const glm::vec2& screenPoint, const glm::vec2& viewportSize);
+
+    bool worldToScreenPoint(const glm::vec3& worldPoint, const glm::vec2& viewportSize, glm::vec2& outScreenPoint);
+
     glm::vec3 getForward() const;
     glm::vec3 getRight() const;
     glm::vec3 getUp() const;

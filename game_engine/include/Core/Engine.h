@@ -72,6 +72,9 @@ public:
     
     void setWindowTitle(const std::string& title);
     glm::ivec2 getWindowSize() const;
+
+    void setWindowSize(int width, int height);
+    void setFullscreen(bool enabled);
     
 private:
     bool running;

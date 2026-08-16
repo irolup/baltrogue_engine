@@ -1,4 +1,5 @@
 #include "Rendering/Vulkan/VulkanPipeline.h"
+#include "Core/AssetPaths.h"
 #include "Rendering/Material.h"
 #include "Rendering/TextMaterial.h"
 #include "Rendering/ShadowMap.h"
@@ -29,6 +30,7 @@ void VulkanPipeline::create(VulkanDevice& device, VulkanResources& vulkanResourc
 
     createDescriptorSetLayout();
     createShaderMaterialDescriptorSetLayout();
+    createCustomTextureDescriptorSetLayout();
     createAnimationDescriptorSetLayout();
     createTextDescriptorSetLayout();
 
@@ -85,6 +87,7 @@ void VulkanPipeline::createDescriptorSetLayout() {
 }
 
 void VulkanPipeline::createShaderMaterialDescriptorSetLayout() {
+    // Beam-only material set: diffuse + up to 3 custom textures + small UBO.
     std::array shaderMaterialBindings = {
         vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr),
         vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr),
@@ -96,6 +99,18 @@ void VulkanPipeline::createShaderMaterialDescriptorSetLayout() {
     layoutInfo.bindingCount = static_cast<uint32_t>(shaderMaterialBindings.size());
     layoutInfo.pBindings = shaderMaterialBindings.data();
     shaderMaterialDescriptorSetLayout_ = vk::raii::DescriptorSetLayout(device_->getDevice(), layoutInfo);
+}
+
+void VulkanPipeline::createCustomTextureDescriptorSetLayout() {
+    std::array customTextureBindings = {
+        vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr),
+        vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr),
+        vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr)
+    };
+    vk::DescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.bindingCount = static_cast<uint32_t>(customTextureBindings.size());
+    layoutInfo.pBindings = customTextureBindings.data();
+    customTextureDescriptorSetLayout_ = vk::raii::DescriptorSetLayout(device_->getDevice(), layoutInfo);
 }
 
 void VulkanPipeline::createAnimationDescriptorSetLayout() {
@@ -124,24 +139,40 @@ void VulkanPipeline::createTextDescriptorSetLayout() {
 void VulkanPipeline::createDescriptorPoolAndSets() {
     // create pool for uniform buffers (one per swapchain image)
     uint32_t imageCount = static_cast<uint32_t>(swapChain_->getImages().size());
-    uint32_t materialDescriptorCapacity = std::max<uint32_t>(imageCount * 64, imageCount);
-    uint32_t shaderMaterialDescriptorCapacity = materialDescriptorCapacity;
+    const uint32_t maxMaterialsPerScene = 128;
+    uint32_t materialDescriptorCapacity = maxMaterialsPerScene * imageCount;
+    uint32_t shaderMaterialDescriptorCapacity = std::max<uint32_t>(imageCount * 64, imageCount);
+    uint32_t customTextureDescriptorCapacity = shaderMaterialDescriptorCapacity;
     uint32_t animationDescriptorCapacity = kMaxSkinnedDrawsPerFrame * imageCount;
     uint32_t textMaterialDescriptorCapacity = std::max<uint32_t>(imageCount * 16, imageCount);
     std::array poolSizes = {
         vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, imageCount + materialDescriptorCapacity + shaderMaterialDescriptorCapacity + animationDescriptorCapacity + textMaterialDescriptorCapacity),
         // + imageCount for the shadow atlas bound alongside each frame UBO.
-        vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, materialDescriptorCapacity * 3 + shaderMaterialDescriptorCapacity * 4 + textMaterialDescriptorCapacity + 1 + imageCount)
+        vk::DescriptorPoolSize(
+            vk::DescriptorType::eCombinedImageSampler,
+            materialDescriptorCapacity * 3
+                + shaderMaterialDescriptorCapacity * 4
+                + customTextureDescriptorCapacity * 3
+                + textMaterialDescriptorCapacity
+                + 1
+                + imageCount)
     };
 
     vk::DescriptorPoolCreateInfo poolInfo{};
     poolInfo.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
-    poolInfo.maxSets = imageCount + materialDescriptorCapacity + shaderMaterialDescriptorCapacity + textMaterialDescriptorCapacity + 1 + animationDescriptorCapacity;
+    poolInfo.maxSets = imageCount
+        + materialDescriptorCapacity
+        + shaderMaterialDescriptorCapacity
+        + customTextureDescriptorCapacity
+        + textMaterialDescriptorCapacity
+        + 1
+        + animationDescriptorCapacity;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
 
     materialDescriptorSets_.clear();
     shaderMaterialDescriptorSets_.clear();
+    customTextureDescriptorSets_.clear();
     textMaterialDescriptorSets_.clear();
     descriptorSets_.clear();
     animationDescriptorSets_.clear();
@@ -245,33 +276,25 @@ vk::DescriptorSet VulkanPipeline::getAnimationDescriptorSet(uint32_t slot) const
     return *animationDescriptorSets_[slot];
 }
 
-vk::DescriptorSet VulkanPipeline::getOrCreateMaterialDescriptorSet(const Material* material) {
-    auto it = materialDescriptorSets_.find(material);
-    if (it != materialDescriptorSets_.end()) return *it->second;
+MaterialUniforms VulkanPipeline::makeMaterialUniforms(const Material& material) {
+    MaterialUniforms uniforms{};
+    uniforms.baseColor = glm::vec4(material.getColorLinear(), material.getOpacity());
+    uniforms.roughness = material.getRoughness();
+    uniforms.metallic = material.getMetallic();
+    uniforms.reflectionStrength = material.getReflectionStrength();
+    uniforms.alphaCutoff = material.getAlphaCutoff();
+    uniforms.textureFlags = glm::vec4(
+        material.hasDiffuseTexture() ? 1.0f : 0.0f,
+        material.hasNormalTexture() ? 1.0f : 0.0f,
+        material.hasARMTexture() ? 1.0f : 0.0f,
+        0.0f);
+    uniforms.uvScaleOffset = glm::vec4(material.getUVScale(), material.getUVOffset());
+    return uniforms;
+}
 
-    vk::DescriptorSetAllocateInfo allocInfo{};
-    allocInfo.descriptorPool = *descriptorPool_;
-    vk::DescriptorSetLayout layout = *materialDescriptorSetLayout_;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &layout;
-
-    auto sets = device_->getDevice().allocateDescriptorSets(allocInfo);
-    vk::raii::DescriptorSet set = std::move(sets.front());
-
+void VulkanPipeline::writeMaterialDescriptorSet(vk::DescriptorSet set, const Material* material, uint32_t imageIndex) {
     if (material) {
-        MaterialUniforms mu{};
-        mu.baseColor = glm::vec4(material->getColorLinear(), material->getOpacity());
-        mu.roughness = material->getRoughness();
-        mu.metallic = material->getMetallic();
-        mu.reflectionStrength = material->getReflectionStrength();
-        mu.alphaCutoff = material->getAlphaCutoff();
-        mu.textureFlags = glm::vec4(
-            material->hasDiffuseTexture() ? 1.0f : 0.0f,
-            material->hasNormalTexture() ? 1.0f : 0.0f,
-            material->hasARMTexture() ? 1.0f : 0.0f,
-            0.0f);
-        mu.uvScaleOffset = glm::vec4(material->getUVScale(), material->getUVOffset());
-        resources_->ensureMaterialUniformBuffer(material, mu);
+        resources_->ensureMaterialUniformBuffer(material, imageIndex, makeMaterialUniforms(*material));
     }
 
     const auto& defaultTexture = resources_->getOrCreateTexture("");
@@ -301,32 +324,32 @@ vk::DescriptorSet VulkanPipeline::getOrCreateMaterialDescriptorSet(const Materia
     armInfo.imageView = *armTexture.view;
     armInfo.sampler = *armTexture.sampler;
 
-    vk::DescriptorBufferInfo bufferInfo = resources_->getMaterialDescriptorBufferInfo(material);
+    vk::DescriptorBufferInfo bufferInfo = resources_->getMaterialDescriptorBufferInfo(material, imageIndex);
 
     std::array<vk::WriteDescriptorSet, 4> writes{};
 
-    writes[0].dstSet = *set;
+    writes[0].dstSet = set;
     writes[0].dstBinding = 0;
     writes[0].dstArrayElement = 0;
     writes[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
     writes[0].descriptorCount = 1;
     writes[0].pImageInfo = &diffuseInfo;
 
-    writes[1].dstSet = *set;
+    writes[1].dstSet = set;
     writes[1].dstBinding = 1;
     writes[1].dstArrayElement = 0;
     writes[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
     writes[1].descriptorCount = 1;
     writes[1].pImageInfo = &normalInfo;
 
-    writes[2].dstSet = *set;
+    writes[2].dstSet = set;
     writes[2].dstBinding = 2;
     writes[2].dstArrayElement = 0;
     writes[2].descriptorType = vk::DescriptorType::eCombinedImageSampler;
     writes[2].descriptorCount = 1;
     writes[2].pImageInfo = &armInfo;
 
-    writes[3].dstSet = *set;
+    writes[3].dstSet = set;
     writes[3].dstBinding = 3;
     writes[3].dstArrayElement = 0;
     writes[3].descriptorType = vk::DescriptorType::eUniformBuffer;
@@ -334,36 +357,67 @@ vk::DescriptorSet VulkanPipeline::getOrCreateMaterialDescriptorSet(const Materia
     writes[3].pBufferInfo = &bufferInfo;
 
     device_->getDevice().updateDescriptorSets(writes, {});
-
-    materialDescriptorSets_.emplace(material, std::make_unique<vk::raii::DescriptorSet>(std::move(set)));
-    return *materialDescriptorSets_[material].get();
 }
 
-vk::DescriptorSet VulkanPipeline::getOrCreateShaderMaterialDescriptorSet(const Material* material) {
-    auto it = shaderMaterialDescriptorSets_.find(material);
-    if (it != shaderMaterialDescriptorSets_.end()) {
-        return *it->second;
+VulkanPipeline::MaterialDescriptorSlot& VulkanPipeline::acquireDescriptorSlot(
+    std::vector<MaterialDescriptorSlot>& slots,
+    vk::DescriptorSetLayout layout,
+    uint32_t& imageIndex)
+{
+    const uint32_t slotCount = resources_->getFrameSlotCount();
+    if (imageIndex >= slotCount) {
+        imageIndex = 0;
     }
 
-    vk::DescriptorSetAllocateInfo allocInfo{};
-    allocInfo.descriptorPool = *descriptorPool_;
-    vk::DescriptorSetLayout layout = *shaderMaterialDescriptorSetLayout_;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &layout;
+    if (slots.size() != slotCount) {
+        slots.clear();
+        slots.resize(slotCount);
+    }
 
-    auto sets = device_->getDevice().allocateDescriptorSets(allocInfo);
-    vk::raii::DescriptorSet set = std::move(sets.front());
+    MaterialDescriptorSlot& slot = slots[imageIndex];
+    if (!slot.set) {
+        vk::DescriptorSetAllocateInfo allocInfo{};
+        allocInfo.descriptorPool = *descriptorPool_;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = &layout;
 
+        auto sets = device_->getDevice().allocateDescriptorSets(allocInfo);
+        slot.set = std::make_unique<vk::raii::DescriptorSet>(std::move(sets.front()));
+        slot.written = false;
+    }
+
+    return slot;
+}
+
+vk::DescriptorSet VulkanPipeline::getOrCreateMaterialDescriptorSet(const Material* material, uint32_t imageIndex) {
+    MaterialDescriptorSlot& slot = acquireDescriptorSlot(
+        materialDescriptorSets_[material], *materialDescriptorSetLayout_, imageIndex);
+
+    const uint32_t revision = material ? material->getRevision() : 0;
+    if (!slot.written || slot.appliedRevision != revision) {
+        writeMaterialDescriptorSet(**slot.set, material, imageIndex);
+        slot.appliedRevision = revision;
+        slot.written = true;
+    }
+
+    return **slot.set;
+}
+
+ShaderMaterialUniforms VulkanPipeline::makeShaderMaterialUniforms(const Material& material) {
     ShaderMaterialUniforms uniforms{};
+    uniforms.baseColor = glm::vec4(material.getColor(), 1.0f);
+    const auto& customTextures = material.getCustomTextureUniforms();
+    uniforms.textureFlags = glm::vec4(
+        material.hasDiffuseTexture() ? 1.0f : 0.0f,
+        customTextures.size() > 0 && !customTextures[0].second.empty() ? 1.0f : 0.0f,
+        customTextures.size() > 1 && !customTextures[1].second.empty() ? 1.0f : 0.0f,
+        customTextures.size() > 2 && !customTextures[2].second.empty() ? 1.0f : 0.0f);
+    return uniforms;
+}
+
+void VulkanPipeline::writeShaderMaterialDescriptorSet(vk::DescriptorSet set, const Material* material, uint32_t imageIndex) {
     if (material) {
-        uniforms.baseColor = glm::vec4(material->getColor(), 1.0f);
-        const auto& customTextures = material->getCustomTextureUniforms();
-        uniforms.textureFlags = glm::vec4(
-            material->hasDiffuseTexture() ? 1.0f : 0.0f,
-            customTextures.size() > 0 && !customTextures[0].second.empty() ? 1.0f : 0.0f,
-            customTextures.size() > 1 && !customTextures[1].second.empty() ? 1.0f : 0.0f,
-            customTextures.size() > 2 && !customTextures[2].second.empty() ? 1.0f : 0.0f);
-        resources_->ensureShaderMaterialUniformBuffer(material, uniforms);
+        resources_->ensureShaderMaterialUniformBuffer(material, imageIndex, makeShaderMaterialUniforms(*material));
     }
 
     const auto& defaultTexture = resources_->getOrCreateTexture("");
@@ -406,39 +460,39 @@ vk::DescriptorSet VulkanPipeline::getOrCreateShaderMaterialDescriptorSet(const M
     custom2Info.imageView = *customTexture2.view;
     custom2Info.sampler = *customTexture2.sampler;
 
-    vk::DescriptorBufferInfo bufferInfo = resources_->getShaderMaterialDescriptorBufferInfo(material);
+    vk::DescriptorBufferInfo bufferInfo = resources_->getShaderMaterialDescriptorBufferInfo(material, imageIndex);
 
     std::array<vk::WriteDescriptorSet, 5> writes{};
 
-    writes[0].dstSet = *set;
+    writes[0].dstSet = set;
     writes[0].dstBinding = 0;
     writes[0].dstArrayElement = 0;
     writes[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
     writes[0].descriptorCount = 1;
     writes[0].pImageInfo = &diffuseInfo;
 
-    writes[1].dstSet = *set;
+    writes[1].dstSet = set;
     writes[1].dstBinding = 1;
     writes[1].dstArrayElement = 0;
     writes[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
     writes[1].descriptorCount = 1;
     writes[1].pImageInfo = &custom0Info;
 
-    writes[2].dstSet = *set;
+    writes[2].dstSet = set;
     writes[2].dstBinding = 2;
     writes[2].dstArrayElement = 0;
     writes[2].descriptorType = vk::DescriptorType::eCombinedImageSampler;
     writes[2].descriptorCount = 1;
     writes[2].pImageInfo = &custom1Info;
 
-    writes[3].dstSet = *set;
+    writes[3].dstSet = set;
     writes[3].dstBinding = 3;
     writes[3].dstArrayElement = 0;
     writes[3].descriptorType = vk::DescriptorType::eCombinedImageSampler;
     writes[3].descriptorCount = 1;
     writes[3].pImageInfo = &custom2Info;
 
-    writes[4].dstSet = *set;
+    writes[4].dstSet = set;
     writes[4].dstBinding = 4;
     writes[4].dstArrayElement = 0;
     writes[4].descriptorType = vk::DescriptorType::eUniformBuffer;
@@ -446,8 +500,93 @@ vk::DescriptorSet VulkanPipeline::getOrCreateShaderMaterialDescriptorSet(const M
     writes[4].pBufferInfo = &bufferInfo;
 
     device_->getDevice().updateDescriptorSets(writes, {});
-    shaderMaterialDescriptorSets_.emplace(material, std::make_unique<vk::raii::DescriptorSet>(std::move(set)));
-    return *shaderMaterialDescriptorSets_[material].get();
+}
+
+vk::DescriptorSet VulkanPipeline::getOrCreateShaderMaterialDescriptorSet(const Material* material, uint32_t imageIndex) {
+    MaterialDescriptorSlot& slot = acquireDescriptorSlot(
+        shaderMaterialDescriptorSets_[material], *shaderMaterialDescriptorSetLayout_, imageIndex);
+
+    const uint32_t revision = material ? material->getRevision() : 0;
+    if (!slot.written || slot.appliedRevision != revision) {
+        writeShaderMaterialDescriptorSet(**slot.set, material, imageIndex);
+        slot.appliedRevision = revision;
+        slot.written = true;
+    }
+
+    return **slot.set;
+}
+
+vk::DescriptorSet VulkanPipeline::getOrCreateCustomTextureDescriptorSet(const Material* material) {
+    auto it = customTextureDescriptorSets_.find(material);
+    if (it != customTextureDescriptorSets_.end()) {
+        return *it->second;
+    }
+
+    vk::DescriptorSetAllocateInfo allocInfo{};
+    allocInfo.descriptorPool = *descriptorPool_;
+    vk::DescriptorSetLayout layout = *customTextureDescriptorSetLayout_;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &layout;
+
+    auto sets = device_->getDevice().allocateDescriptorSets(allocInfo);
+    vk::raii::DescriptorSet set = std::move(sets.front());
+
+    const auto& defaultTexture = resources_->getOrCreateTexture("");
+    auto resolveCustomTexture = [&](size_t index) -> const VulkanResources::VulkanTexture& {
+        if (!material) {
+            return defaultTexture;
+        }
+        const auto& customTextures = material->getCustomTextureUniforms();
+        if (index >= customTextures.size() || customTextures[index].second.empty()) {
+            return defaultTexture;
+        }
+        return resources_->getOrCreateTexture(customTextures[index].second);
+    };
+
+    const auto& customTexture0 = resolveCustomTexture(0);
+    const auto& customTexture1 = resolveCustomTexture(1);
+    const auto& customTexture2 = resolveCustomTexture(2);
+
+    vk::DescriptorImageInfo custom0Info{};
+    custom0Info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    custom0Info.imageView = *customTexture0.view;
+    custom0Info.sampler = *customTexture0.sampler;
+
+    vk::DescriptorImageInfo custom1Info{};
+    custom1Info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    custom1Info.imageView = *customTexture1.view;
+    custom1Info.sampler = *customTexture1.sampler;
+
+    vk::DescriptorImageInfo custom2Info{};
+    custom2Info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    custom2Info.imageView = *customTexture2.view;
+    custom2Info.sampler = *customTexture2.sampler;
+
+    std::array<vk::WriteDescriptorSet, 3> writes{};
+    writes[0].dstSet = set;
+    writes[0].dstBinding = 0;
+    writes[0].dstArrayElement = 0;
+    writes[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    writes[0].descriptorCount = 1;
+    writes[0].pImageInfo = &custom0Info;
+
+    writes[1].dstSet = set;
+    writes[1].dstBinding = 1;
+    writes[1].dstArrayElement = 0;
+    writes[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &custom1Info;
+
+    writes[2].dstSet = set;
+    writes[2].dstBinding = 2;
+    writes[2].dstArrayElement = 0;
+    writes[2].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    writes[2].descriptorCount = 1;
+    writes[2].pImageInfo = &custom2Info;
+
+    device_->getDevice().updateDescriptorSets(writes, {});
+    customTextureDescriptorSets_.emplace(material, std::make_unique<vk::raii::DescriptorSet>(std::move(set)));
+    return *customTextureDescriptorSets_[material].get();
 }
 
 vk::DescriptorSet VulkanPipeline::getOrUpdateEnvironmentDescriptorSet( const FrameEnvironment& env, const VulkanResources::VulkanTexture& cubemap){
@@ -517,14 +656,14 @@ vk::DescriptorSet VulkanPipeline::getOrCreateTextDescriptorSet(const TextMateria
     vk::DescriptorBufferInfo bufferInfo = resources_->getTextMaterialDescriptorBufferInfo(material);
     std::array<vk::WriteDescriptorSet, 2> writes{};
 
-    writes[0].dstSet = *set;
+    writes[0].dstSet = set;
     writes[0].dstBinding = 0;
     writes[0].dstArrayElement = 0;
     writes[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
     writes[0].descriptorCount = 1;
     writes[0].pImageInfo = &diffuseInfo;
 
-    writes[1].dstSet = *set;
+    writes[1].dstSet = set;
     writes[1].dstBinding = 1;
     writes[1].dstArrayElement = 0;
     writes[1].descriptorType = vk::DescriptorType::eUniformBuffer;
@@ -540,17 +679,18 @@ vk::DescriptorSet VulkanPipeline::getOrCreateTextDescriptorSet(const TextMateria
 void VulkanPipeline::clearSceneDescriptorCaches() {
     materialDescriptorSets_.clear();
     shaderMaterialDescriptorSets_.clear();
+    customTextureDescriptorSets_.clear();
     textMaterialDescriptorSets_.clear();
 }
 
 void VulkanPipeline::recreateDescriptorSets() {
     shaderMaterialDescriptorSets_.clear();
+    customTextureDescriptorSets_.clear();
     createDescriptorPoolAndSets();
 }
 
 bool VulkanPipeline::shaderSpvExists(const std::string& path) {
-    std::ifstream file(path, std::ios::binary);
-    return file.good();
+    return AssetPaths::exists(AssetPaths::resolve(path));
 }
 
 std::string VulkanPipeline::makeCustomPipelineCacheKey(const Material* material) {
@@ -559,7 +699,8 @@ std::string VulkanPipeline::makeCustomPipelineCacheKey(const Material* material)
     }
     return material->getVulkanShaderPipelineKey() + "|" +
            std::to_string(static_cast<int>(material->getBlendMode())) + "|" +
-           (material->getDepthWrite() ? "1" : "0");
+           (material->getDepthWrite() ? "1" : "0") + "|" +
+           (material->getDoubleSided() ? "1" : "0");
 }
 
 vk::PipelineColorBlendAttachmentState VulkanPipeline::makeBlendAttachment(BlendMode blendMode) {
@@ -603,7 +744,8 @@ VulkanPipeline::CachedShaderPipeline VulkanPipeline::createShaderGraphicsPipelin
     bool cullEnabled,
     uint32_t pushConstantSize,
     vk::ShaderStageFlags pushConstantStages,
-    std::span<const vk::VertexInputAttributeDescription> vertexAttributes)
+    std::span<const vk::VertexInputAttributeDescription> vertexAttributes,
+    bool useLitDescriptorLayout)
 {
     vk::raii::ShaderModule vertexShaderModule = createShaderModule(readFile(vertSpvPath));
     vk::raii::ShaderModule fragmentShaderModule = createShaderModule(readFile(fragSpvPath));
@@ -670,13 +812,26 @@ VulkanPipeline::CachedShaderPipeline VulkanPipeline::createShaderGraphicsPipelin
     pushConstant.offset = 0;
     pushConstant.size = pushConstantSize;
 
-    std::array<const vk::DescriptorSetLayout, 2> setLayouts = {
+    std::array<vk::DescriptorSetLayout, 5> customLitSetLayouts = {
+        *frameDescriptorSetLayout_,
+        *materialDescriptorSetLayout_,
+        *environmentDescriptorSetLayout_,
+        *animationDescriptorSetLayout_,
+        *customTextureDescriptorSetLayout_
+    };
+    std::array<vk::DescriptorSetLayout, 2> beamSetLayouts = {
         *frameDescriptorSetLayout_,
         *shaderMaterialDescriptorSetLayout_
     };
+
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
-    pipelineLayoutInfo.pSetLayouts = setLayouts.data();
+    if (useLitDescriptorLayout) {
+        pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(customLitSetLayouts.size());
+        pipelineLayoutInfo.pSetLayouts = customLitSetLayouts.data();
+    } else {
+        pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(beamSetLayouts.size());
+        pipelineLayoutInfo.pSetLayouts = beamSetLayouts.data();
+    }
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstant;
     vk::raii::PipelineLayout layout = vk::raii::PipelineLayout(device_->getDevice(), pipelineLayoutInfo);
@@ -727,7 +882,8 @@ void VulkanPipeline::createBeamPipeline() {
         false,
         sizeof(BeamPushConstants),
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        shaderMaterialAttributes);
+        shaderMaterialAttributes,
+        false);
     beamPipeline_ = std::move(beamCached.pipeline);
     beamPipelineLayout_ = std::move(beamCached.layout);
 }
@@ -740,15 +896,17 @@ VulkanPipeline::CachedShaderPipeline& VulkanPipeline::getOrCreateCustomShaderPip
     }
 
     const auto meshAttributes = getMeshVertexAttributeDescriptions();
+    const bool cullEnabled = material ? !material->getDoubleSided() : true;
     CachedShaderPipeline cached = createShaderGraphicsPipeline(
         material->getVulkanVertexSpvPath(),
         material->getVulkanFragmentSpvPath(),
         material->getBlendMode(),
         material->getDepthWrite(),
-        true,
+        cullEnabled,
         sizeof(PushConstants),
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        meshAttributes);
+        meshAttributes,
+        true);
 
     auto [insertIt, inserted] = customShaderPipelineCache_.emplace(cacheKey, std::move(cached));
     return insertIt->second;
@@ -1472,9 +1630,11 @@ vk::DescriptorSet VulkanPipeline::getDescriptorSet(uint32_t index) {
 }
 
 std::vector<char> VulkanPipeline::readFile(const std::string& filename) {
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+    const std::string resolvedPath = AssetPaths::resolve(filename);
+
+    std::ifstream file(resolvedPath, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
-        throw std::runtime_error("failed to open file!");
+        throw std::runtime_error("failed to open file: " + resolvedPath);
     }
     std::vector<char> buffer(file.tellg());
     file.seekg(0, std::ios::beg);

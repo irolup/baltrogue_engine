@@ -7,6 +7,7 @@
 #include "Rendering/ShadowMap.h"
 #include <algorithm>
 #include <iostream>
+#include <map>
 #include <vector>
 
 #ifdef LINUX_BUILD
@@ -19,6 +20,29 @@
 #endif
 
 namespace GameEngine {
+
+uint32_t Material::nextRevision = 0;
+
+bool MaterialOverride::isEmpty() const {
+    return !overrideBaseColor
+        && !overrideMetallic
+        && !overrideRoughness
+        && !overrideReflectionStrength
+        && !overrideOpacity
+        && !overrideAlphaCutoff
+        && !overrideBlendMode
+        && !overrideDoubleSided
+        && !overrideUVTransform
+        && diffuseTexturePath.empty()
+        && normalTexturePath.empty()
+        && armTexturePath.empty()
+        && shaderVertexPathLinux.empty()
+        && shaderFragmentPathLinux.empty()
+        && shaderVertexPathVita.empty()
+        && shaderFragmentPathVita.empty()
+        && shaderVertexPathVulkan.empty()
+        && shaderFragmentPathVulkan.empty();
+}
 
 Material::Material()
     : shader(nullptr)
@@ -39,6 +63,8 @@ Material::Material()
     , shaderFragmentPathLinux("")
     , shaderVertexPathVita("")
     , shaderFragmentPathVita("")
+    , shaderVertexPathVulkan("")
+    , shaderFragmentPathVulkan("")
 {
     setVec2("u_UVScale", uvScale);
     setVec2("u_UVOffset", uvOffset);
@@ -63,6 +89,8 @@ Material::Material(std::shared_ptr<Shader> materialShader)
     , shaderFragmentPathLinux("")
     , shaderVertexPathVita("")
     , shaderFragmentPathVita("")
+    , shaderVertexPathVulkan("")
+    , shaderFragmentPathVulkan("")
 {
     setVec2("u_UVScale", uvScale);
     setVec2("u_UVOffset", uvOffset);
@@ -74,6 +102,7 @@ Material::~Material() {
 void Material::setBlendMode(BlendMode mode) {
     blendMode = mode;
     depthWrite = (mode == BlendMode::Opaque);
+    bumpRevision();
 }
 
 void Material::setOpacity(float o) {
@@ -106,6 +135,8 @@ void Material::setShader(std::shared_ptr<Shader> materialShader) {
         shaderFragmentPathLinux = "";
         shaderVertexPathVita = "";
         shaderFragmentPathVita = "";
+        shaderVertexPathVulkan = "";
+        shaderFragmentPathVulkan = "";
     }
 }
 
@@ -121,6 +152,10 @@ void Material::setShaderFromPathsForPlatform(const std::string& vertexPath, cons
     if (platform == "vita" || platform == "Vita" || platform == "VITA") {
         shaderVertexPathVita = vertexPath;
         shaderFragmentPathVita = fragmentPath;
+    } else if (platform == "vulkan" || platform == "Vulkan" || platform == "VULKAN") {
+        shaderVertexPathVulkan = vertexPath;
+        shaderFragmentPathVulkan = fragmentPath;
+        return;
     } else {
         shaderVertexPathLinux = vertexPath;
         shaderFragmentPathLinux = fragmentPath;
@@ -164,6 +199,8 @@ std::string Material::getShaderFragmentPath() const {
 std::string Material::getShaderVertexPathForPlatform(const std::string& platform) const {
     if (platform == "vita" || platform == "Vita" || platform == "VITA") {
         return shaderVertexPathVita;
+    } else if (platform == "vulkan" || platform == "Vulkan" || platform == "VULKAN") {
+        return shaderVertexPathVulkan;
     } else {
         return shaderVertexPathLinux;
     }
@@ -172,6 +209,8 @@ std::string Material::getShaderVertexPathForPlatform(const std::string& platform
 std::string Material::getShaderFragmentPathForPlatform(const std::string& platform) const {
     if (platform == "vita" || platform == "Vita" || platform == "VITA") {
         return shaderFragmentPathVita;
+    } else if (platform == "vulkan" || platform == "Vulkan" || platform == "VULKAN") {
+        return shaderFragmentPathVulkan;
     } else {
         return shaderFragmentPathLinux;
     }
@@ -180,6 +219,8 @@ std::string Material::getShaderFragmentPathForPlatform(const std::string& platfo
 void Material::setShaderVertexPathForPlatform(const std::string& platform, const std::string& path) {
     if (platform == "vita" || platform == "Vita" || platform == "VITA") {
         shaderVertexPathVita = path;
+    } else if (platform == "vulkan" || platform == "Vulkan" || platform == "VULKAN") {
+        shaderVertexPathVulkan = path;
     } else {
         shaderVertexPathLinux = path;
     }
@@ -188,6 +229,8 @@ void Material::setShaderVertexPathForPlatform(const std::string& platform, const
 void Material::setShaderFragmentPathForPlatform(const std::string& platform, const std::string& path) {
     if (platform == "vita" || platform == "Vita" || platform == "VITA") {
         shaderFragmentPathVita = path;
+    } else if (platform == "vulkan" || platform == "Vulkan" || platform == "VULKAN") {
+        shaderFragmentPathVulkan = path;
     } else {
         shaderFragmentPathLinux = path;
     }
@@ -196,26 +239,34 @@ void Material::setShaderFragmentPathForPlatform(const std::string& platform, con
 bool Material::isUsingCustomShader() const {
 #ifdef VITA_BUILD
     return !shaderVertexPathVita.empty() && !shaderFragmentPathVita.empty();
+#elif defined(ENABLE_VULKAN)
+    if (!shaderVertexPathVulkan.empty() && !shaderFragmentPathVulkan.empty()) {
+        return true;
+    }
+    return !shaderVertexPathLinux.empty() && !shaderFragmentPathLinux.empty();
 #else
     return !shaderVertexPathLinux.empty() && !shaderFragmentPathLinux.empty();
 #endif
 }
 
 #ifdef ENABLE_VULKAN
-namespace {
-std::string extractShaderBaseName(const std::string& path) {
-    const auto slash = path.find_last_of("/\\");
-    std::string file = slash != std::string::npos ? path.substr(slash + 1) : path;
-    const auto dot = file.find_last_of('.');
-    return dot != std::string::npos ? file.substr(0, dot) : file;
-}
-}
-
 bool Material::isBeamMaterial() const {
+    if (!shaderVertexPathVulkan.empty()) {
+        const auto slash = shaderVertexPathVulkan.find_last_of("/\\");
+        std::string file = slash != std::string::npos ? shaderVertexPathVulkan.substr(slash + 1) : shaderVertexPathVulkan;
+        const auto dot = file.find_last_of('.');
+        if ((dot != std::string::npos ? file.substr(0, dot) : file) == "beam") {
+            return true;
+        }
+    }
     if (!isUsingCustomShader()) {
         return false;
     }
-    return extractShaderBaseName(getShaderVertexPath()) == "beam";
+    const std::string path = getShaderVertexPath();
+    const auto slash = path.find_last_of("/\\");
+    std::string file = slash != std::string::npos ? path.substr(slash + 1) : path;
+    const auto dot = file.find_last_of('.');
+    return (dot != std::string::npos ? file.substr(0, dot) : file) == "beam";
 }
 
 VulkanShaderPipelineKind Material::getVulkanShaderPipelineKind() const {
@@ -229,17 +280,43 @@ VulkanShaderPipelineKind Material::getVulkanShaderPipelineKind() const {
 }
 
 std::string Material::getVulkanVertexSpvPath() const {
+    if (!shaderVertexPathVulkan.empty()) {
+        if (shaderVertexPathVulkan.size() >= 4 &&
+            shaderVertexPathVulkan.compare(shaderVertexPathVulkan.size() - 4, 4, ".spv") == 0) {
+            return shaderVertexPathVulkan;
+        }
+        return shaderVertexPathVulkan + ".spv";
+    }
     if (!isUsingCustomShader()) {
         return "assets/vulkan/default_lit.vert.spv";
     }
-    return "assets/vulkan/" + extractShaderBaseName(getShaderVertexPath()) + ".vert.spv";
+
+    const std::string path = getShaderVertexPath();
+    const auto slash = path.find_last_of("/\\");
+    std::string file = slash != std::string::npos ? path.substr(slash + 1) : path;
+    const auto dot = file.find_last_of('.');
+    const std::string base = dot != std::string::npos ? file.substr(0, dot) : file;
+    return "assets/vulkan/" + base + ".vert.spv";
 }
 
 std::string Material::getVulkanFragmentSpvPath() const {
+    if (!shaderFragmentPathVulkan.empty()) {
+        if (shaderFragmentPathVulkan.size() >= 4 &&
+            shaderFragmentPathVulkan.compare(shaderFragmentPathVulkan.size() - 4, 4, ".spv") == 0) {
+            return shaderFragmentPathVulkan;
+        }
+        return shaderFragmentPathVulkan + ".spv";
+    }
     if (!isUsingCustomShader()) {
         return "assets/vulkan/default_lit.frag.spv";
     }
-    return "assets/vulkan/" + extractShaderBaseName(getShaderFragmentPath()) + ".frag.spv";
+
+    const std::string path = getShaderFragmentPath();
+    const auto slash = path.find_last_of("/\\");
+    std::string file = slash != std::string::npos ? path.substr(slash + 1) : path;
+    const auto dot = file.find_last_of('.');
+    const std::string base = dot != std::string::npos ? file.substr(0, dot) : file;
+    return "assets/vulkan/" + base + ".frag.spv";
 }
 
 std::string Material::getVulkanShaderPipelineKey() const {
@@ -266,6 +343,82 @@ void Material::useDefaultLitShader() {
     shaderFragmentPathLinux = "";
     shaderVertexPathVita = "";
     shaderFragmentPathVita = "";
+    shaderVertexPathVulkan = "";
+    shaderFragmentPathVulkan = "";
+}
+
+std::shared_ptr<Material> Material::clone() const {
+    return std::make_shared<Material>(*this);
+}
+
+void Material::rebindTextureFromPath(
+    const std::string& path,
+    void (Material::*setTextureFn)(std::shared_ptr<Texture>, const std::string&))
+{
+    auto texture = TextureManager::getInstance().getTexture(path);
+    if (!texture) {
+        std::cerr << "Material: override texture not found: " << path << std::endl;
+        return;
+    }
+    (this->*setTextureFn)(texture, path);
+}
+
+void Material::applyOverride(const MaterialOverride& overrides) {
+    if (overrides.overrideBaseColor) {
+        setColor(overrides.baseColor);
+    }
+    if (overrides.overrideMetallic) {
+        setMetallic(overrides.metallic);
+    }
+    if (overrides.overrideRoughness) {
+        setRoughness(overrides.roughness);
+    }
+    if (overrides.overrideReflectionStrength) {
+        setReflectionStrength(overrides.reflectionStrength);
+    }
+    if (overrides.overrideOpacity) {
+        setOpacity(overrides.opacity);
+    }
+    if (overrides.overrideAlphaCutoff) {
+        setAlphaCutoff(overrides.alphaCutoff);
+    }
+    if (overrides.overrideBlendMode) {
+        // setBlendMode also resets depthWrite, so it has to run before it.
+        setBlendMode(overrides.blendMode);
+    }
+    if (overrides.overrideDoubleSided) {
+        setDoubleSided(overrides.doubleSided);
+    }
+    if (overrides.overrideUVTransform) {
+        setUVScale(overrides.uvScale);
+        setUVOffset(overrides.uvOffset);
+    }
+
+    if (!overrides.diffuseTexturePath.empty()) {
+        rebindTextureFromPath(overrides.diffuseTexturePath, &Material::setDiffuseTexture);
+    }
+    if (!overrides.normalTexturePath.empty()) {
+        rebindTextureFromPath(overrides.normalTexturePath, &Material::setNormalTexture);
+    }
+    if (!overrides.armTexturePath.empty()) {
+        rebindTextureFromPath(overrides.armTexturePath, &Material::setARMTexture);
+    }
+
+    if (!overrides.shaderVertexPathLinux.empty() && !overrides.shaderFragmentPathLinux.empty()) {
+        setShaderFromPathsForPlatform(overrides.shaderVertexPathLinux, overrides.shaderFragmentPathLinux, "linux");
+    }
+    if (!overrides.shaderVertexPathVita.empty() && !overrides.shaderFragmentPathVita.empty()) {
+        setShaderFromPathsForPlatform(overrides.shaderVertexPathVita, overrides.shaderFragmentPathVita, "vita");
+    }
+    if (!overrides.shaderVertexPathVulkan.empty() && !overrides.shaderFragmentPathVulkan.empty()) {
+        setShaderFromPathsForPlatform(overrides.shaderVertexPathVulkan, overrides.shaderFragmentPathVulkan, "vulkan");
+    }
+
+    if (shader && shader->isValid()) {
+        ShaderManager::getInstance().registerShaderType(shader, ShaderType::Lit);
+    }
+
+    bumpRevision();
 }
 
 void Material::addCustomTextureUniform(const std::string& uniformName, const std::string& texturePath) {
@@ -310,38 +463,47 @@ void Material::setCustomTextureUniformPath(const std::string& uniformName, const
 
 void Material::setFloat(const std::string& name, float value) {
     floatProperties[name] = value;
+    bumpRevision();
 }
 
 void Material::setInt(const std::string& name, int value) {
     intProperties[name] = value;
+    bumpRevision();
 }
 
 void Material::setBool(const std::string& name, bool value) {
     boolProperties[name] = value;
+    bumpRevision();
 }
 
 void Material::setVec2(const std::string& name, const glm::vec2& value) {
     vec2Properties[name] = value;
+    bumpRevision();
 }
 
 void Material::setVec3(const std::string& name, const glm::vec3& value) {
     vec3Properties[name] = value;
+    bumpRevision();
 }
 
 void Material::setVec4(const std::string& name, const glm::vec4& value) {
     vec4Properties[name] = value;
+    bumpRevision();
 }
 
 void Material::setMat3(const std::string& name, const glm::mat3& value) {
     mat3Properties[name] = value;
+    bumpRevision();
 }
 
 void Material::setMat4(const std::string& name, const glm::mat4& value) {
     mat4Properties[name] = value;
+    bumpRevision();
 }
 
 void Material::setTexture(const std::string& name, std::shared_ptr<Texture> texture) {
     textureProperties[name] = texture;
+    bumpRevision();
 }
 
 void Material::setDiffuseTexture(std::shared_ptr<Texture> texture, const std::string& path) {
@@ -447,6 +609,162 @@ void Material::apply() const {
     if (isLit) {
         setupLightingUniforms();
     }
+}
+
+bool Material::drawShaderAssignPopup(
+    const char* popupId,
+    std::string& outVertexPath,
+    std::string& outFragmentPath,
+    std::string& outPlatform)
+{
+#ifdef EDITOR_BUILD
+    ImGui::SetNextWindowViewport(ImGui::GetWindowViewport()->ID);
+    if (!ImGui::BeginPopup(popupId)) {
+        return false;
+    }
+
+    static char vertexPathBuffer[512] = "";
+    static char fragmentPathBuffer[512] = "";
+    static int platformSelection = 0;
+    static std::map<std::string, std::vector<std::string>> shaderListCache;
+
+    if (ImGui::IsWindowAppearing()) {
+        shaderListCache.clear();
+    }
+
+    const char* platforms[] = { "Linux (GLSL)", "Vita (CG)", "Vulkan (GLSL)" };
+    ImGui::Combo("Platform", &platformSelection, platforms, 3);
+
+    ImGui::Separator();
+
+    if (platformSelection == 2) {
+        ImGui::TextWrapped("Select Vulkan GLSL sources under assets/vulkan/. Assign compiles matching .spv with glslc.");
+    }
+
+    std::string platformDir = (platformSelection == 0) ? "assets/linux_shaders"
+                           : (platformSelection == 1) ? "assets/shaders"
+                                                      : "assets/vulkan";
+    auto cached = shaderListCache.find(platformDir);
+    if (cached == shaderListCache.end()) {
+        cached = shaderListCache.emplace(platformDir, ShaderManager::discoverShaders(platformDir, ".vert")).first;
+    }
+    const auto& vertexShaders = cached->second;
+
+    if (!vertexShaders.empty()) {
+        ImGui::Text("Available Shaders (%s):", platforms[platformSelection]);
+        ImGui::BeginChild("ShaderList", ImVec2(0, 150), true);
+
+        for (const auto& vertPath : vertexShaders) {
+            std::string fragPath = vertPath;
+            size_t pos = fragPath.find_last_of('.');
+            if (pos != std::string::npos) {
+                fragPath = fragPath.substr(0, pos) + ".frag";
+            }
+
+#ifdef LINUX_BUILD
+            std::string shaderName = std::filesystem::path(vertPath).stem().string();
+#else
+            std::string shaderName = vertPath;
+            size_t lastSlash = shaderName.find_last_of("/\\");
+            if (lastSlash != std::string::npos) {
+                shaderName = shaderName.substr(lastSlash + 1);
+            }
+            size_t lastDot = shaderName.find_last_of('.');
+            if (lastDot != std::string::npos) {
+                shaderName = shaderName.substr(0, lastDot);
+            }
+#endif
+
+            if (ImGui::Selectable(shaderName.c_str(), false)) {
+                strncpy(vertexPathBuffer, vertPath.c_str(), sizeof(vertexPathBuffer) - 1);
+                vertexPathBuffer[sizeof(vertexPathBuffer) - 1] = '\0';
+                strncpy(fragmentPathBuffer, fragPath.c_str(), sizeof(fragmentPathBuffer) - 1);
+                fragmentPathBuffer[sizeof(fragmentPathBuffer) - 1] = '\0';
+            }
+        }
+        ImGui::EndChild();
+    } else {
+        ImGui::Text("No shaders found in %s", platformDir.c_str());
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Or specify paths manually:");
+
+    ImGui::InputText("Vertex Shader Path", vertexPathBuffer, sizeof(vertexPathBuffer));
+    ImGui::InputText("Fragment Shader Path", fragmentPathBuffer, sizeof(fragmentPathBuffer));
+
+    if (ImGui::Button("Browse Vertex...")) {
+#ifdef LINUX_BUILD
+        std::string filter = "*.vert";
+        std::string selectedPath = FileDialog::openFileDialog("Select Vertex Shader", filter);
+        if (FileDialog::isValidResult(selectedPath)) {
+            strncpy(vertexPathBuffer, selectedPath.c_str(), sizeof(vertexPathBuffer) - 1);
+            vertexPathBuffer[sizeof(vertexPathBuffer) - 1] = '\0';
+        }
+#endif
+    }
+
+    ImGui::SameLine();
+
+    if (ImGui::Button("Browse Fragment...")) {
+#ifdef LINUX_BUILD
+        std::string filter = "*.frag";
+        std::string selectedPath = FileDialog::openFileDialog("Select Fragment Shader", filter);
+        if (FileDialog::isValidResult(selectedPath)) {
+            strncpy(fragmentPathBuffer, selectedPath.c_str(), sizeof(fragmentPathBuffer) - 1);
+            fragmentPathBuffer[sizeof(fragmentPathBuffer) - 1] = '\0';
+        }
+#endif
+    }
+
+    bool assigned = false;
+
+    if (ImGui::Button("Assign")) {
+        if (strlen(vertexPathBuffer) > 0 && strlen(fragmentPathBuffer) > 0) {
+            const std::string platform = (platformSelection == 0) ? "linux"
+                                       : (platformSelection == 1) ? "vita"
+                                                                  : "vulkan";
+
+            bool ready = true;
+            if (platform == "vulkan") {
+                std::string compileError;
+                if (!ShaderManager::compileVulkanGlslToSpv(vertexPathBuffer, &compileError)) {
+                    std::cerr << "Vulkan vertex SPIR-V compile failed: " << compileError << std::endl;
+                    ready = false;
+                } else if (!ShaderManager::compileVulkanGlslToSpv(fragmentPathBuffer, &compileError)) {
+                    std::cerr << "Vulkan fragment SPIR-V compile failed: " << compileError << std::endl;
+                    ready = false;
+                }
+            }
+
+            if (ready) {
+                outVertexPath = vertexPathBuffer;
+                outFragmentPath = fragmentPathBuffer;
+                outPlatform = platform;
+                assigned = true;
+                ImGui::CloseCurrentPopup();
+                vertexPathBuffer[0] = '\0';
+                fragmentPathBuffer[0] = '\0';
+            }
+        }
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        ImGui::CloseCurrentPopup();
+        vertexPathBuffer[0] = '\0';
+        fragmentPathBuffer[0] = '\0';
+    }
+
+    ImGui::EndPopup();
+    return assigned;
+#else
+    (void)popupId;
+    (void)outVertexPath;
+    (void)outFragmentPath;
+    (void)outPlatform;
+    return false;
+#endif
 }
 
 void Material::drawInspector() {
@@ -568,28 +886,37 @@ void Material::drawInspector() {
         ImGui::Text("Shader");
         
         bool isDefaultLit = (shader == Shader::getLightingShader());
-        bool isCustomShader = isUsingCustomShader();
+        const bool hasLinuxCustom = !shaderVertexPathLinux.empty() && !shaderFragmentPathLinux.empty();
+        const bool hasVitaCustom = !shaderVertexPathVita.empty() && !shaderFragmentPathVita.empty();
+        const bool hasVulkanCustom = !shaderVertexPathVulkan.empty() && !shaderFragmentPathVulkan.empty();
+        const bool hasAnyCustomPaths = hasLinuxCustom || hasVitaCustom || hasVulkanCustom;
         
-        if (isDefaultLit) {
+        if (isDefaultLit && !hasAnyCustomPaths) {
             ImGui::Text("Type: Default Lit Shader");
 #ifdef LINUX_BUILD
             ImGui::Text("Platform: Linux (GLSL)");
 #else
             ImGui::Text("Platform: Vita (CG)");
 #endif
-        } else if (isCustomShader) {
+        } else if (hasAnyCustomPaths) {
             ImGui::Text("Type: Custom Shader");
             
-            if (!shaderVertexPathLinux.empty() && !shaderFragmentPathLinux.empty()) {
+            if (hasLinuxCustom) {
                 ImGui::Text("Linux (GLSL):");
                 ImGui::Text("  Vertex: %s", shaderVertexPathLinux.c_str());
                 ImGui::Text("  Fragment: %s", shaderFragmentPathLinux.c_str());
             }
             
-            if (!shaderVertexPathVita.empty() && !shaderFragmentPathVita.empty()) {
+            if (hasVitaCustom) {
                 ImGui::Text("Vita (CG):");
                 ImGui::Text("  Vertex: %s", shaderVertexPathVita.c_str());
                 ImGui::Text("  Fragment: %s", shaderFragmentPathVita.c_str());
+            }
+
+            if (hasVulkanCustom) {
+                ImGui::Text("Vulkan (GLSL/SPIR-V):");
+                ImGui::Text("  Vertex: %s", shaderVertexPathVulkan.c_str());
+                ImGui::Text("  Fragment: %s", shaderFragmentPathVulkan.c_str());
             }
         } else {
             ImGui::Text("Type: Other");
@@ -658,112 +985,19 @@ void Material::drawInspector() {
             ImGui::OpenPopup("AssignShaderPopup");
         }
         
-        if (ImGui::BeginPopup("AssignShaderPopup")) {
-            static char vertexPathBuffer[512] = "";
-            static char fragmentPathBuffer[512] = "";
-            static int platformSelection = 0;
-            
-            const char* platforms[] = { "Linux (GLSL)", "Vita (CG)" };
-            ImGui::Combo("Platform", &platformSelection, platforms, 2);
-            
-            ImGui::Separator();
-            
-            std::string platformDir = (platformSelection == 0) ? "assets/linux_shaders" : "assets/shaders";
-            auto vertexShaders = ShaderManager::discoverShaders(platformDir, ".vert");
-            
-            if (!vertexShaders.empty()) {
-                ImGui::Text("Available Shaders (%s):", platforms[platformSelection]);
-                ImGui::BeginChild("ShaderList", ImVec2(0, 150), true);
-                
-                for (const auto& vertPath : vertexShaders) {
-                    std::string fragPath = vertPath;
-                    size_t pos = fragPath.find_last_of('.');
-                    if (pos != std::string::npos) {
-                        fragPath = fragPath.substr(0, pos) + ".frag";
-                    }
-                    
-#ifdef LINUX_BUILD
-                    std::string shaderName = std::filesystem::path(vertPath).stem().string();
-#else
-                    std::string shaderName = vertPath;
-                    size_t lastSlash = shaderName.find_last_of("/\\");
-                    if (lastSlash != std::string::npos) {
-                        shaderName = shaderName.substr(lastSlash + 1);
-                    }
-                    size_t lastDot = shaderName.find_last_of('.');
-                    if (lastDot != std::string::npos) {
-                        shaderName = shaderName.substr(0, lastDot);
-                    }
-#endif
-                    
-                    if (ImGui::Selectable(shaderName.c_str(), false)) {
-                        strncpy(vertexPathBuffer, vertPath.c_str(), sizeof(vertexPathBuffer) - 1);
-                        vertexPathBuffer[sizeof(vertexPathBuffer) - 1] = '\0';
-                        strncpy(fragmentPathBuffer, fragPath.c_str(), sizeof(fragmentPathBuffer) - 1);
-                        fragmentPathBuffer[sizeof(fragmentPathBuffer) - 1] = '\0';
-                    }
-                }
-                ImGui::EndChild();
-            } else {
-                ImGui::Text("No shaders found in %s", platformDir.c_str());
-            }
-            
-            ImGui::Separator();
-            ImGui::Text("Or specify paths manually:");
-            
-            ImGui::InputText("Vertex Shader Path", vertexPathBuffer, sizeof(vertexPathBuffer));
-            ImGui::InputText("Fragment Shader Path", fragmentPathBuffer, sizeof(fragmentPathBuffer));
-            
-            if (ImGui::Button("Browse Vertex...")) {
-#ifdef LINUX_BUILD
-                std::string filter = (platformSelection == 0) ? "*.vert" : "*.vert";
-                std::string selectedPath = FileDialog::openFileDialog("Select Vertex Shader", filter);
-                if (FileDialog::isValidResult(selectedPath)) {
-                    strncpy(vertexPathBuffer, selectedPath.c_str(), sizeof(vertexPathBuffer) - 1);
-                    vertexPathBuffer[sizeof(vertexPathBuffer) - 1] = '\0';
-                }
-#endif
-            }
-            
-            ImGui::SameLine();
-            
-            if (ImGui::Button("Browse Fragment...")) {
-#ifdef LINUX_BUILD
-                std::string filter = (platformSelection == 0) ? "*.frag" : "*.frag";
-                std::string selectedPath = FileDialog::openFileDialog("Select Fragment Shader", filter);
-                if (FileDialog::isValidResult(selectedPath)) {
-                    strncpy(fragmentPathBuffer, selectedPath.c_str(), sizeof(fragmentPathBuffer) - 1);
-                    fragmentPathBuffer[sizeof(fragmentPathBuffer) - 1] = '\0';
-                }
-#endif
-            }
-            
-            if (ImGui::Button("Assign")) {
-                if (strlen(vertexPathBuffer) > 0 && strlen(fragmentPathBuffer) > 0) {
-                    std::string platform = (platformSelection == 0) ? "linux" : "vita";
-                    setShaderFromPathsForPlatform(vertexPathBuffer, fragmentPathBuffer, platform);
-                    
-                    auto& shaderManager = ShaderManager::getInstance();
-                    if (shader && shader->isValid()) {
-                        shaderManager.registerShaderType(shader, ShaderType::Lit);
-                    }
-                    ImGui::CloseCurrentPopup();
-                    vertexPathBuffer[0] = '\0';
-                    fragmentPathBuffer[0] = '\0';
+        {
+            std::string assignedVertexPath;
+            std::string assignedFragmentPath;
+            std::string assignedPlatform;
+            if (drawShaderAssignPopup("AssignShaderPopup", assignedVertexPath, assignedFragmentPath, assignedPlatform)) {
+                setShaderFromPathsForPlatform(assignedVertexPath, assignedFragmentPath, assignedPlatform);
+                if (shader && shader->isValid()) {
+                    ShaderManager::getInstance().registerShaderType(shader, ShaderType::Lit);
                 }
             }
-            
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel")) {
-                ImGui::CloseCurrentPopup();
-                vertexPathBuffer[0] = '\0';
-                fragmentPathBuffer[0] = '\0';
-            }
-            
-            ImGui::EndPopup();
         }
-        
-        if (isCustomShader) {
+
+        if (isUsingCustomShader() || hasAnyCustomPaths) {
             ImGui::Separator();
             ImGui::Text("Custom texture uniforms");
             auto& textureManager = TextureManager::getInstance();

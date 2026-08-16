@@ -1,12 +1,17 @@
 #ifdef LINUX_BUILD
 
 #include "Editor/EditorUI.h"
+#include "Editor/EditorConsole.h"
+#include "Core/AssetPaths.h"
+#include "Core/Ray.h"
+#include "Scene/ScenePicker.h"
 #include "Editor/EditorSystem.h"
 #include "Core/MemoryProfiler.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneNode.h"
 #include "Components/MeshRenderer.h"
 #include "Components/ModelRenderer.h"
+#include "Components/MaterialComponent.h"
 #include "Components/LightComponent.h"
 #include "Components/CameraComponent.h"
 #include "Components/PhysicsComponent.h"
@@ -63,6 +68,10 @@ EditorUI::EditorUI(EditorSystem& editorSystem)
     , showInputMapping(false)
     , showMemoryViewer(false)
     , showBuildSettings(false)
+    , showConsole(true)
+    , showInfoLogs(true)
+    , showWarningLogs(true)
+    , showErrorLogs(true)
     , sceneGraphWidth(300.0f)
     , propertiesWidth(350.0f)
     , fileExplorerHeight(200.0f)
@@ -94,6 +103,25 @@ void EditorUI::setupDockspace() {
     ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
     
     ImGui::End();
+}
+
+void EditorUI::attachNewNode(const std::shared_ptr<SceneNode>& parent, const std::shared_ptr<SceneNode>& newNode) {
+    if (!parent || !newNode) {
+        return;
+    }
+    parent->addChild(newNode);
+    editor.selectNode(newNode);
+}
+
+void EditorUI::attachNewNodeToSelection(const std::shared_ptr<Scene>& scene, const std::shared_ptr<SceneNode>& newNode) {
+    if (!scene || !newNode) {
+        return;
+    }
+    auto parent = editor.getSelectedNode();
+    if (!parent) {
+        parent = scene->getRootNode();
+    }
+    attachNewNode(parent, newNode);
 }
 
 void EditorUI::openSceneFromDialog() {
@@ -393,12 +421,7 @@ void EditorUI::renderMenuBar() {
                 auto scene = editor.getActiveScene();
                 if (scene) {
                     auto node = scene->createNode(editor.generateUniqueNodeName("Node"));
-                    auto selected = editor.getSelectedNode();
-                    if (selected) {
-                        selected->addChild(node);
-                    } else {
-                        scene->getRootNode()->addChild(node);
-                    }
+                    attachNewNodeToSelection(scene, node);
                 }
             }
             
@@ -407,7 +430,7 @@ void EditorUI::renderMenuBar() {
                 if (scene) {
                     auto node = scene->createNode(editor.generateUniqueNodeName("Camera"));
                     node->addComponent<CameraComponent>();
-                    scene->getRootNode()->addChild(node);
+                    attachNewNode(scene->getRootNode(), node);
                     scene->setActiveCamera(node);
                 }
             }
@@ -425,12 +448,7 @@ void EditorUI::renderMenuBar() {
                     textComponent->setAlignment(TextAlignment::CENTER);
                     textComponent->start();
                     
-                    auto selected = editor.getSelectedNode();
-                    if (selected) {
-                        selected->addChild(node);
-                    } else {
-                        scene->getRootNode()->addChild(node);
-                    }
+                    attachNewNodeToSelection(scene, node);
                 }
             }
             
@@ -441,12 +459,7 @@ void EditorUI::renderMenuBar() {
                     auto area3DComponent = node->addComponent<Area3DComponent>();
                     area3DComponent->start();
                     
-                    auto selected = editor.getSelectedNode();
-                    if (selected) {
-                        selected->addChild(node);
-                    } else {
-                        scene->getRootNode()->addChild(node);
-                    }
+                    attachNewNodeToSelection(scene, node);
                 }
             }
             
@@ -457,12 +470,7 @@ void EditorUI::renderMenuBar() {
                     auto soundComponent = node->addComponent<SoundComponent>();
                     soundComponent->start();
                     
-                    auto selected = editor.getSelectedNode();
-                    if (selected) {
-                        selected->addChild(node);
-                    } else {
-                        scene->getRootNode()->addChild(node);
-                    }
+                    attachNewNodeToSelection(scene, node);
                 }
             }
             
@@ -478,12 +486,7 @@ void EditorUI::renderMenuBar() {
                         material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                         meshRenderer->setMaterial(material);
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
 
@@ -498,12 +501,7 @@ void EditorUI::renderMenuBar() {
                         material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                         meshRenderer->setMaterial(material);
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
                 
@@ -518,12 +516,7 @@ void EditorUI::renderMenuBar() {
                         material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                         meshRenderer->setMaterial(material);
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
                 
@@ -538,12 +531,7 @@ void EditorUI::renderMenuBar() {
                         material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                         meshRenderer->setMaterial(material);
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
                 
@@ -558,12 +546,7 @@ void EditorUI::renderMenuBar() {
                         material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                         meshRenderer->setMaterial(material);
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
 
@@ -578,12 +561,7 @@ void EditorUI::renderMenuBar() {
                         material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                         meshRenderer->setMaterial(material);
 
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
                 
@@ -596,14 +574,7 @@ void EditorUI::renderMenuBar() {
                     auto node = scene->createNode(editor.generateUniqueNodeName("Model"));
                     node->addComponent<ModelRenderer>();
                     
-                    auto selected = editor.getSelectedNode();
-                    if (selected) {
-                        selected->addChild(node);
-                    } else {
-                        scene->getRootNode()->addChild(node);
-                    }
-                    
-                    editor.selectNode(node);
+                    attachNewNodeToSelection(scene, node);
                 }
             }
             
@@ -618,12 +589,7 @@ void EditorUI::renderMenuBar() {
                         physicsComponent->setShowCollisionShape(true);
                         physicsComponent->start();
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
                 
@@ -637,12 +603,7 @@ void EditorUI::renderMenuBar() {
                         physicsComponent->setShowCollisionShape(true);
                         physicsComponent->start();
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
                 
@@ -656,12 +617,7 @@ void EditorUI::renderMenuBar() {
                         physicsComponent->setShowCollisionShape(true);
                         physicsComponent->start();
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
                 
@@ -675,12 +631,7 @@ void EditorUI::renderMenuBar() {
                         physicsComponent->setShowCollisionShape(true);
                         physicsComponent->start();
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
                 
@@ -694,12 +645,7 @@ void EditorUI::renderMenuBar() {
                         physicsComponent->setShowCollisionShape(true);
                         physicsComponent->start();
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
 
@@ -713,12 +659,7 @@ void EditorUI::renderMenuBar() {
                         physicsComponent->setShowCollisionShape(true);
                         physicsComponent->start();
 
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
                 
@@ -728,12 +669,7 @@ void EditorUI::renderMenuBar() {
                         auto node = scene->createNode(editor.generateUniqueNodeName("Raycast"));
                         auto raycastComponent = node->addComponent<RaycastComponent>();
                         raycastComponent->setShowDebugLine(true);
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                     }
                 }
                 
@@ -762,12 +698,7 @@ void EditorUI::renderMenuBar() {
                         physicsComponent->start();
                         parentNode->addChild(collisionNode);
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(parentNode);
-                        } else {
-                            scene->getRootNode()->addChild(parentNode);
-                        }
+                        attachNewNodeToSelection(scene, parentNode);
                     }
                 }
                 
@@ -792,12 +723,7 @@ void EditorUI::renderMenuBar() {
                         physicsComponent->start();
                         parentNode->addChild(collisionNode);
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(parentNode);
-                        } else {
-                            scene->getRootNode()->addChild(parentNode);
-                        }
+                        attachNewNodeToSelection(scene, parentNode);
                     }
                 }
                 
@@ -817,12 +743,7 @@ void EditorUI::renderMenuBar() {
                         lightComponent->setShowGizmo(true);
                         node->getTransform().setPosition(glm::vec3(0.0f, 5.0f, 0.0f));
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                         
                         lightComponent->start();
                     }
@@ -840,12 +761,7 @@ void EditorUI::renderMenuBar() {
                         lightComponent->setShowGizmo(true);
                         node->getTransform().setPosition(glm::vec3(0.0f, 10.0f, 0.0f));
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                         
                         lightComponent->start();
                     }
@@ -866,12 +782,7 @@ void EditorUI::renderMenuBar() {
                         lightComponent->setShowGizmo(true);
                         node->getTransform().setPosition(glm::vec3(0.0f, 8.0f, 0.0f));
                         
-                        auto selected = editor.getSelectedNode();
-                        if (selected) {
-                            selected->addChild(node);
-                        } else {
-                            scene->getRootNode()->addChild(node);
-                        }
+                        attachNewNodeToSelection(scene, node);
                         
                         lightComponent->start();
                     }
@@ -891,28 +802,47 @@ void EditorUI::renderMenuBar() {
         }
         
         if (ImGui::BeginMenu("Build")) {
-            if (ImGui::MenuItem("Build for Linux")) {
-                BuildSystem::buildForLinux();
+            BuildSystem& buildSystem = editor.getBuildSystem();
+            const bool busy = buildSystem.isBuilding();
+
+            if (ImGui::MenuItem("Build for Linux", nullptr, false, !busy)) {
+                buildSystem.startBuild(BuildSystem::Target::Linux);
             }
-            if (ImGui::MenuItem("Build VPK for PS Vita")) {
-                BuildSystem::buildForVita();
+            if (ImGui::MenuItem("Build VPK for PS Vita", nullptr, false, !busy)) {
+                buildSystem.startBuild(BuildSystem::Target::Vita);
+            }
+            if (busy) {
+                ImGui::Separator();
+                ImGui::TextDisabled("Build running...");
             }
             ImGui::EndMenu();
         }
         
         if (ImGui::BeginMenu("Scene")) {
-            if (ImGui::MenuItem("Save Scene to Game")) {
-                auto scene = editor.getActiveScene();
-                if (scene) {
-                    SceneSerializer::saveSceneToGame(scene);
-                }
+            const bool hasSceneFile = !editor.getActiveSceneFilePath().empty();
+            if (ImGui::MenuItem("Set as Main Scene", nullptr, false, hasSceneFile)) {
+                setActiveSceneAsMainScene();
+            }
+            if (ImGui::IsItemHovered() && !hasSceneFile) {
+                ImGui::SetTooltip("Save the scene to a file first.");
+            }
+
+            if (ImGui::MenuItem("Update Asset Manifests")) {
+                SceneSerializer::generateAssetManifests();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Rewrites the texture and input manifests the Vita VPK packs.");
             }
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Help")) {
             ImGui::MenuItem("Memory", nullptr, &showMemoryViewer);
+            ImGui::MenuItem("Console", nullptr, &showConsole);
             ImGui::EndMenu();
         }
+
+        renderPlayControls();
+
         ImGui::EndMainMenuBar();
     }
 }
@@ -1050,7 +980,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                     auto scene = editor.getActiveScene();
                     if (scene) {
                         auto child = scene->createNode(editor.generateUniqueNodeName("Node"));
-                        node->addChild(child);
+                        attachNewNode(node, child);
                     }
                 }
                 
@@ -1059,7 +989,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                     if (scene) {
                         auto child = scene->createNode(editor.generateUniqueNodeName("Camera"));
                         child->addComponent<CameraComponent>();
-                        node->addChild(child);
+                        attachNewNode(node, child);
                     }
                 }
                 
@@ -1075,7 +1005,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                         textComponent->setRenderMode(TextRenderMode::WORLD_SPACE);
                         textComponent->setAlignment(TextAlignment::CENTER);
                         textComponent->start();
-                        node->addChild(child);
+                        attachNewNode(node, child);
                     }
                 }
                 
@@ -1085,7 +1015,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                         auto child = scene->createNode(editor.generateUniqueNodeName("Area3D"));
                         auto area3DComponent = child->addComponent<Area3DComponent>();
                         area3DComponent->start();
-                        node->addChild(child);
+                        attachNewNode(node, child);
                     }
                 }
                 
@@ -1095,7 +1025,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                         auto child = scene->createNode(editor.generateUniqueNodeName("Sound"));
                         auto soundComponent = child->addComponent<SoundComponent>();
                         soundComponent->start();
-                        node->addChild(child);
+                        attachNewNode(node, child);
                     }
                 }
                 
@@ -1113,7 +1043,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                         skyboxComponent->setBackTexture("assets/textures/skyboxes/skybox_1/back.jpg");
                         skyboxComponent->start();
                         scene->setActiveSkybox(child);
-                        node->addChild(child);
+                        attachNewNode(node, child);
                     }
                 }
                 
@@ -1129,7 +1059,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                             meshRenderer->setMaterial(material);
                             
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
                     
@@ -1144,7 +1074,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                             meshRenderer->setMaterial(material);
                             
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
                     
@@ -1159,7 +1089,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                             meshRenderer->setMaterial(material);
                             
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
                     
@@ -1174,7 +1104,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                             meshRenderer->setMaterial(material);
                             
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
                     
@@ -1189,7 +1119,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                             meshRenderer->setMaterial(material);
                             
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
 
@@ -1204,7 +1134,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
                             meshRenderer->setMaterial(material);
 
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
                     
@@ -1234,12 +1164,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             parentNode->addChild(collisionNode);
                             
                             // Add parent to selected node or root
-                            auto selected = editor.getSelectedNode();
-                            if (selected) {
-                                selected->addChild(parentNode);
-                            } else {
-                                scene->getRootNode()->addChild(parentNode);
-                            }
+                            attachNewNodeToSelection(scene, parentNode);
                         }
                     }
                     
@@ -1265,12 +1190,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             parentNode->addChild(collisionNode);
                             
                             // Add parent to selected node or root
-                            auto selected = editor.getSelectedNode();
-                            if (selected) {
-                                selected->addChild(parentNode);
-                            } else {
-                                scene->getRootNode()->addChild(parentNode);
-                            }
+                            attachNewNodeToSelection(scene, parentNode);
                         }
                     }
                     
@@ -1290,7 +1210,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             lightComponent->setRange(8.0f);
                             lightComponent->setShowGizmo(true);
                             child->getTransform().setPosition(glm::vec3(0.0f, 5.0f, 0.0f));
-                            node->addChild(child);
+                            attachNewNode(node, child);
                             lightComponent->start();
                         }
                     }
@@ -1306,7 +1226,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             lightComponent->setDirection(glm::vec3(-0.5f, -1.0f, -0.3f));
                             lightComponent->setShowGizmo(true);
                             child->getTransform().setPosition(glm::vec3(0.0f, 10.0f, 0.0f));
-                            node->addChild(child);
+                            attachNewNode(node, child);
                             lightComponent->start();
                         }
                     }
@@ -1325,7 +1245,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             lightComponent->setOuterCutOff(glm::radians(35.0f));
                             lightComponent->setShowGizmo(true);
                             child->getTransform().setPosition(glm::vec3(0.0f, 8.0f, 0.0f));
-                            node->addChild(child);
+                            attachNewNode(node, child);
                             lightComponent->start();
                         }
                     }
@@ -1338,8 +1258,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                     if (scene) {
                         auto child = scene->createNode(editor.generateUniqueNodeName("Model"));
                         child->addComponent<ModelRenderer>();
-                        node->addChild(child);
-                        editor.selectNode(child);
+                        attachNewNode(node, child);
                     }
                 }
                 
@@ -1353,7 +1272,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             physicsComponent->setBodyType(PhysicsBodyType::KINEMATIC); // Changed from STATIC to KINEMATIC
                             physicsComponent->setShowCollisionShape(true);
                             physicsComponent->start();
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
                     
@@ -1366,7 +1285,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             physicsComponent->setBodyType(PhysicsBodyType::KINEMATIC); // Changed from STATIC to KINEMATIC
                             physicsComponent->setShowCollisionShape(true);
                             physicsComponent->start();
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
                     
@@ -1379,7 +1298,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             physicsComponent->setBodyType(PhysicsBodyType::KINEMATIC); // Changed from STATIC to KINEMATIC
                             physicsComponent->setShowCollisionShape(true);
                             physicsComponent->start();
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
                     
@@ -1392,7 +1311,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             physicsComponent->setBodyType(PhysicsBodyType::KINEMATIC); // Changed from STATIC to KINEMATIC
                             physicsComponent->setShowCollisionShape(true);
                             physicsComponent->start();
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
                     
@@ -1405,7 +1324,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             physicsComponent->setBodyType(PhysicsBodyType::KINEMATIC); // Changed from STATIC to KINEMATIC
                             physicsComponent->setShowCollisionShape(true);
                             physicsComponent->start();
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
 
@@ -1418,7 +1337,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             physicsComponent->setBodyType(PhysicsBodyType::KINEMATIC);
                             physicsComponent->setShowCollisionShape(true);
                             physicsComponent->start();
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
                     
@@ -1428,7 +1347,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             auto child = scene->createNode(editor.generateUniqueNodeName("Raycast"));
                             auto raycastComponent = child->addComponent<RaycastComponent>();
                             raycastComponent->setShowDebugLine(true);
-                            node->addChild(child);
+                            attachNewNode(node, child);
                         }
                     }
                     
@@ -1610,6 +1529,11 @@ void EditorUI::renderProperties() {
                         selected->addComponent<ModelRenderer>();
                     }
                 }
+                if (ImGui::MenuItem("Material Component")) {
+                    if (!selected->getComponent<MaterialComponent>()) {
+                        selected->addComponent<MaterialComponent>();
+                    }
+                }
                 if (ImGui::MenuItem("Animation Component")) {
                     if (!selected->getComponent<AnimationComponent>()) {
                         auto animComponent = selected->addComponent<AnimationComponent>();
@@ -1742,6 +1666,8 @@ void EditorUI::renderProperties() {
                     selected->removeComponent<MeshRenderer>();
                 } else if (componentToRemove == "ModelRenderer") {
                     selected->removeComponent<ModelRenderer>();
+                } else if (componentToRemove == "MaterialComponent") {
+                    selected->removeComponent<MaterialComponent>();
                 } else if (componentToRemove == "AnimationComponent") {
                     selected->removeComponent<AnimationComponent>();
                 } else if (componentToRemove == "LightComponent") {
@@ -1875,6 +1801,8 @@ void EditorUI::renderViewport() {
     
     bool isViewportFocused = ImGui::IsWindowFocused();
     editor.setViewportFocused(isViewportFocused);
+
+    editor.setViewportHovered(false);
     
     static ImGuizmo::OPERATION currentOperation = ImGuizmo::TRANSLATE;
     static ImGuizmo::MODE currentMode = ImGuizmo::LOCAL;
@@ -1882,7 +1810,10 @@ void EditorUI::renderViewport() {
     auto cameraNode = editor.getActiveCamera();
     auto selectedNode = editor.getSelectedNode();
     
-    if (cameraNode && selectedNode && isViewportFocused) {
+    renderCameraControls();
+
+    if (cameraNode && selectedNode) {
+        ImGui::SameLine();
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 2));
         ImGui::PushStyleColor(ImGuiCol_Button, currentOperation == ImGuizmo::TRANSLATE ? ImVec4(0.3f, 0.5f, 0.8f, 1.0f) : ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
         if (ImGui::Button("Translate")) {
@@ -1902,11 +1833,10 @@ void EditorUI::renderViewport() {
         }
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
-        ImGui::Separator();
     }
-    
-    renderCameraControls();
-    
+
+    ImGui::Separator();
+
     ImVec2 availableSize = ImGui::GetContentRegionAvail();
     
     const float VITA_ASPECT_RATIO = 960.0f / 544.0f;
@@ -1958,6 +1888,8 @@ void EditorUI::renderViewport() {
             );
         }
         
+        editor.setViewportHovered(ImGui::IsItemHovered());
+
         ImVec2 imageScreenPos = ImGui::GetItemRectMin();
         ImVec2 imageScreenSize = ImVec2(ImGui::GetItemRectMax().x - imageScreenPos.x, ImGui::GetItemRectMax().y - imageScreenPos.y);
         
@@ -1970,6 +1902,7 @@ void EditorUI::renderViewport() {
             if (selectedNode && isViewportFocused) {
                 auto cameraComponent = cameraNode->getComponent<CameraComponent>();
                 if (cameraComponent) {
+                    ImGuizmo::Enable(!editor.isCameraFlyActive());
                     ImGuizmo::SetOrthographic(false);
                     ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
                     ImGuizmo::SetRect(imageScreenPos.x, imageScreenPos.y, imageScreenSize.x, imageScreenSize.y);
@@ -2022,6 +1955,21 @@ void EditorUI::renderViewport() {
                     }
                 }
             }
+
+            const bool gizmoOwnsClick = selectedNode && (ImGuizmo::IsOver() || ImGuizmo::IsUsing());
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+                !gizmoOwnsClick && !editor.isCameraFlyActive()) {
+                if (auto* cameraComponent = cameraNode->getComponent<CameraComponent>()) {
+                    const ImVec2 mousePos = ImGui::GetMousePos();
+                    const glm::vec2 viewportPoint(mousePos.x - imageScreenPos.x, mousePos.y - imageScreenPos.y);
+                    const glm::vec2 imageSize(imageScreenSize.x, imageScreenSize.y);
+
+                    const Ray ray = cameraComponent->screenPointToRay(viewportPoint, imageSize);
+                    const PickHit pick = ScenePicker::pickNode(*scene, ray);
+
+                    editor.selectNode(pick.hit ? pick.node : nullptr);
+                }
+            }
         }
         
         ImGui::SetCursorPos(ImVec2(viewportPos.x + 10, viewportPos.y + viewportSize.y - 40));
@@ -2033,6 +1981,141 @@ void EditorUI::renderViewport() {
         ImGui::Text("No active scene or invalid viewport size");
     }
     
+    ImGui::End();
+}
+
+void EditorUI::renderPlayControls() {
+    BuildSystem& buildSystem = editor.getBuildSystem();
+
+    const float controlsWidth = 260.0f;
+    ImGui::SameLine(ImGui::GetWindowWidth() - controlsWidth);
+
+    if (buildSystem.isGameRunning()) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+        if (ImGui::Button("Stop")) {
+            buildSystem.stopGame();
+        }
+        ImGui::PopStyleColor();
+
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "Running");
+        return;
+    }
+
+    if (buildSystem.isBuilding()) {
+        ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.3f, 1.0f), "Building...");
+        return;
+    }
+
+    const bool hasExecutable = buildSystem.gameExecutableExists();
+
+    if (ImGui::Button("Play") && hasExecutable) {
+        saveSceneBeforeLaunch();
+        buildSystem.startGame();
+    }
+    if (!hasExecutable && ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("No executable yet — use Build & Play");
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Build & Play")) {
+        saveSceneBeforeLaunch();
+        buildSystem.buildAndStartGame();
+    }
+
+    if (hasExecutable && buildSystem.isGameExecutableStale()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.3f, 1.0f), "(stale)");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Sources changed since the last build");
+        }
+    }
+}
+
+void EditorUI::setActiveSceneAsMainScene() {
+    const std::string scenePath = editor.getActiveSceneFilePath();
+    if (scenePath.empty()) {
+        return;
+    }
+
+    BuildSettings settings;
+    settings.load();
+    settings.mainScene = AssetPaths::toPortable(scenePath);
+
+    if (settings.save()) {
+        EditorConsole::getInstance().logInfo("Main scene set to " + settings.mainScene);
+    } else {
+        EditorConsole::getInstance().logError("Could not write " + std::string(kBuildSettingsPath));
+    }
+}
+
+void EditorUI::saveSceneBeforeLaunch() {
+    auto scene = editor.getActiveScene();
+    if (!scene || editor.getActiveSceneFilePath().empty()) {
+        return;
+    }
+
+    if (editor.saveActiveScene()) {
+        EditorConsole::getInstance().logInfo("Saved scene: " + editor.getActiveSceneFilePath());
+    } else {
+        EditorConsole::getInstance().logWarning("Could not save the active scene before launching");
+    }
+}
+
+void EditorUI::renderConsole() {
+    if (!showConsole) {
+        return;
+    }
+
+    if (!ImGui::Begin("Console", &showConsole)) {
+        ImGui::End();
+        return;
+    }
+
+    EditorConsole& console = EditorConsole::getInstance();
+
+    if (ImGui::Button("Clear")) {
+        console.clear();
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Info", &showInfoLogs);
+    ImGui::SameLine();
+    ImGui::Checkbox("Warnings", &showWarningLogs);
+    ImGui::SameLine();
+    ImGui::Checkbox("Errors", &showErrorLogs);
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu warnings, %zu errors",
+                        console.getCount(LogSeverity::Warning),
+                        console.getCount(LogSeverity::Error));
+
+    ImGui::Separator();
+
+    ImGui::BeginChild("ConsoleScroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+    for (const EditorConsole::Entry& entry : console.getEntries()) {
+        ImVec4 color(0.85f, 0.85f, 0.85f, 1.0f);
+        switch (entry.severity) {
+            case LogSeverity::Warning:
+                if (!showWarningLogs) continue;
+                color = ImVec4(0.95f, 0.85f, 0.35f, 1.0f);
+                break;
+            case LogSeverity::Error:
+                if (!showErrorLogs) continue;
+                color = ImVec4(0.95f, 0.45f, 0.45f, 1.0f);
+                break;
+            case LogSeverity::Info:
+            default:
+                if (!showInfoLogs) continue;
+                break;
+        }
+
+        ImGui::TextColored(color, "%s", entry.message.c_str());
+    }
+
+    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+        ImGui::SetScrollHereY(1.0f);
+    }
+    ImGui::EndChild();
+
     ImGui::End();
 }
 
@@ -2299,6 +2382,12 @@ void EditorUI::renderBuildSettings() {
     static bool toolsAvailable = false;
     static char pcTitle[64] = "";
     static char pcExecutableName[64] = "";
+    static char mainScene[256] = "";
+    static int windowWidth = 960;
+    static int windowHeight = 544;
+    static bool fullscreen = false;
+    static int targetFrameRate = 60;
+    static int rendererIndex = 0;
     static char vitaTitle[64] = "";
     static char vitaTitleId[16] = "";
     static char vitaAppVersion[8] = "";
@@ -2315,6 +2404,12 @@ void EditorUI::renderBuildSettings() {
         settings.load();
         std::snprintf(pcTitle, sizeof(pcTitle), "%s", settings.pc.title.c_str());
         std::snprintf(pcExecutableName, sizeof(pcExecutableName), "%s", settings.pc.executableName.c_str());
+        std::snprintf(mainScene, sizeof(mainScene), "%s", settings.mainScene.c_str());
+        windowWidth = settings.pc.windowWidth;
+        windowHeight = settings.pc.windowHeight;
+        fullscreen = settings.pc.fullscreen;
+        targetFrameRate = settings.pc.targetFrameRate;
+        rendererIndex = (settings.pc.renderer == "opengl") ? 1 : 0;
         std::snprintf(vitaTitle, sizeof(vitaTitle), "%s", settings.vita.title.c_str());
         std::snprintf(vitaTitleId, sizeof(vitaTitleId), "%s", settings.vita.titleId.c_str());
         std::snprintf(vitaAppVersion, sizeof(vitaAppVersion), "%s", settings.vita.appVersion.c_str());
@@ -2329,19 +2424,65 @@ void EditorUI::renderBuildSettings() {
         loaded = true;
     }
 
-    ImGui::Begin("Build Settings", &showBuildSettings);
+    ImGui::Begin("Project Settings", &showBuildSettings);
 
     ImGui::TextDisabled("Saved to %s. Each build reads its own tab.", kBuildSettingsPath);
     ImGui::Separator();
 
     if (ImGui::BeginTabBar("BuildPlatforms")) {
+        if (ImGui::BeginTabItem("Game")) {
+            ImGui::InputText("Main Scene", mainScene, sizeof(mainScene));
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Scene both builds boot into. Read at startup, no rebuild needed.");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Browse##mainScene")) {
+                const std::string picked = FileDialog::openFileDialog("Select Main Scene");
+                if (FileDialog::isValidResult(picked)) {
+                    const std::string relative = FileDialog::toProjectRelativePath(picked);
+                    std::snprintf(mainScene, sizeof(mainScene), "%s", relative.c_str());
+                }
+            }
+            ImGui::TextDisabled("    the Vita reads the same value from the packed settings file");
+            ImGui::EndTabItem();
+        }
+
         if (ImGui::BeginTabItem("PC")) {
             ImGui::InputText("Game Name", pcTitle, sizeof(pcTitle));
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Window title the Linux game sets at startup. Read at run time, no rebuild needed.");
             }
             ImGui::InputText("Executable Name", pcExecutableName, sizeof(pcExecutableName));
-            ImGui::TextDisabled("    builds build_linux/%s", pcExecutableName);
+            ImGui::TextDisabled("    builds %s/%s",
+                                (rendererIndex == 1) ? "build_linux_gl" : "build_linux", pcExecutableName);
+
+            ImGui::Separator();
+            ImGui::Text("Window");
+
+            ImGui::InputInt("Width", &windowWidth);
+            ImGui::InputInt("Height", &windowHeight);
+            if (windowWidth < 1) windowWidth = 1;
+            if (windowHeight < 1) windowHeight = 1;
+            if (ImGui::Button("Match Vita (960 x 544)")) {
+                windowWidth = 960;
+                windowHeight = 544;
+            }
+            ImGui::Checkbox("Fullscreen", &fullscreen);
+            ImGui::TextDisabled("    PC only; the Vita panel is always 960 x 544. The window stays resizable.");
+
+            ImGui::Separator();
+            ImGui::Text("Runtime");
+
+            ImGui::InputInt("Target FPS", &targetFrameRate);
+            if (targetFrameRate < 0) targetFrameRate = 0;
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("0 leaves the frame rate unlimited.");
+            }
+
+            const char* rendererLabels[] = {"Vulkan", "OpenGL"};
+            ImGui::Combo("Renderer", &rendererIndex, rendererLabels, 2);
+            ImGui::TextDisabled("    a build flag, not a runtime switch: changing it rebuilds with make USE_VULKAN=%d",
+                                (rendererIndex == 1) ? 0 : 1);
             ImGui::EndTabItem();
         }
 
@@ -2408,8 +2549,14 @@ void EditorUI::renderBuildSettings() {
 
     if (saveRequested) {
         BuildSettings settings;
+        settings.mainScene = mainScene;
         settings.pc.title = pcTitle;
         settings.pc.executableName = pcExecutableName;
+        settings.pc.windowWidth = windowWidth;
+        settings.pc.windowHeight = windowHeight;
+        settings.pc.fullscreen = fullscreen;
+        settings.pc.targetFrameRate = targetFrameRate;
+        settings.pc.renderer = (rendererIndex == 1) ? "opengl" : "vulkan";
         settings.vita.title = vitaTitle;
         settings.vita.titleId = vitaTitleId;
         settings.vita.appVersion = vitaAppVersion;
@@ -2449,26 +2596,27 @@ void EditorUI::renderCameraControls() {
         return;
     }
     
-    // Position the camera controls in the top-right corner of the viewport
-    ImVec2 windowPos = ImGui::GetWindowPos();
-    ImVec2 windowSize = ImGui::GetWindowSize();
-    ImVec2 controlPos = ImVec2(windowPos.x + windowSize.x - 200, windowPos.y + 10);
-    
-    ImGui::SetNextWindowPos(controlPos);
-    ImGui::SetNextWindowSize(ImVec2(190, 120));
-    
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | 
-                           ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
-    
-    ImGui::Begin("Camera Controls", nullptr, flags);
-    
-    // Camera mode selection
-    ImGui::Text("Camera Mode:");
-    ImGui::SameLine();
-    
     auto& editorSystem = editor;
     auto currentMode = editorSystem.getCameraMode();
-    
+    const char* modeLabel = (currentMode == EditorSystem::CameraMode::EDITOR_CAMERA)
+                          ? "Camera: Editor" : "Camera: Game";
+    if (ImGui::Button(modeLabel)) {
+        ImGui::OpenPopup("CameraControlsPopup");
+    }
+
+    if (editorSystem.isCameraFlyActive()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Look active");
+    }
+
+    ImGui::SetNextWindowViewport(ImGui::GetWindowViewport()->ID);
+    if (!ImGui::BeginPopup("CameraControlsPopup")) {
+        return;
+    }
+
+    // Camera mode selection
+    ImGui::Text("Camera Mode:");
+
     if (ImGui::RadioButton("Editor Camera", currentMode == EditorSystem::CameraMode::EDITOR_CAMERA)) {
         editorSystem.setCameraMode(EditorSystem::CameraMode::EDITOR_CAMERA);
     }
@@ -2499,27 +2647,14 @@ void EditorUI::renderCameraControls() {
     // Show controls info
     if (currentMode == EditorSystem::CameraMode::EDITOR_CAMERA) {
         ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Editor Camera Controls:");
-        ImGui::Text("WASD - Move");
-        ImGui::Text("Space/Shift - Up/Down");
-        ImGui::Text("Arrow Keys - Rotate");
-        
-        // Show if viewport is focused and camera controls are active
-        bool viewportFocused = editor.isViewportFocused();
-        bool textInputActive = ImGui::GetIO().WantTextInput;
-        
-        if (viewportFocused && !textInputActive) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "V Camera Active");
-        } else {
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "X Click viewport to activate");
-        }
     } else {
         ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Game Camera Controls:");
-        ImGui::Text("WASD - Move");
-        ImGui::Text("Space/Shift - Up/Down");
-        ImGui::Text("Right Mouse - Rotate");
     }
-    
-    ImGui::End();
+    ImGui::Text("Hold Right Mouse - Look");
+    ImGui::Text("WASD - Move");
+    ImGui::Text("Space/Shift - Up/Down");
+
+    ImGui::EndPopup();
 }
 
 } // namespace GameEngine

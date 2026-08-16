@@ -142,7 +142,7 @@ void VulkanRenderer::recordRenderCommands(vk::CommandBuffer cmdBuf, uint32_t ima
         if (drawIndex < cameraVisible_.size() && cameraVisible_[drawIndex] == 0) continue;
 
         if (rc.isBeam || (rc.material && rc.material->getVulkanShaderPipelineKind() != VulkanShaderPipelineKind::DefaultLit)) {
-            recordShaderMaterialRenderCommand(cmdBuf, imageIndex, rc, GetEngine().getTime().getTotalTime());
+            recordShaderMaterialRenderCommand(cmdBuf, imageIndex, rc, GetEngine().getTime().getTotalTime(), drawIndex);
             defaultLitBound = false;
             continue;
         }
@@ -189,7 +189,7 @@ void VulkanRenderer::recordRenderCommands(vk::CommandBuffer cmdBuf, uint32_t ima
         }
 
         if (rc.material) {
-            vk::DescriptorSet matSet = pipeline_->getOrCreateMaterialDescriptorSet(rc.material.get());
+            vk::DescriptorSet matSet = pipeline_->getOrCreateMaterialDescriptorSet(rc.material.get(), imageIndex);
             cmdBuf.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,
                 *pipeline_->getGraphicsPipelineLayout(),
@@ -393,7 +393,8 @@ void VulkanRenderer::recordShaderMaterialRenderCommand(
     vk::CommandBuffer cmdBuf,
     uint32_t imageIndex,
     const RenderCommand& rc,
-    float totalTime)
+    float totalTime,
+    size_t drawIndex)
 {
     if (!pipeline_ || !rc.mesh || !rc.material) {
         return;
@@ -433,13 +434,54 @@ void VulkanRenderer::recordShaderMaterialRenderCommand(
         {pipeline_->getDescriptorSet(imageIndex)},
         {});
 
-    vk::DescriptorSet materialSet = pipeline_->getOrCreateShaderMaterialDescriptorSet(rc.material.get());
-    cmdBuf.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        layout,
-        1,
-        {materialSet},
-        {});
+    if (isBeamDraw) {
+        vk::DescriptorSet materialSet = pipeline_->getOrCreateShaderMaterialDescriptorSet(rc.material.get(), imageIndex);
+        cmdBuf.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics,
+            layout,
+            1,
+            {materialSet},
+            {});
+    } else {
+        if (!environmentCubemap_) {
+            return;
+        }
+
+        vk::DescriptorSet matSet = pipeline_->getOrCreateMaterialDescriptorSet(rc.material.get(), imageIndex);
+        cmdBuf.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics,
+            layout,
+            static_cast<uint32_t>(SET_MATERIAL),
+            {matSet},
+            {});
+
+        vk::DescriptorSet environmentSet = pipeline_->getOrUpdateEnvironmentDescriptorSet(
+            frameEnvironment_, *environmentCubemap_);
+        cmdBuf.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics,
+            layout,
+            static_cast<uint32_t>(SET_ENVIRONMENT),
+            {environmentSet},
+            {});
+
+        const uint32_t animationSlot = (drawIndex < animationSlots_.size())
+            ? animationSlots_[drawIndex]
+            : 0u;
+        cmdBuf.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics,
+            layout,
+            static_cast<uint32_t>(SET_ANIMATION),
+            {pipeline_->getAnimationDescriptorSet(animationSlot)},
+            {});
+
+        vk::DescriptorSet customTextureSet = pipeline_->getOrCreateCustomTextureDescriptorSet(rc.material.get());
+        cmdBuf.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics,
+            layout,
+            static_cast<uint32_t>(SET_CUSTOM_TEXTURES),
+            {customTextureSet},
+            {});
+    }
 
     vk::Buffer vb = static_cast<vk::Buffer>(*vulkanMesh.vertexBuffer);
     vk::DeviceSize offsets[] = {0};
@@ -464,6 +506,7 @@ void VulkanRenderer::recordShaderMaterialRenderCommand(
     } else {
         PushConstants push{};
         push.modelMatrix = rc.modelMatrix;
+        push.receiveShadows = (rc.receiveShadows && !shadowDraws_.empty()) ? 1 : 0;
         cmdBuf.pushConstants(
             layout,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -536,13 +579,14 @@ void VulkanRenderer::prepareRenderResources() {
             resources_->getOrUploadMesh(*rc.mesh);
         }
         if (rc.material) {
-            if (rc.isBeam || rc.material->getVulkanShaderPipelineKind() != VulkanShaderPipelineKind::DefaultLit) {
-                pipeline_->getOrCreateShaderMaterialDescriptorSet(rc.material.get());
-                if (rc.material->getVulkanShaderPipelineKind() == VulkanShaderPipelineKind::Custom) {
-                    pipeline_->getCustomShaderPipeline(rc.material.get());
-                }
+            if (rc.isBeam || rc.material->getVulkanShaderPipelineKind() == VulkanShaderPipelineKind::Beam) {
+                pipeline_->getOrCreateShaderMaterialDescriptorSet(rc.material.get(), currentImageIndex);
+            } else if (rc.material->getVulkanShaderPipelineKind() == VulkanShaderPipelineKind::Custom) {
+                pipeline_->getOrCreateMaterialDescriptorSet(rc.material.get(), currentImageIndex);
+                pipeline_->getOrCreateCustomTextureDescriptorSet(rc.material.get());
+                pipeline_->getCustomShaderPipeline(rc.material.get());
             } else {
-                pipeline_->getOrCreateMaterialDescriptorSet(rc.material.get());
+                pipeline_->getOrCreateMaterialDescriptorSet(rc.material.get(), currentImageIndex);
             }
         }
     }

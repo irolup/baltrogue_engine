@@ -2,6 +2,7 @@
 
 #include "Components/LightComponent.h"
 #include "Rendering/LightingManager.h"
+#include "Core/AssetPaths.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -113,7 +114,7 @@ ShadowSettings& ShadowManager::getSettingsForPlatform(const std::string& platfor
 }
 
 bool ShadowManager::loadSettings(const std::string& filepath) {
-    std::ifstream file(filepath);
+    std::ifstream file(AssetPaths::resolve(filepath));
     if (!file.is_open()) {
         return false;
     }

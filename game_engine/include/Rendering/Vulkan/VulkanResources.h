@@ -138,14 +138,16 @@ public:
         vk::DeviceSize size = 0;
     };
 
-    void ensureMaterialUniformBuffer(const Material* material, const MaterialUniforms& data);
-    void ensureShaderMaterialUniformBuffer(const Material* material, const ShaderMaterialUniforms& data);
+    void ensureMaterialUniformBuffer(const Material* material, uint32_t imageIndex, const MaterialUniforms& data);
+    void ensureShaderMaterialUniformBuffer(const Material* material, uint32_t imageIndex, const ShaderMaterialUniforms& data);
     void ensureTextMaterialUniformBuffer(const TextMaterial* material, const TextMaterialUniforms& data);
     void createAnimationUniformBuffers();
     void writeAnimationUniform(uint32_t slot, const std::vector<glm::mat4>& boneTransforms);
 
-    vk::DescriptorBufferInfo getMaterialDescriptorBufferInfo(const Material* material) const;
-    vk::DescriptorBufferInfo getShaderMaterialDescriptorBufferInfo(const Material* material) const;
+    vk::DescriptorBufferInfo getMaterialDescriptorBufferInfo(const Material* material, uint32_t imageIndex) const;
+
+    uint32_t getFrameSlotCount() const;
+    vk::DescriptorBufferInfo getShaderMaterialDescriptorBufferInfo(const Material* material, uint32_t imageIndex) const;
     vk::DescriptorBufferInfo getTextMaterialDescriptorBufferInfo(const TextMaterial* material) const;
     vk::DescriptorBufferInfo getAnimationDescriptorBufferInfo(uint32_t slot) const;
 
@@ -209,8 +211,9 @@ private:
     std::unordered_map<std::string, VulkanTexture> textureCache_;
     std::unordered_map<std::string, VulkanTexture> fontTextureCache_;
     std::unordered_map<std::string, VulkanTexture> cubemapCache_;
-    std::unordered_map<const Material*, MaterialBuffer> materialUniformBuffers_;
-    std::unordered_map<const Material*, ShaderMaterialBuffer> shaderMaterialUniformBuffers_;
+    
+    std::unordered_map<const Material*, std::vector<MaterialBuffer>> materialUniformBuffers_;
+    std::unordered_map<const Material*, std::vector<ShaderMaterialBuffer>> shaderMaterialUniformBuffers_;
     std::unordered_map<const TextMaterial*, TextMaterialBuffer> textMaterialUniformBuffers_;
     std::vector<AnimationBuffer> animationUniformBuffers_;
 

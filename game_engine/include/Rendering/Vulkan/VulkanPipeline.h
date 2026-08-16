@@ -44,11 +44,14 @@ public:
     void refreshShadowAtlasBinding();
 
     const CachedShaderPipeline* getCustomShaderPipeline(const Material* material);
-    vk::DescriptorSet getOrCreateShaderMaterialDescriptorSet(const Material* material);
+
+    vk::DescriptorSet getOrCreateShaderMaterialDescriptorSet(const Material* material, uint32_t imageIndex);
+    vk::DescriptorSet getOrCreateCustomTextureDescriptorSet(const Material* material);
 
     vk::DescriptorSet getDescriptorSet(uint32_t index);
     void recreateDescriptorSets();
-    vk::DescriptorSet getOrCreateMaterialDescriptorSet(const Material* materialKey);
+
+    vk::DescriptorSet getOrCreateMaterialDescriptorSet(const Material* materialKey, uint32_t imageIndex);
     vk::DescriptorSet getOrUpdateEnvironmentDescriptorSet( const FrameEnvironment& env, const VulkanResources::VulkanTexture& cubemap);
     vk::DescriptorSet getOrCreateTextDescriptorSet(const TextMaterial* material, const VulkanResources::VulkanTexture& atlasTexture);
     vk::DescriptorSet getAnimationDescriptorSet(uint32_t slot) const;
@@ -58,6 +61,7 @@ private:
 
     void createDescriptorSetLayout();
     void createShaderMaterialDescriptorSetLayout();
+    void createCustomTextureDescriptorSetLayout();
     void createAnimationDescriptorSetLayout();
     void createTextDescriptorSetLayout();
     void createGraphicsPipeline();
@@ -68,6 +72,7 @@ private:
 
     void createParticleGraphicsPipeline();
 
+    // useLitDescriptorLayout: true  = custom mesh shaders OR false = beam only (frame + shader-material set)
     CachedShaderPipeline createShaderGraphicsPipeline(
         const std::string& vertSpvPath,
         const std::string& fragSpvPath,
@@ -76,9 +81,14 @@ private:
         bool cullEnabled,
         uint32_t pushConstantSize,
         vk::ShaderStageFlags pushConstantStages,
-        std::span<const vk::VertexInputAttributeDescription> vertexAttributes);
+        std::span<const vk::VertexInputAttributeDescription> vertexAttributes,
+        bool useLitDescriptorLayout);
 
     CachedShaderPipeline& getOrCreateCustomShaderPipeline(const Material* material);
+    static MaterialUniforms makeMaterialUniforms(const Material& material);
+    static ShaderMaterialUniforms makeShaderMaterialUniforms(const Material& material);
+    void writeMaterialDescriptorSet(vk::DescriptorSet set, const Material* material, uint32_t imageIndex);
+    void writeShaderMaterialDescriptorSet(vk::DescriptorSet set, const Material* material, uint32_t imageIndex);
     static bool shaderSpvExists(const std::string& path);
     static std::string makeCustomPipelineCacheKey(const Material* material);
     static vk::PipelineColorBlendAttachmentState makeBlendAttachment(BlendMode blendMode);
@@ -103,6 +113,7 @@ private:
     vk::raii::DescriptorSetLayout frameDescriptorSetLayout_ = nullptr;
     vk::raii::DescriptorSetLayout materialDescriptorSetLayout_ = nullptr;
     vk::raii::DescriptorSetLayout shaderMaterialDescriptorSetLayout_ = nullptr;
+    vk::raii::DescriptorSetLayout customTextureDescriptorSetLayout_ = nullptr;
     vk::raii::DescriptorSetLayout environmentDescriptorSetLayout_ = nullptr;
     vk::raii::DescriptorSetLayout animationDescriptorSetLayout_ = nullptr;
     vk::raii::DescriptorSetLayout textDescriptorSetLayout_ = nullptr;
@@ -123,8 +134,21 @@ private:
     // Descriptor pool and per-frame descriptor sets for per-frame UBOs
     vk::raii::DescriptorPool descriptorPool_ = nullptr;
     std::vector<vk::raii::DescriptorSet> descriptorSets_;
-    std::unordered_map<const Material*, std::unique_ptr<vk::raii::DescriptorSet>> materialDescriptorSets_;
-    std::unordered_map<const Material*, std::unique_ptr<vk::raii::DescriptorSet>> shaderMaterialDescriptorSets_;
+
+    struct MaterialDescriptorSlot {
+        std::unique_ptr<vk::raii::DescriptorSet> set;
+        uint32_t appliedRevision = 0;
+        bool written = false;
+    };
+    
+    MaterialDescriptorSlot& acquireDescriptorSlot(
+        std::vector<MaterialDescriptorSlot>& slots,
+        vk::DescriptorSetLayout layout,
+        uint32_t& imageIndex);
+
+    std::unordered_map<const Material*, std::vector<MaterialDescriptorSlot>> materialDescriptorSets_;
+    std::unordered_map<const Material*, std::vector<MaterialDescriptorSlot>> shaderMaterialDescriptorSets_;
+    std::unordered_map<const Material*, std::unique_ptr<vk::raii::DescriptorSet>> customTextureDescriptorSets_;
     std::unordered_map<const TextMaterial*, std::unique_ptr<vk::raii::DescriptorSet>> textMaterialDescriptorSets_;
     std::unique_ptr<vk::raii::DescriptorSet> environmentDescriptorSet_;
     const void* currentEnvironmentKey_ = nullptr;

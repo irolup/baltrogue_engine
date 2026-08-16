@@ -1,5 +1,6 @@
 #include "Rendering/FontManager.h"
 #include "Rendering/Texture.h"
+#include "Core/AssetPaths.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -145,7 +146,9 @@ size_t FontManager::getFontCount() const {
     return fontCache.size();
 }
 
-bool FontManager::loadFontFile(const std::string& fontPath, std::vector<uint8_t>& fontData) {
+bool FontManager::loadFontFile(const std::string& requestedPath, std::vector<uint8_t>& fontData) {
+    const std::string fontPath = AssetPaths::resolve(requestedPath);
+
     std::ifstream file(fontPath, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Failed to open font file: " << fontPath << std::endl;

@@ -1,10 +1,12 @@
 #include "Rendering/ShaderManager.h"
+#include "Core/AssetPaths.h"
 #include "Rendering/Shader.h"
 #include "Platform.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <cstdio>
+#include <cstdlib>
 
 #ifdef LINUX_BUILD
     #include <filesystem>
@@ -19,7 +21,7 @@ ShaderManager& ShaderManager::getInstance() {
 
 std::string ShaderManager::getShaderDirectory() {
 #ifdef VITA_BUILD
-    return "app0:/assets/shaders";
+    return "assets/shaders";
 #else
     return "assets/linux_shaders";
 #endif
@@ -30,6 +32,8 @@ std::string ShaderManager::getShaderDirectory(const std::string& platform) {
         return "assets/shaders";
     } else if (platform == "linux" || platform == "Linux" || platform == "LINUX") {
         return "assets/linux_shaders";
+    } else if (platform == "vulkan" || platform == "Vulkan" || platform == "VULKAN") {
+        return "assets/vulkan";
     } else {
         return getShaderDirectory();
     }
@@ -40,11 +44,12 @@ std::vector<std::string> ShaderManager::discoverShaders(const std::string& direc
     
 #ifdef LINUX_BUILD
     try {
-        if (!std::filesystem::exists(directory)) {
+        const std::string resolvedDirectory = AssetPaths::resolve(directory);
+        if (!std::filesystem::exists(resolvedDirectory)) {
             return shaders;
         }
         
-        for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        for (const auto& entry : std::filesystem::directory_iterator(resolvedDirectory)) {
             if (entry.is_regular_file()) {
                 std::string filename = entry.path().filename().string();
                 if (filename.length() >= extension.length() && 
@@ -61,6 +66,104 @@ std::vector<std::string> ShaderManager::discoverShaders(const std::string& direc
 #endif
     
     return shaders;
+}
+
+bool ShaderManager::compileVulkanGlslToSpv(const std::string& glslPath, std::string* errorOut) {
+    if (glslPath.empty()) {
+        if (errorOut) *errorOut = "Empty shader path";
+        return false;
+    }
+
+    if (glslPath.size() >= 4 && glslPath.compare(glslPath.size() - 4, 4, ".spv") == 0) {
+        return true;
+    }
+
+    const std::string spvPath = glslPath + ".spv";
+
+#ifdef LINUX_BUILD
+    try {
+        if (!std::filesystem::exists(glslPath)) {
+            if (errorOut) *errorOut = "GLSL source not found: " + glslPath;
+            return false;
+        }
+
+        if (std::filesystem::exists(spvPath)) {
+            auto srcTime = std::filesystem::last_write_time(glslPath);
+            auto spvTime = std::filesystem::last_write_time(spvPath);
+            if (spvTime >= srcTime) {
+                return true;
+            }
+        }
+    } catch (const std::exception& e) {
+        if (errorOut) *errorOut = e.what();
+        return false;
+    }
+
+    std::string glslc = "glslc";
+    if (FILE* which = popen("command -v glslc 2>/dev/null", "r")) {
+        char buf[512];
+        if (fgets(buf, sizeof(buf), which)) {
+            std::string found(buf);
+            while (!found.empty() && (found.back() == '\n' || found.back() == '\r')) {
+                found.pop_back();
+            }
+            if (!found.empty()) {
+                glslc = found;
+            }
+        }
+        pclose(which);
+    }
+
+    if (glslc == "glslc") {
+        const char* sdk = std::getenv("VULKAN_SDK");
+        if (sdk && sdk[0] != '\0') {
+            std::string sdkGlslc = std::string(sdk) + "/bin/glslc";
+            if (std::filesystem::exists(sdkGlslc)) {
+                glslc = sdkGlslc;
+            }
+        }
+    }
+
+    if (glslc == "glslc") {
+        // Last check: is bare glslc actually on PATH?
+        if (system("command -v glslc > /dev/null 2>&1") != 0) {
+            if (errorOut) {
+                *errorOut = "glslc not found. Install Vulkan SDK or add glslc to PATH.";
+            }
+            return false;
+        }
+    }
+
+    std::string command = "\"" + glslc + "\" \"" + glslPath + "\" -o \"" + spvPath + "\" 2>&1";
+    std::cout << "[GLSLC] " << glslPath << " -> " << spvPath << std::endl;
+
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) {
+        if (errorOut) *errorOut = "Failed to run glslc";
+        return false;
+    }
+
+    std::string output;
+    char line[1024];
+    while (fgets(line, sizeof(line), pipe)) {
+        output += line;
+    }
+    int status = pclose(pipe);
+    if (status != 0) {
+        if (errorOut) {
+            *errorOut = output.empty() ? ("glslc failed for " + glslPath) : output;
+        }
+        std::cerr << "glslc failed for " << glslPath << ":\n" << output << std::endl;
+        return false;
+    }
+
+    std::cout << "Compiled Vulkan SPIR-V: " << spvPath << std::endl;
+    return true;
+#else
+    (void)spvPath;
+    if (errorOut) *errorOut = "Vulkan SPIR-V compile is only available on Linux editor builds";
+    return false;
+#endif
 }
 
 std::string ShaderManager::getShaderCacheKey(const std::string& vertexPath, const std::string& fragmentPath) const {

@@ -1,6 +1,7 @@
 #ifdef LINUX_BUILD
 
 #include "Editor/EditorSystem.h"
+#include "Editor/EditorConsole.h"
 #include "Editor/EditorUI.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneNode.h"
@@ -48,6 +49,10 @@ EditorSystem::EditorSystem()
     , cameraMode(CameraMode::EDITOR_CAMERA)
     , editorCamera(nullptr)
     , viewportFocused(false)
+    , viewportHovered(false)
+    , cameraFlyActive(false)
+    , cameraYaw(0.0f)
+    , cameraPitch(0.0f)
     , gridOrigin(0.0f, 0.0f, 0.0f)
     , gridCellSize(1.0f)
     , gridSizeX(64)
@@ -70,6 +75,8 @@ EditorSystem::~EditorSystem() {
 }
 
 bool EditorSystem::initialize() {
+    EditorConsole::getInstance().installStreamCapture();
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -102,6 +109,8 @@ bool EditorSystem::initialize() {
 }
 
 void EditorSystem::shutdown() {
+    EditorConsole::getInstance().removeStreamCapture();
+
     if (gridVao) {
         glDeleteVertexArrays(1, &gridVao);
         gridVao = 0;
@@ -129,13 +138,68 @@ void EditorSystem::shutdown() {
 }
 
 void EditorSystem::update(float deltaTime) {
-    bool textInputActive = ImGui::GetIO().WantTextInput;
-    
-    if (cameraMode == CameraMode::EDITOR_CAMERA && editorCamera && viewportFocused && !textInputActive) {
+    buildSystem.update();
+
+    updateCameraFlyState();
+
+    if (!cameraFlyActive) {
+        return;
+    }
+
+    if (cameraMode == CameraMode::EDITOR_CAMERA && editorCamera) {
         handleViewportInput();
-    } else if (cameraMode == CameraMode::GAME_CAMERA && viewportFocused && !textInputActive) {
+    } else if (cameraMode == CameraMode::GAME_CAMERA) {
         handleGameCameraInput(deltaTime);
     }
+}
+
+void EditorSystem::updateCameraFlyState() {
+    auto& inputManager = GetEngine().getInputManager();
+
+    if (!cameraFlyActive) {
+        const bool startedInViewport = viewportHovered &&
+                                       inputManager.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
+        if (startedInViewport && !ImGui::GetIO().WantTextInput) {
+            beginCameraFly();
+        }
+        return;
+    }
+
+    if (!inputManager.isMouseButtonHeld(GLFW_MOUSE_BUTTON_RIGHT)) {
+        endCameraFly();
+    }
+}
+
+void EditorSystem::beginCameraFly() {
+    auto camera = getActiveCamera();
+    if (camera) {
+        glm::vec3 forward = camera->getTransform().getRotation() * glm::vec3(0.0f, 0.0f, -1.0f);
+        cameraPitch = std::asin(glm::clamp(forward.y, -1.0f, 1.0f));
+        cameraYaw = std::atan2(-forward.x, -forward.z);
+    }
+
+    cameraFlyActive = true;
+    GetEngine().getInputManager().setMouseCapture(true);
+
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
+}
+
+void EditorSystem::endCameraFly() {
+    cameraFlyActive = false;
+    GetEngine().getInputManager().setMouseCapture(false);
+    ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+}
+
+glm::quat EditorSystem::updateFlyRotation(const glm::vec2& mouseDelta) {
+    const float lookSensitivity = 0.0025f; // radians per pixel
+    cameraYaw -= mouseDelta.x * lookSensitivity;
+    cameraPitch -= mouseDelta.y * lookSensitivity;
+
+    const float limit = glm::half_pi<float>() - 0.01f;
+    cameraPitch = glm::clamp(cameraPitch, -limit, limit);
+
+    return glm::angleAxis(cameraYaw, glm::vec3(0, 1, 0)) *
+           glm::angleAxis(cameraPitch, glm::vec3(1, 0, 0));
 }
 
 void EditorSystem::render() {
@@ -156,6 +220,7 @@ void EditorSystem::render() {
     ui->renderInputMapping();
     ui->renderMemoryViewer();
     ui->renderBuildSettings();
+    ui->renderConsole();
     
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -332,9 +397,7 @@ void EditorSystem::renderGridInViewport(CameraComponent* camera) {
     }
     if (!gridShader) {
         gridShader = std::make_shared<Shader>();
-        if (!gridShader->loadFromFiles("assets/linux_shaders/grid.vert", "assets/linux_shaders/grid.frag") &&
-            !gridShader->loadFromFiles("./assets/linux_shaders/grid.vert", "./assets/linux_shaders/grid.frag") &&
-            !gridShader->loadFromFiles("../assets/linux_shaders/grid.vert", "../assets/linux_shaders/grid.frag")) {
+        if (!gridShader->loadFromFiles("assets/linux_shaders/grid.vert", "assets/linux_shaders/grid.frag")) {
             gridShader.reset();
             return;
         }
@@ -408,15 +471,11 @@ void EditorSystem::handleViewportInput() {
     float deltaTime = time.getDeltaTime();
 
     float moveSpeed = 10.0f * deltaTime;
-    float rotateSpeed = 2.0f * deltaTime;
 
     auto& transform = editorCamera->getTransform();
     glm::vec3 position = transform.getPosition();
 
-    static float yaw   = 0.0f;
-    static float pitch = 0.0f;
-
-    glm::quat rotation = transform.getRotation();
+    glm::quat rotation = updateFlyRotation(inputManager.getMouseDelta());
 
     if (inputManager.isKeyHeld(GLFW_KEY_W)) {
         position += rotation * glm::vec3(0, 0, -1) * moveSpeed;
@@ -436,26 +495,6 @@ void EditorSystem::handleViewportInput() {
     if (inputManager.isKeyHeld(GLFW_KEY_LEFT_SHIFT)) {
         position += glm::vec3(0, -1, 0) * moveSpeed;
     }
-
-    if (inputManager.isKeyHeld(GLFW_KEY_LEFT)) {
-        yaw += rotateSpeed;
-    }
-    if (inputManager.isKeyHeld(GLFW_KEY_RIGHT)) {
-        yaw -= rotateSpeed;
-    }
-    if (inputManager.isKeyHeld(GLFW_KEY_UP)) {
-        pitch += rotateSpeed;
-    }
-    if (inputManager.isKeyHeld(GLFW_KEY_DOWN)) {
-        pitch -= rotateSpeed;
-    }
-
-    float limit = glm::half_pi<float>() - 0.01f;
-    pitch = glm::clamp(pitch, -limit, limit);
-
-    glm::quat qYaw   = glm::angleAxis(yaw,   glm::vec3(0, 1, 0));
-    glm::quat qPitch = glm::angleAxis(pitch, glm::vec3(1, 0, 0));
-    rotation = qYaw * qPitch;
 
     transform.setPosition(position);
     transform.setRotation(rotation);
@@ -472,69 +511,33 @@ void EditorSystem::handleGameCameraInput(float deltaTime) {
 
     auto& inputManager = GetEngine().getInputManager();
     float moveSpeed = 10.0f * deltaTime;
-    float rotateSpeed = 2.0f * deltaTime;
 
     auto& transform = gameCamera->getTransform();
     glm::vec3 position = transform.getPosition();
-    glm::quat rotation = transform.getRotation();
 
-    bool moved = false;
-    bool rotated = false;
+    glm::quat rotation = updateFlyRotation(inputManager.getMouseDelta());
 
     if (inputManager.isKeyHeld(GLFW_KEY_W)) {
-        moved = true;
         position += rotation * glm::vec3(0, 0, -1) * moveSpeed;
     }
     if (inputManager.isKeyHeld(GLFW_KEY_S)) {
-        moved = true;
         position += rotation * glm::vec3(0, 0,  1) * moveSpeed;
     }
     if (inputManager.isKeyHeld(GLFW_KEY_A)) {
-        moved = true;
         position += rotation * glm::vec3(-1, 0, 0) * moveSpeed;
     }
     if (inputManager.isKeyHeld(GLFW_KEY_D)) {
-        moved = true;
         position += rotation * glm::vec3( 1, 0, 0) * moveSpeed;
     }
     if (inputManager.isKeyHeld(GLFW_KEY_SPACE)) {
-        moved = true;
         position += glm::vec3(0, 1, 0) * moveSpeed;
     }
     if (inputManager.isKeyHeld(GLFW_KEY_LEFT_SHIFT)) {
-        moved = true;
         position += glm::vec3(0, -1, 0) * moveSpeed;
     }
 
-    if (inputManager.isKeyHeld(GLFW_KEY_LEFT))  rotated = true;
-    if (inputManager.isKeyHeld(GLFW_KEY_RIGHT)) rotated = true;
-    if (inputManager.isKeyHeld(GLFW_KEY_UP))   rotated = true;
-    if (inputManager.isKeyHeld(GLFW_KEY_DOWN)) rotated = true;
-
-    if (!moved && !rotated) return;
-
-    if (moved) {
-        transform.setPosition(position);
-    }
-
-    if (rotated) {
-        glm::vec3 euler = glm::eulerAngles(rotation);
-        float yaw = euler.y;
-        float pitch = euler.x;
-
-        if (inputManager.isKeyHeld(GLFW_KEY_LEFT))  yaw += rotateSpeed;
-        if (inputManager.isKeyHeld(GLFW_KEY_RIGHT)) yaw -= rotateSpeed;
-        if (inputManager.isKeyHeld(GLFW_KEY_UP))    pitch += rotateSpeed;
-        if (inputManager.isKeyHeld(GLFW_KEY_DOWN))  pitch -= rotateSpeed;
-
-        float limit = glm::half_pi<float>() - 0.01f;
-        pitch = glm::clamp(pitch, -limit, limit);
-
-        transform.setRotation(
-            glm::angleAxis(yaw, glm::vec3(0, 1, 0)) *
-            glm::angleAxis(pitch, glm::vec3(1, 0, 0))
-        );
-    }
+    transform.setPosition(position);
+    transform.setRotation(rotation);
 }
 
 std::string EditorSystem::generateUniqueNodeName(const std::string& baseName) {
@@ -1119,8 +1122,8 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
     auto meshRenderer = node->getComponent<MeshRenderer>();
     if (meshRenderer && meshRenderer->isEnabled()) {
         auto mesh = meshRenderer->getMesh();
-        auto material = meshRenderer->getMaterial();
-        
+        auto material = meshRenderer->getRenderMaterial();
+
         if (mesh && material) {
             bool opaque = (material->getBlendMode() == BlendMode::Opaque);
             if (renderPass == 1 && !opaque) { /* skip transparent in opaque pass */ }
@@ -1202,21 +1205,13 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
     if (modelRenderer && modelRenderer->isEnabled()) {
         if (modelRenderer->isModelLoaded()) {
             auto meshes = modelRenderer->getMeshes();
-            auto materials = modelRenderer->getMaterials();
-            const auto& meshMaterialIndices = modelRenderer->getMeshMaterialIndices();
             const auto& meshNodeTransforms = modelRenderer->getMeshNodeTransforms();
-            
+
             for (size_t i = 0; i < meshes.size(); ++i) {
                 auto mesh = meshes[i];
                 if (!mesh) continue;
 
-                std::shared_ptr<Material> material = nullptr;
-                if (i < meshMaterialIndices.size()) {
-                    int materialIndex = meshMaterialIndices[i];
-                    if (materialIndex >= 0 && materialIndex < static_cast<int>(materials.size())) {
-                        material = materials[materialIndex];
-                    }
-                }
+                std::shared_ptr<Material> material = modelRenderer->getRenderMaterial(i);
                 if (!material) {
                     material = Material::getDefaultMaterial();
                 }

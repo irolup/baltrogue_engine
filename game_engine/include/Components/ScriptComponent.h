@@ -2,6 +2,7 @@
 #define SCRIPT_COMPONENT_H
 
 #include "Components/Component.h"
+#include "Core/Ray.h"
 #include <string>
 #include <memory>
 
@@ -70,9 +71,15 @@ private:
     void bindCommonFunctions();
     void bindTransformToLua();
     void bindArea3DToLua();
+
+    // Screen point -> world ray through the active camera, sized to the window.
+    static bool screenPointRay(const glm::vec2& screenPoint, Ray& outRay);
+    static bool pointerRay(Ray& outRay);
+
     void bindInputToLua();
     void bindCameraToLua();
     void bindPhysicsToLua();
+    void bindUiToLua();
     void bindNavToLua();
     void bindRendererToLua();
     void bindSceneToLua();

@@ -336,6 +336,36 @@ void TextComponent::setLineSpacing(float spacing) {
     }
 }
 
+bool TextComponent::getScreenRect(const glm::vec2& viewportSize, glm::vec4& outRect) const {
+    if (renderMode != TextRenderMode::SCREEN_SPACE || vertices.empty() || !owner ||
+        viewportSize.x <= 0.0f || viewportSize.y <= 0.0f) {
+        return false;
+    }
+
+    glm::vec2 localMin(vertices[0].position);
+    glm::vec2 localMax = localMin;
+    for (const TextVertex& vertex : vertices) {
+        localMin = glm::min(localMin, glm::vec2(vertex.position));
+        localMax = glm::max(localMax, glm::vec2(vertex.position));
+    }
+
+    const glm::vec3 position = owner->getTransform().getPosition();
+    const glm::vec2 origin(position.x * 0.1f, position.y * 0.1f);
+    localMin = origin + localMin * scale;
+    localMax = origin + localMax * scale;
+
+    const float orthoHeight = 2.0f;
+    const float orthoWidth = orthoHeight * (static_cast<float>(VITA_WIDTH) / static_cast<float>(VITA_HEIGHT));
+
+    const float left = (localMin.x + orthoWidth * 0.5f) / orthoWidth * viewportSize.x;
+    const float right = (localMax.x + orthoWidth * 0.5f) / orthoWidth * viewportSize.x;
+    const float top = (orthoHeight * 0.5f - localMax.y) / orthoHeight * viewportSize.y;
+    const float bottom = (orthoHeight * 0.5f - localMin.y) / orthoHeight * viewportSize.y;
+
+    outRect = glm::vec4(left, top, right - left, bottom - top);
+    return true;
+}
+
 glm::vec2 TextComponent::getTextBounds() const {
     return calculateTextSize();
 }

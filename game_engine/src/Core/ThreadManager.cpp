@@ -35,10 +35,12 @@ ThreadHandle ThreadManager::createThread(const std::string& name, std::function<
     return handle;
 }
 
-void ThreadManager::joinThread(ThreadHandle& handle) {
+bool ThreadManager::joinThread(ThreadHandle& handle, unsigned int timeoutMs) {
+    (void)timeoutMs; // std::thread has no timed join
     if (handle.joinable()) {
         handle.join();
     }
+    return true;
 }
 
 bool ThreadManager::isValid(const ThreadHandle& handle) const {
@@ -192,13 +194,23 @@ ThreadHandle ThreadManager::createThread(const std::string& name, std::function<
     return handle;
 }
 
-void ThreadManager::joinThread(ThreadHandle& handle) {
-    if (handle.valid && handle.threadId >= 0) {
-        int stat = 0;
-        sceKernelWaitThreadEnd(handle.threadId, &stat, nullptr);
-        handle.valid = false;
-        handle.threadId = 0;
+bool ThreadManager::joinThread(ThreadHandle& handle, unsigned int timeoutMs) {
+    if (!handle.valid || handle.threadId < 0) {
+        return true;
     }
+
+    int stat = 0;
+    int result;
+    if (timeoutMs > 0) {
+        SceUInt timeout = timeoutMs * 1000;
+        result = sceKernelWaitThreadEnd(handle.threadId, &stat, &timeout);
+    } else {
+        result = sceKernelWaitThreadEnd(handle.threadId, &stat, nullptr);
+    }
+
+    handle.valid = false;
+    handle.threadId = 0;
+    return result >= 0;
 }
 
 bool ThreadManager::isValid(const ThreadHandle& handle) const {

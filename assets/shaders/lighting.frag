@@ -195,7 +195,7 @@ float4 main(FragmentInput input) : COLOR {
     // Sample diffuse texture if available
     if (u_HasDiffuseTexture) {
         float4 diffuseSample = tex2D(u_DiffuseTexture, input.texCoord);
-        diffuseColor = diffuseSample.rgb;
+        diffuseColor *= diffuseSample.rgb;
         alpha *= diffuseSample.a;
     }
 

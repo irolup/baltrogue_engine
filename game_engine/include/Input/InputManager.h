@@ -45,6 +45,13 @@ public:
     void setLeftStickCallback(StickCallback callback) { onLeftStick = callback; }
     void setRightStickCallback(StickCallback callback) { onRightStick = callback; }
     
+    // Pointer input for vita and pc
+    bool isPointerActive() const { return pointerActive; }
+    glm::vec2 getPointerPosition() const { return pointerPosition; }
+    bool isPointerPressed() const { return pointerDown && !pointerDownPrevious; }
+    bool isPointerHeld() const { return pointerDown; }
+    bool isPointerReleased() const { return !pointerDown && pointerDownPrevious; }
+
 #ifdef LINUX_BUILD
     glm::vec2 getMousePosition() const;
     glm::vec2 getMouseDelta() const;
@@ -79,6 +86,13 @@ public:
 private:
     SceCtrlData currentInput;
     SceCtrlData previousInput;
+
+    glm::vec2 pointerPosition;
+    bool pointerActive;
+    bool pointerDown;
+    bool pointerDownPrevious;
+
+    void updatePointerInput();
     
     std::unique_ptr<InputMappingManager> inputMappingManager;
     

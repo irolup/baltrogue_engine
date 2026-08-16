@@ -1,4 +1,5 @@
 #include "Components/SoundComponent.h"
+#include "Core/AssetPaths.h"
 #include <iostream>
 #include <fstream>
 #include <cstring>
@@ -404,7 +405,9 @@ void SoundComponent::cleanupOpenAL() {
     }
 }
 
-bool SoundComponent::loadWAVFile(const std::string& filePath, ALuint& outBuffer) {
+bool SoundComponent::loadWAVFile(const std::string& requestedPath, ALuint& outBuffer) {
+    const std::string filePath = AssetPaths::resolve(requestedPath);
+
     std::ifstream file(filePath, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "SoundComponent: Failed to open file: " << filePath << std::endl;
@@ -633,17 +636,14 @@ void SoundComponent::resampleAudioBuffer() {
 }
 
 bool SoundComponent::loadWAVFile(const std::string& filePath) {
-    std::string vitaPath = filePath;
-    if (vitaPath.find("assets/") == 0) {
-        vitaPath = "app0:/" + vitaPath;
-    }
-    
-    std::ifstream file(vitaPath, std::ios::binary);
+    const std::string resolvedPath = AssetPaths::resolve(filePath);
+
+    std::ifstream file(resolvedPath, std::ios::binary);
     if (!file.is_open()) {
-        std::cerr << "SoundComponent: Failed to open file: " << vitaPath << std::endl;
+        std::cerr << "SoundComponent: Failed to open file: " << resolvedPath << std::endl;
         return false;
     }
-    
+
     char riff[4];
     uint32_t chunkSize;
     char wave[4];
@@ -652,7 +652,7 @@ bool SoundComponent::loadWAVFile(const std::string& filePath) {
     file.read(wave, 4);
     
     if (strncmp(riff, "RIFF", 4) != 0 || strncmp(wave, "WAVE", 4) != 0) {
-        std::cerr << "SoundComponent: Invalid WAV file (not RIFF WAVE): " << vitaPath << std::endl;
+        std::cerr << "SoundComponent: Invalid WAV file (not RIFF WAVE): " << resolvedPath << std::endl;
         file.close();
         return false;
     }
@@ -686,7 +686,7 @@ bool SoundComponent::loadWAVFile(const std::string& filePath) {
             foundFmt = true;
         } else if (strncmp(chunkId, "data", 4) == 0) {
             if (!foundFmt) {
-                std::cerr << "SoundComponent: Found data chunk before fmt chunk: " << vitaPath << std::endl;
+                std::cerr << "SoundComponent: Found data chunk before fmt chunk: " << resolvedPath << std::endl;
                 file.close();
                 return false;
             }
@@ -729,7 +729,7 @@ bool SoundComponent::loadWAVFile(const std::string& filePath) {
     }
     
     if (!foundFmt || dataSize == 0) {
-        std::cerr << "SoundComponent: Could not find fmt or data chunk in WAV file: " << vitaPath << std::endl;
+        std::cerr << "SoundComponent: Could not find fmt or data chunk in WAV file: " << resolvedPath << std::endl;
         file.close();
         return false;
     }

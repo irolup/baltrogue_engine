@@ -386,6 +386,41 @@ void Engine::setWindowTitle(const std::string& title) {
 #endif
 }
 
+void Engine::setWindowSize(int width, int height) {
+#ifdef LINUX_BUILD
+    if (window && width > 0 && height > 0) {
+        glfwSetWindowSize(window, width, height);
+    }
+#else
+    (void)width;
+    (void)height;
+#endif
+}
+
+void Engine::setFullscreen(bool enabled) {
+#ifdef LINUX_BUILD
+    if (!window) {
+        return;
+    }
+
+    if (enabled) {
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = monitor ? glfwGetVideoMode(monitor) : nullptr;
+        if (mode) {
+            glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+        }
+        return;
+    }
+
+    int width = VITA_WIDTH;
+    int height = VITA_HEIGHT;
+    glfwGetWindowSize(window, &width, &height);
+    glfwSetWindowMonitor(window, nullptr, 100, 100, width, height, GLFW_DONT_CARE);
+#else
+    (void)enabled;
+#endif
+}
+
 glm::ivec2 Engine::getWindowSize() const {
 #ifdef LINUX_BUILD
     if (window) {

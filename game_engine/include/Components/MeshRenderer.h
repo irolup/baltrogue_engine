@@ -22,7 +22,8 @@ public:
     
     void setMaterial(std::shared_ptr<Material> material);
     std::shared_ptr<Material> getMaterial() const { return material; }
-    
+    std::shared_ptr<Material> getRenderMaterial();
+
     void setMaterialOverride(std::shared_ptr<Material> overrideMaterial);
     std::shared_ptr<Material> getMaterialOverride() const { return materialOverride; }
     

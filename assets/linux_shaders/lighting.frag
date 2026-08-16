@@ -188,7 +188,7 @@ void main() {
     float alpha = u_Opacity;
     if (u_HasDiffuseTexture) {
         vec4 diffuseSample = texture2D(u_DiffuseTexture, vTexCoord);
-        diffuseColor = diffuseSample.rgb;
+        diffuseColor *= diffuseSample.rgb;
         alpha *= diffuseSample.a;
     }
 

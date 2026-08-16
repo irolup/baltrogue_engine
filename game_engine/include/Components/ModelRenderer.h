@@ -52,7 +52,9 @@ public:
     const std::vector<std::shared_ptr<Material>>& getMaterials() const { return modelData.materials; }
     const std::vector<int>& getMeshMaterialIndices() const { return modelData.meshMaterialIndices; }
     const std::vector<glm::mat4>& getMeshNodeTransforms() const { return modelData.meshNodeTransforms; }
-    
+
+    std::shared_ptr<Material> getRenderMaterial(size_t meshIndex);
+
     bool getCastShadows() const { return castShadows; }
     void setCastShadows(bool cast) { castShadows = cast; }
     

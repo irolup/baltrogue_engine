@@ -24,8 +24,7 @@ enum class AudioCommandType {
     STOP_SOUND,
     SET_VOLUME,
     PAUSE,
-    RESUME,
-    SHUTDOWN
+    RESUME
 };
 
 struct AudioCommand {
@@ -94,6 +93,7 @@ private:
 #endif
     
     void audioThreadFunction();
+    void stopAudioThread();
     void processAudioCommand(const AudioCommand& cmd);
     
     bool initializeAudioSystem();

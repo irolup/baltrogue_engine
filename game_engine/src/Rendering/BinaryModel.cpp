@@ -1,4 +1,5 @@
 #include "Rendering/BinaryModel.h"
+#include "Core/AssetPaths.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Material.h"
 #include "Rendering/TextureManager.h"
@@ -80,9 +81,10 @@ bool BinaryModel::saveToBinary(const std::string& binaryPath) {
     return true;
 }
 
-bool BinaryModel::loadFromBinary(const std::string& binaryPath) {
+bool BinaryModel::loadFromBinary(const std::string& requestedPath) {
     clearData();
-    
+
+    const std::string binaryPath = AssetPaths::resolve(requestedPath);
     std::ifstream file(binaryPath, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "BinaryModel: Failed to open file for reading: " << binaryPath << std::endl;

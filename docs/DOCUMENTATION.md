@@ -127,12 +127,16 @@ end
 
 ### Lua API
 
+**Full reference: [LUA_API.md](LUA_API.md)** — every binding, grouped by table,
+with signatures and platform availability.
+
 The engine provides bindings for:
 - **Transform**: Position, rotation, scale manipulation
-- **Input**: Action-based input checking
-- **Physics**: Apply forces, check collisions
-- **Renderer**: Camera control
-- **Scene**: Node creation and management
+- **Input**: Action-based input, and a pointer (mouse on desktop, touch on Vita)
+- **Physics**: Raycasts, velocities, body settings
+- **Renderer**: Text and camera control
+- **Scene**: Node creation, management and scene loading
+- **UI**: `ui.hitTest` / `ui.pickNode` for clicking things on screen
 
 ---
 

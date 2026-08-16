@@ -3,18 +3,51 @@
 
 #ifdef LINUX_BUILD
 
+#include "Editor/ChildProcess.h"
+
+#include <string>
+
 namespace GameEngine {
 
 class BuildSystem {
 public:
-    BuildSystem() = default;
-    ~BuildSystem() = default;
+    enum class Target {
+        Linux,
+        Vita
+    };
 
-    static void buildForLinux();
-    static void buildForVita();
+    BuildSystem();
+    ~BuildSystem();
+
+    void update();
+
+    bool startBuild(Target target);
+    bool isBuilding() const;
+    Target getBuildTarget() const { return buildTarget; }
+
+    bool startGame();
+    bool buildAndStartGame();
+    bool isGameRunning() const;
+    void stopGame();
+
+    std::string getGameExecutablePath() const;
+    bool gameExecutableExists() const;
+    // True when a source file is newer than the binary
+    bool isGameExecutableStale() const;
+
+private:
+    bool launchGameProcess();
+    void onBuildFinished();
+
+    ChildProcess buildProcess;
+    ChildProcess gameProcess;
+
+    Target buildTarget;
+
+    bool startGameAfterBuild;
 };
 
-} // namespace GameEngine
+}
 
-#endif // LINUX_BUILD
-#endif // BUILD_SYSTEM_H
+#endif
+#endif

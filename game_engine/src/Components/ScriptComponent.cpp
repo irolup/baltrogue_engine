@@ -5,6 +5,8 @@
 #include "Scene/SceneScriptRuntime.h"
 #include "Core/MenuManager.h"
 #include "Core/SaveFile.h"
+#include "Core/AssetPaths.h"
+#include "Scene/ScenePicker.h"
 #include "../../vendor/json/single_include/nlohmann/json.hpp"
 #include "Components/TextComponent.h"
 #include "Components/Area3DComponent.h"
@@ -670,6 +672,31 @@ void ScriptComponent::bindTransformToLua() {
     lua_setglobal(luaState, "getParent");
 }
 
+bool ScriptComponent::screenPointRay(const glm::vec2& screenPoint, Ray& outRay) {
+    auto scene = GetEngine().getSceneManager().getCurrentScene();
+    if (!scene) {
+        return false;
+    }
+
+    auto cameraNode = scene->getActiveCamera();
+    if (!cameraNode) {
+        return false;
+    }
+
+    auto* camera = cameraNode->getComponent<CameraComponent>();
+    if (!camera) {
+        return false;
+    }
+
+    const glm::ivec2 windowSize = GetEngine().getWindowSize();
+    outRay = camera->screenPointToRay(screenPoint, glm::vec2(windowSize));
+    return true;
+}
+
+bool ScriptComponent::pointerRay(Ray& outRay) {
+    return screenPointRay(GetEngine().getInputManager().getPointerPosition(), outRay);
+}
+
 void ScriptComponent::bindInputToLua() {
     if (!luaState) {
         return;
@@ -820,6 +847,65 @@ void ScriptComponent::bindInputToLua() {
     lua_settable(luaState, -3);
 #endif
     
+    // Pointer input: the mouse on desktop, the front touch panel on Vita
+    lua_pushstring(luaState, "isPointerActive");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        lua_pushboolean(L, GetEngine().getInputManager().isPointerActive());
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
+    lua_pushstring(luaState, "getPointerPosition");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const glm::vec2 position = GetEngine().getInputManager().getPointerPosition();
+        lua_pushnumber(L, position.x);
+        lua_pushnumber(L, position.y);
+        return 2;
+    });
+    lua_settable(luaState, -3);
+
+    lua_pushstring(luaState, "isPointerPressed");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        lua_pushboolean(L, GetEngine().getInputManager().isPointerPressed());
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
+    lua_pushstring(luaState, "isPointerHeld");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        lua_pushboolean(L, GetEngine().getInputManager().isPointerHeld());
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
+    lua_pushstring(luaState, "isPointerReleased");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        lua_pushboolean(L, GetEngine().getInputManager().isPointerReleased());
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
+    // origin x,y,z then direction x,y,z through the pointer, or nil without a camera.
+    lua_pushstring(luaState, "getPointerRay");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        Ray ray;
+        if (!ScriptComponent::pointerRay(ray)) {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        const glm::vec3 origin = ray.getOrigin();
+        const glm::vec3 direction = ray.getDirection();
+        lua_pushnumber(L, origin.x);
+        lua_pushnumber(L, origin.y);
+        lua_pushnumber(L, origin.z);
+        lua_pushnumber(L, direction.x);
+        lua_pushnumber(L, direction.y);
+        lua_pushnumber(L, direction.z);
+        return 6;
+    });
+    lua_settable(luaState, -3);
+
 #ifdef LINUX_BUILD
     // Mouse input functions (Linux only)
     lua_pushstring(luaState, "setMouseCapture");
@@ -1177,8 +1263,129 @@ void ScriptComponent::bindPhysicsToLua() {
         return 0;
     });
     lua_settable(luaState, -3);
-    
+
+    lua_pushstring(luaState, "raycastScreenPoint");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        Ray ray;
+        bool built = false;
+        if (lua_isnumber(L, 1) && lua_isnumber(L, 2)) {
+            const glm::vec2 screenPoint(static_cast<float>(lua_tonumber(L, 1)),
+                                        static_cast<float>(lua_tonumber(L, 2)));
+            built = ScriptComponent::screenPointRay(screenPoint, ray);
+        } else {
+            built = ScriptComponent::pointerRay(ray);
+        }
+
+        if (!built) {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        const float maxDistance = lua_isnumber(L, 3) ? static_cast<float>(lua_tonumber(L, 3)) : 1000.0f;
+
+        bool hit = false;
+        std::string hitNodeName;
+        glm::vec3 hitPoint(0.0f);
+        glm::vec3 hitNormal(0.0f);
+        float hitDistance = 0.0f;
+        PhysicsManager::getInstance().raycastFromTo(ray.getOrigin(), ray.pointAt(maxDistance), -1,
+                                                   hit, hitNodeName, hitPoint, hitNormal, hitDistance);
+        if (!hit) {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        lua_newtable(L);
+        lua_pushstring(L, "nodeName"); lua_pushstring(L, hitNodeName.c_str()); lua_settable(L, -3);
+        lua_pushstring(L, "hitDistance"); lua_pushnumber(L, hitDistance); lua_settable(L, -3);
+        lua_pushstring(L, "hitPoint");
+        lua_newtable(L);
+        lua_pushstring(L, "x"); lua_pushnumber(L, hitPoint.x); lua_settable(L, -3);
+        lua_pushstring(L, "y"); lua_pushnumber(L, hitPoint.y); lua_settable(L, -3);
+        lua_pushstring(L, "z"); lua_pushnumber(L, hitPoint.z); lua_settable(L, -3);
+        lua_settable(L, -3);
+        lua_pushstring(L, "hitNormal");
+        lua_newtable(L);
+        lua_pushstring(L, "x"); lua_pushnumber(L, hitNormal.x); lua_settable(L, -3);
+        lua_pushstring(L, "y"); lua_pushnumber(L, hitNormal.y); lua_settable(L, -3);
+        lua_pushstring(L, "z"); lua_pushnumber(L, hitNormal.z); lua_settable(L, -3);
+        lua_settable(L, -3);
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
     lua_setglobal(luaState, "Physics");
+
+    bindUiToLua();
+}
+
+void ScriptComponent::bindUiToLua() {
+    if (!luaState) {
+        return;
+    }
+
+    lua_newtable(luaState);
+
+    // Screen-space menus have no collider, so a world ray can never reach them.
+    // Returns the node name under the point, or nil. Defaults to the pointer.
+    lua_pushstring(luaState, "hitTest");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        auto scene = GetEngine().getSceneManager().getCurrentScene();
+        if (!scene) {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        glm::vec2 screenPoint = GetEngine().getInputManager().getPointerPosition();
+        if (lua_isnumber(L, 1) && lua_isnumber(L, 2)) {
+            screenPoint = glm::vec2(static_cast<float>(lua_tonumber(L, 1)),
+                                    static_cast<float>(lua_tonumber(L, 2)));
+        }
+
+        const glm::ivec2 windowSize = GetEngine().getWindowSize();
+        auto node = ScenePicker::hitTestScreen(*scene, screenPoint, glm::vec2(windowSize));
+        if (!node) {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        lua_pushstring(L, node->getName().c_str());
+        return 1;
+    });
+    lua_settable(luaState, -3);
+
+    // Nearest node under a screen point by mesh bounds, collider or not.
+    lua_pushstring(luaState, "pickNode");
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        auto scene = GetEngine().getSceneManager().getCurrentScene();
+        if (!scene) {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        Ray ray;
+        bool built = false;
+        if (lua_isnumber(L, 1) && lua_isnumber(L, 2)) {
+            const glm::vec2 screenPoint(static_cast<float>(lua_tonumber(L, 1)),
+                                        static_cast<float>(lua_tonumber(L, 2)));
+            built = ScriptComponent::screenPointRay(screenPoint, ray);
+        } else {
+            built = ScriptComponent::pointerRay(ray);
+        }
+
+        PickHit pick = built ? ScenePicker::pickNode(*scene, ray) : PickHit();
+        if (!pick.hit || !pick.node) {
+            lua_pushnil(L);
+            return 1;
+        }
+
+        lua_pushstring(L, pick.node->getName().c_str());
+        lua_pushnumber(L, pick.distance);
+        return 2;
+    });
+    lua_settable(luaState, -3);
+
+    lua_setglobal(luaState, "ui");
 }
 
 void ScriptComponent::bindNavToLua() {
@@ -1487,7 +1694,23 @@ void ScriptComponent::bindCommonFunctions() {
         return 0;
     });
     lua_setglobal(luaState, "print");
-    
+
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* path = lua_tostring(L, 1);
+        if (!path) {
+            return luaL_error(L, "dofile: expected a file path");
+        }
+
+        const std::string resolved = AssetPaths::resolve(path);
+        if (luaL_loadfile(L, resolved.c_str()) != LUA_OK) {
+            return lua_error(L);
+        }
+
+        lua_call(L, 0, LUA_MULTRET);
+        return lua_gettop(L) - 1;
+    });
+    lua_setglobal(luaState, "dofile");
+
     // Platform detection global
 #ifdef VITA_BUILD
     lua_pushboolean(luaState, true);

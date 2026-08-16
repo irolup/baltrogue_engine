@@ -1,4 +1,5 @@
 #include "Rendering/AnimationManager.h"
+#include "Core/AssetPaths.h"
 #include "../../vendor/tinygltf/tiny_gltf.h"
 #include <iostream>
 #include <algorithm>
@@ -31,10 +32,11 @@ std::shared_ptr<Skeleton> AnimationManager::loadSkeleton(const std::string& file
     std::string extension = filepath.substr(filepath.find_last_of('.'));
     std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
     
+    const std::string resolvedPath = AssetPaths::resolve(filepath);
     if (extension == ".glb") {
-        success = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, filepath);
+        success = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, resolvedPath);
     } else {
-        success = loader.LoadASCIIFromFile(&gltfModel, &err, &warn, filepath);
+        success = loader.LoadASCIIFromFile(&gltfModel, &err, &warn, resolvedPath);
     }
     
     if (!success) {
@@ -143,7 +145,7 @@ std::vector<std::string> AnimationManager::discoverSkeletons(const std::string& 
     
 #ifdef LINUX_BUILD
     try {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(AssetPaths::resolve(directory))) {
             if (entry.is_regular_file()) {
                 std::string filePath = entry.path().string();
                 std::string extension = entry.path().extension().string();
@@ -183,7 +185,7 @@ std::vector<std::string> AnimationManager::discoverAnimationClips(const std::str
     
 #ifdef LINUX_BUILD
     try {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(AssetPaths::resolve(directory))) {
             if (entry.is_regular_file()) {
                 std::string filePath = entry.path().string();
                 std::string extension = entry.path().extension().string();

@@ -1,6 +1,7 @@
 #ifdef LINUX_BUILD
 
 #include "Editor/FileDialog.h"
+#include "Core/AssetPaths.h"
 #include <iostream>
 #include <cstdlib>
 #include <filesystem>
@@ -70,7 +71,7 @@ bool FileDialog::isValidResult(const std::string& result) {
 }
 
 std::string FileDialog::getDefaultScenesDirectory() {
-    return "assets/scenes";
+    return AssetPaths::resolve("assets/scenes");
 }
 
 void FileDialog::ensureScenesDirectoryExists() {
@@ -82,7 +83,7 @@ void FileDialog::ensureScenesDirectoryExists() {
 }
 
 std::string FileDialog::getDefaultTemplatesDirectory() {
-    return "assets/templates";
+    return AssetPaths::resolve("assets/templates");
 }
 
 void FileDialog::ensureTemplatesDirectoryExists() {
@@ -152,7 +153,7 @@ std::string FileDialog::saveTemplateFileDialog(const std::string& title, const s
 
 std::string FileDialog::openImageFileDialog(const std::string& title) {
     const std::string filter = "*.png";
-    std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=assets/" +
+    std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" + AssetPaths::getAssetRoot() + "/" +
                           " --file-filter=\"" + filter + " | " + filter + "\"";
 
     FILE* pipe = popen(command.c_str(), "r");
@@ -177,8 +178,12 @@ std::string FileDialog::openImageFileDialog(const std::string& title) {
 }
 
 std::string FileDialog::toProjectRelativePath(const std::string& path) {
+    const std::string& projectRoot = AssetPaths::getProjectRoot();
+    const std::filesystem::path base = projectRoot.empty() ? std::filesystem::current_path()
+                                                           : std::filesystem::path(projectRoot);
+
     std::error_code error;
-    std::filesystem::path relative = std::filesystem::relative(path, std::filesystem::current_path(), error);
+    std::filesystem::path relative = std::filesystem::relative(path, base, error);
 
     // Outside the project, so keep the absolute path the dialog returned
     if (error || relative.empty() || relative.native().rfind("..", 0) == 0) {

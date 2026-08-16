@@ -29,9 +29,19 @@ public:
     void renderInputMapping();
     void renderMemoryViewer();
     void renderBuildSettings();
+    void renderConsole();
     void renderSceneNode(std::shared_ptr<SceneNode> node, int depth = 0);
 
 private:
+    // For selection when creating a new node
+    void attachNewNode(const std::shared_ptr<SceneNode>& parent, const std::shared_ptr<SceneNode>& newNode);
+    void attachNewNodeToSelection(const std::shared_ptr<Scene>& scene, const std::shared_ptr<SceneNode>& newNode);
+
+    // The buttons for launching the game in the editor
+    void renderPlayControls();.
+    void saveSceneBeforeLaunch();
+    void setActiveSceneAsMainScene();
+
     void openSceneFromDialog();
     void saveSceneAsDialog();
     void saveActiveScene();
@@ -48,6 +58,10 @@ private:
     bool showInputMapping;
     bool showMemoryViewer;
     bool showBuildSettings;
+    bool showConsole;
+    bool showInfoLogs;
+    bool showWarningLogs;
+    bool showErrorLogs;
 
     float sceneGraphWidth;
     float propertiesWidth;
@@ -58,7 +72,7 @@ private:
     bool focusOnSelectedNode;
 };
 
-} // namespace GameEngine
+}
 
-#endif // LINUX_BUILD
-#endif // EDITOR_UI_H
+#endif
+#endif

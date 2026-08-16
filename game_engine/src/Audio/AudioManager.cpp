@@ -7,6 +7,10 @@
 
 namespace GameEngine {
 
+namespace {
+const unsigned int kAudioThreadJoinTimeoutMs = 1000;
+}
+
 AudioManager& AudioManager::getInstance() {
     static AudioManager instance;
     return instance;
@@ -53,17 +57,19 @@ bool AudioManager::initialize() {
 
 void AudioManager::shutdown() {
     if (threadingEnabled && audioThreadRunning.load()) {
-        AudioCommand shutdownCmd;
-        shutdownCmd.type = AudioCommandType::SHUTDOWN;
-        commandQueue.push(shutdownCmd);
-        
-        ThreadManager::getInstance().joinThread(audioThread);
-        audioThreadRunning.store(false);
-        commandQueue.reset();
+        stopAudioThread();
     }
-    
+
     shutdownAudioSystem();
     initialized = false;
+}
+
+void AudioManager::stopAudioThread() {
+    // Clear the loop flag directly instead of queueing a stop command
+    audioThreadRunning.store(false);
+
+    ThreadManager::getInstance().joinThread(audioThread, kAudioThreadJoinTimeoutMs);
+    commandQueue.reset();
 }
 
 void AudioManager::enableThreading(bool enable) {
@@ -84,13 +90,7 @@ void AudioManager::enableThreading(bool enable) {
             threadingEnabled = false;
         }
     } else if (!enable && audioThreadRunning.load()) {
-        AudioCommand shutdownCmd;
-        shutdownCmd.type = AudioCommandType::SHUTDOWN;
-        commandQueue.push(shutdownCmd);
-        
-        ThreadManager::getInstance().joinThread(audioThread);
-        audioThreadRunning.store(false);
-        commandQueue.reset();
+        stopAudioThread();
     }
 }
 
@@ -224,10 +224,6 @@ void AudioManager::processAudioCommand(const AudioCommand& cmd) {
             
         case AudioCommandType::RESUME:
             paused = false;
-            break;
-            
-        case AudioCommandType::SHUTDOWN:
-            audioThreadRunning.store(false);
             break;
     }
 }

@@ -14,12 +14,8 @@ public:
     SceneSerializer() = default;
     ~SceneSerializer() = default;
 
-    static std::string generateGameMainContent(std::shared_ptr<Scene> scene, const std::vector<std::string>& discoveredTextures);
-    static std::string generateVitaMainContent(std::shared_ptr<Scene> scene, const std::vector<std::string>& discoveredTextures);
-    static std::string escapeStringForCpp(const std::string& input);
-    static std::string generateVisibilityCode(const std::string& nodeName, std::shared_ptr<SceneNode> node);
-    
-    static void saveSceneToGame(std::shared_ptr<Scene> scene);
+
+    static void generateAssetManifests();
     
     static bool saveSceneToFile(std::shared_ptr<Scene> scene, const std::string& filepath);
     static std::shared_ptr<Scene> loadSceneFromFile(const std::string& filepath);
@@ -43,7 +39,6 @@ public:
     static void updateMakefileWithAssets(const std::vector<std::string>& discoveredTextures, const std::vector<std::string>& discoveredFonts, const std::vector<std::string>& discoveredModels, const std::vector<std::string>& discoveredScripts);
     
     static std::string convertToVitaPath(const std::string& path);
-    static std::string convertToLinuxPath(const std::string& path);
 
     static std::shared_ptr<SceneNode> duplicateNodeSubtree(std::shared_ptr<SceneNode> node);
 
@@ -53,7 +48,6 @@ public:
 private:
     static std::vector<std::shared_ptr<SceneNode>> getAllSceneNodesFromScene(std::shared_ptr<Scene> scene);
     static void collectAllNodesRecursive(std::shared_ptr<SceneNode> node, std::vector<std::shared_ptr<SceneNode>>& allNodes);
-    static std::string sanitizeNodeName(const std::string& name);
     static std::string serializeSceneToJson(std::shared_ptr<Scene> scene);
     static std::shared_ptr<Scene> deserializeSceneFromJson(const nlohmann::json& sceneJson);
     static std::shared_ptr<Scene> deserializeSceneFromJsonText(const std::string& jsonData);

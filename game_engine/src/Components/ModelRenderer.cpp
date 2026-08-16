@@ -1,4 +1,5 @@
 #include "Components/ModelRenderer.h"
+#include "Core/AssetPaths.h"
 #include "Rendering/Renderer.h"
 #include "Rendering/TextureManager.h"
 #include "Rendering/AnimationManager.h"
@@ -7,6 +8,7 @@
 #include "Rendering/Material.h"
 #include "Scene/SceneNode.h"
 #include "Components/AnimationComponent.h"
+#include "Components/MaterialComponent.h"
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
@@ -89,17 +91,11 @@ void ModelRenderer::render(IRenderer& renderer) {
     // Render each mesh in the model
     for (size_t i = 0; i < modelData.meshes.size(); ++i) {
         auto mesh = modelData.meshes[i];
-        
+
         if (!mesh) continue;
-        
-        std::shared_ptr<Material> material = nullptr;
-        if (i < modelData.meshMaterialIndices.size()) {
-            int materialIndex = modelData.meshMaterialIndices[i];
-            if (materialIndex >= 0 && materialIndex < static_cast<int>(modelData.materials.size())) {
-                material = modelData.materials[materialIndex];
-            }
-        }
-        
+
+        std::shared_ptr<Material> material = getRenderMaterial(i);
+
         glm::mat4 gltfNodeTransform = (i < modelData.meshNodeTransforms.size()) 
             ? modelData.meshNodeTransforms[i] 
             : glm::mat4(1.0f);
@@ -119,6 +115,26 @@ void ModelRenderer::render(IRenderer& renderer) {
         // Submit to renderer
         renderer.submitRenderCommand(command);
     }
+}
+
+std::shared_ptr<Material> ModelRenderer::getRenderMaterial(size_t meshIndex) {
+    std::shared_ptr<Material> material = nullptr;
+    if (meshIndex < modelData.meshMaterialIndices.size()) {
+        const int materialIndex = modelData.meshMaterialIndices[meshIndex];
+        if (materialIndex >= 0 && materialIndex < static_cast<int>(modelData.materials.size())) {
+            material = modelData.materials[materialIndex];
+        }
+    }
+
+    MaterialComponent* materialComponent = owner ? owner->getComponent<MaterialComponent>() : nullptr;
+    if (!materialComponent || !materialComponent->isEnabled()) {
+        return material;
+    }
+
+    if (!material) {
+        material = Material::getDefaultMaterial();
+    }
+    return materialComponent->resolveMaterial(material);
 }
 
 bool ModelRenderer::loadModel(const std::string& modelPath) {
@@ -143,23 +159,8 @@ bool ModelRenderer::loadModel(const std::string& modelPath) {
         return true;
     }
     
-    // Convert filepath to Vita format (app0:/path for VPK files) on Vita builds
-    std::string actualPath = modelPath;
-#ifdef VITA_BUILD
-    // Check if path already has a device prefix (app0:, ux0:, ur0:, etc.)
-    if (modelPath.find("app0:") == std::string::npos && 
-        modelPath.find("ux0:") == std::string::npos && 
-        modelPath.find("ur0:") == std::string::npos &&
-        modelPath.find("uma0:") == std::string::npos &&
-        modelPath.find("imc0:") == std::string::npos &&
-        modelPath.find("xmc0:") == std::string::npos &&
-        modelPath.find("vs0:") == std::string::npos &&
-        modelPath.find("vd0:") == std::string::npos) {
-        // No device prefix found, prepend app0: for VPK access
-        actualPath = "app0:/" + modelPath;
-    }
-#endif
-    
+    const std::string actualPath = AssetPaths::resolve(modelPath);
+
     std::string extension = getFileExtension(actualPath);
     std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
     
@@ -207,6 +208,13 @@ void ModelRenderer::unloadModel() {
     modelData.isLoaded = false;
     cachedBindPose_.reset();
     bindPoseCached_ = false;
+
+    if (owner) {
+        MaterialComponent* materialComponent = owner->getComponent<MaterialComponent>();
+        if (materialComponent) {
+            materialComponent->clearResolvedMaterials();
+        }
+    }
 }
 
 glm::mat4 ModelRenderer::computeNodeTransform(const tinygltf::Node& node) {
@@ -868,7 +876,7 @@ std::vector<std::string> ModelRenderer::discoverModels(const std::string& direct
     
 #ifdef LINUX_BUILD
     try {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(AssetPaths::resolve(directory))) {
             if (entry.is_regular_file()) {
                 std::string filepath = entry.path().string();
                 std::string extension = ModelRenderer::getFileExtension(filepath);

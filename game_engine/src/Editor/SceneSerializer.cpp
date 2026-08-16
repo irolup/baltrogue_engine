@@ -1,10 +1,12 @@
 #include "Editor/SceneSerializer.h"
+#include "Core/AssetPaths.h"
 #include "Scene/SceneBinaryFormat.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneNode.h"
 #include "Components/CameraComponent.h"
 #include "Components/MeshRenderer.h"
 #include "Components/ModelRenderer.h"
+#include "Components/MaterialComponent.h"
 #include "Components/BeamRenderer.h"
 #include "Components/LightComponent.h"
 #include "Components/PhysicsComponent.h"
@@ -45,1519 +47,19 @@ using json = nlohmann::json;
 
 namespace GameEngine {
 
-std::string SceneSerializer::escapeStringForCpp(const std::string& input) {
-    std::string result;
-    for (char c : input) {
-        switch (c) {
-            case '\n': result += "\\n"; break;
-            case '\r': result += "\\r"; break;
-            case '\t': result += "\\t"; break;
-            case '"': result += "\\\""; break;
-            case '\\': result += "\\\\"; break;
-            default: result += c; break;
-        }
-    }
-    return result;
-}
-
-std::string SceneSerializer::generateVisibilityCode(const std::string& nodeName, std::shared_ptr<SceneNode> node) {
-    std::string code;
-    if (!node->isVisible()) {
-        code += "    " + nodeName + "->setVisible(false);\n";
-    }
-    if (!node->isActive()) {
-        code += "    " + nodeName + "->setActive(false);\n";
-    }
-    return code;
-}
-
 #ifdef LINUX_BUILD
-void SceneSerializer::saveSceneToGame(std::shared_ptr<Scene> scene) {
-    if (!scene) return;
-    
-    std::cout << "Saving current scene to game source..." << std::endl;
-    
-    auto discoveredTextures = discoverAndGenerateTextureAssets();
-    
+void SceneSerializer::generateAssetManifests() {
+    // Refreshes the manifests and Makefile asset list the Vita packing reads.
+    //
+    // This used to also write game_main.cpp and vita_main.cpp from the scene.
+    // Generating tracked source from the editor means a click can overwrite hand
+    // written startup code and break the build, so the scene the game boots into
+    // is a project setting now (project:mainScene) and the entry points read it.
+    const std::vector<std::string> discoveredTextures = discoverAndGenerateTextureAssets();
     generateInputMappingAssets();
-    
-    std::string gameMainContent = generateGameMainContent(scene, discoveredTextures);
-    std::string vitaMainContent = generateVitaMainContent(scene, discoveredTextures);
-    
-    // Write game_main.cpp
-    std::ofstream gameMainFile("game_engine/src/App/game_main.cpp");
-    if (gameMainFile.is_open()) {
-        gameMainFile << gameMainContent;
-        gameMainFile.close();
-        std::cout << "Scene saved to game_engine/src/App/game_main.cpp successfully!" << std::endl;
-    } else {
-        std::cerr << "Failed to open game_engine/src/App/game_main.cpp for writing!" << std::endl;
-    }
-    
-    std::ofstream vitaMainFile("game_engine/src/App/vita_main.cpp");
-    if (vitaMainFile.is_open()) {
-        vitaMainFile << vitaMainContent;
-        vitaMainFile.close();
-        std::cout << "Scene also saved to game_engine/src/App/vita_main.cpp successfully!" << std::endl;
-    } else {
-        std::cerr << "Failed to open game_engine/src/App/vita_main.cpp for writing!" << std::endl;
-    }
-    
     updateMakefileWithTextures(discoveredTextures);
-}
-#endif // LINUX_BUILD
 
-#ifdef LINUX_BUILD
-std::string SceneSerializer::generateGameMainContent(std::shared_ptr<Scene> scene, const std::vector<std::string>& discoveredTextures) {
-    if (!scene) return "";
-    
-    std::string content = R"(
-#ifdef LINUX_BUILD
-
-#include "Core/Engine.h"
-#include "Scene/Scene.h"
-#include "Scene/SceneNode.h"
-#include "Components/CameraComponent.h"
-#include "Components/MeshRenderer.h"
-#include "Components/ModelRenderer.h"
-#include "Components/LightComponent.h"
-#include "Components/PhysicsComponent.h"
-#include "Components/TextComponent.h"
-#include "Components/ScriptComponent.h"
-#include "Components/Area3DComponent.h"
-#include "Rendering/Mesh.h"
-#include "Rendering/Material.h"
-#include "Rendering/TextureManager.h"
-#include "Editor/BuildSettings.h"
-#include <iostream>
-
-using namespace GameEngine;
-
-int main() {
-    Engine engine;
-
-    if (!engine.initialize()) {
-        std::cerr << "Failed to initialize game engine!" << std::endl;
-        return -1;
-    }
-
-    BuildSettings buildSettings;
-    buildSettings.load();
-    engine.setWindowTitle(buildSettings.pc.title);
-    
-#ifndef VITA_BUILD
-    engine.getInputManager().setEditorMode(true);
-#endif
-    
-    auto& textureManager = TextureManager::getInstance();
-    textureManager.discoverAllTextures("assets/textures");
-    
-    auto& sceneManager = engine.getSceneManager();
-    auto gameScene = sceneManager.createScene("Game Scene");
-    
-)";
-    
-    int shapeCounter = 0;
-    if (scene) {
-        auto allNodes = getAllSceneNodesFromScene(scene);
-        std::map<SceneNode*, std::string> nodeNameMap;
-        
-        int physicsCounter = 0;
-        int lightCounter = 0;
-        
-        // Add a default directional light if no lights exist in the scene
-        bool hasLights = false;
-        for (const auto& node : allNodes) {
-            if (node->getComponent<LightComponent>()) {
-                hasLights = true;
-                break;
-            }
-        }
-        
-        if (!hasLights) {
-            content += "    // Add default directional light\n";
-            content += "    auto lightNode = gameScene->createNode(\"Default Light\");\n";
-            content += "    auto lightComponent = lightNode->addComponent<LightComponent>();\n";
-            content += "    lightComponent->setType(LightType::DIRECTIONAL);\n";
-            content += "    lightComponent->setColor(glm::vec3(1.0f, 1.0f, 1.0f));\n";
-            content += "    lightComponent->setIntensity(1.0f);\n";
-            content += "    lightComponent->setRange(100.0f);\n";
-            content += "    lightComponent->setShowGizmo(false);\n";
-            content += "    lightNode->getTransform().setPosition(glm::vec3(0.0f, 10.0f, 0.0f));\n";
-            content += "    lightNode->getTransform().setEulerAngles(glm::vec3(-45.0f, 0.0f, 0.0f));\n";
-            content += "    gameScene->getRootNode()->addChild(lightNode);\n";
-            content += "    lightComponent->start();\n\n";
-        }
-        
-        std::sort(allNodes.begin(), allNodes.end(), [](const std::shared_ptr<SceneNode>& a, const std::shared_ptr<SceneNode>& b) {
-            if (!a || !b) return false;
-            
-            int depthA = 0, depthB = 0;
-            SceneNode* currentA = a->getParent();
-            SceneNode* currentB = b->getParent();
-            
-            while (currentA) { depthA++; currentA = currentA->getParent(); }
-            while (currentB) { depthB++; currentB = currentB->getParent(); }
-            
-            return depthA < depthB; // Process parents first
-        });
-        
-        // First pass: Create all nodes (including empty ones) to establish the hierarchy
-        for (auto& node : allNodes) {
-            if (node && node != scene->getRootNode()) {
-                std::string nodeName;
-                
-                // Determine node type and name
-                if (node->getComponent<MeshRenderer>()) {
-                    // This will be handled in the second pass
-                    continue;
-                } else if (node->getComponent<ModelRenderer>()) {
-                    // This will be handled in the model pass
-                    continue;
-                } else if (node->getComponent<LightComponent>()) {
-                    // This will be handled in the third pass
-                    continue;
-                } else if (node->getComponent<CameraComponent>()) {
-                    // Camera is handled separately
-                    continue;
-                } else if (node->getComponent<PhysicsComponent>()) {
-                    // Physics component is handled in a separate pass
-                    continue;
-                } else if (node->getComponent<TextComponent>()) {
-                    // Text component is handled in a separate pass
-                    continue;
-                } else if (node->getComponent<Area3DComponent>()) {
-                    // Area3D component is handled in a separate pass
-                    continue;
-                } else if (node->getComponent<ScriptComponent>()) {
-                    // Script component is handled in a separate pass
-                    continue;
-                } else {
-                    // This is an empty node - create it
-                    nodeName = "emptyNode" + std::to_string(nodeNameMap.size());
-                    nodeNameMap[node.get()] = nodeName;
-                    
-                    auto& transform = node->getTransform();
-                    auto pos = transform.getPosition();
-                    auto rot = transform.getEulerAngles();
-                    auto scale = transform.getScale();
-                    
-                    content += "    // Add an empty node\n";
-                    content += "    auto " + nodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                    content += "    " + nodeName + "->getTransform().setPosition(glm::vec3(" + 
-                              std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                    content += "    " + nodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                              std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                    content += "    " + nodeName + "->getTransform().setScale(glm::vec3(" + 
-                              std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                    
-                    content += generateVisibilityCode(nodeName, node);
-                    
-                    if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                        auto parentIt = nodeNameMap.find(node->getParent());
-                        if (parentIt != nodeNameMap.end()) {
-                            content += "    " + parentIt->second + "->addChild(" + nodeName + ");\n\n";
-                        } else {
-                            content += "    gameScene->getRootNode()->addChild(" + nodeName + ");\n\n";
-                        }
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + nodeName + ");\n\n";
-                    }
-                }
-            }
-        }
-        
-        // Second pass: Add mesh objects
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<MeshRenderer>()) {
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                auto scale = transform.getScale();
-                
-                // Get material color if available
-                auto meshRenderer = node->getComponent<MeshRenderer>();
-                glm::vec3 materialColor = glm::vec3(1.0f, 0.5f, 0.2f); // Default orange
-                if (meshRenderer && meshRenderer->getMaterial()) {
-                    materialColor = meshRenderer->getMaterial()->getColor();
-                }
-                
-                // Determine the mesh type and create appropriate code
-                auto mesh = meshRenderer->getMesh();
-                std::string meshType = "Cube"; // Default
-                std::string meshCreationCode = "Mesh::createCube()";
-                
-                if (mesh) {
-                    // Use the stored mesh type for reliable identification
-                    switch (mesh->getMeshType()) {
-                        case MeshType::QUAD:
-                            meshType = "Quad";
-                            meshCreationCode = "Mesh::createQuad()";
-                            break;
-                        case MeshType::PLANE:
-                            meshType = "Plane";
-                            meshCreationCode = "Mesh::createPlane(1.0f, 1.0f, 1)";
-                            break;
-                        case MeshType::CUBE:
-                            meshType = "Cube";
-                            meshCreationCode = "Mesh::createCube()";
-                            break;
-                        case MeshType::SPHERE:
-                            meshType = "Sphere";
-                            meshCreationCode = "Mesh::createSphere(32, 16)";
-                            break;
-                        case MeshType::CAPSULE:
-                            meshType = "Capsule";
-                            meshCreationCode = "Mesh::createCapsule(0.5f, 0.5f)";
-                            break;
-                        case MeshType::CYLINDER:
-                            meshType = "Cylinder";
-                            meshCreationCode = "Mesh::createCylinder(0.5f, 0.5f)";
-                            break;
-                        case MeshType::RAMP:
-                            meshType = "Ramp";
-                            meshCreationCode = "Mesh::createRamp()";
-                            break;
-                        case MeshType::LINE:
-                            meshType = "Line";
-                            meshCreationCode = "Mesh::createLineSegment()";
-                            break;
-                        default:
-                            meshType = "Cube";
-                            meshCreationCode = "Mesh::createCube()";
-                            break;
-                    }
-                }
-                
-                std::string nodeName = meshType + "Node" + std::to_string(shapeCounter);
-                nodeNameMap[node.get()] = nodeName;
-                
-                content += "    // Add a " + meshType + "\n";
-                content += "    auto " + nodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                content += "    auto meshRenderer" + std::to_string(shapeCounter) + " = " + nodeName + "->addComponent<MeshRenderer>();\n";
-                content += "    meshRenderer" + std::to_string(shapeCounter) + "->setMesh(" + meshCreationCode + ");\n";
-                content += "    auto material" + std::to_string(shapeCounter) + " = std::make_shared<Material>();\n";
-                content += "    material" + std::to_string(shapeCounter) + "->setColor(glm::vec3(" + 
-                          std::to_string(materialColor.x) + "f, " + std::to_string(materialColor.y) + "f, " + std::to_string(materialColor.z) + "f));\n";
-                
-                // Add texture loading based on actual material assignments
-                auto material = meshRenderer->getMaterial();
-                if (material) {
-                    content += "    // Load textures for material\n";
-                    
-                    // Use the actual texture paths assigned to this material
-                    std::string diffusePath = material->getDiffuseTexturePath();
-                    std::string normalPath = material->getNormalTexturePath();
-                    std::string armPath = material->getARMTexturePath();
-                    std::string environmentPath = material->getEnvironmentTexturePath();
-                    
-                    if (!diffusePath.empty()) {
-                        content += "    auto diffuseTexture" + std::to_string(shapeCounter) + " = textureManager.getTexture(\"" + diffusePath + "\");\n";
-                        content += "    if (diffuseTexture" + std::to_string(shapeCounter) + ") material" + std::to_string(shapeCounter) + "->setDiffuseTexture(diffuseTexture" + std::to_string(shapeCounter) + ");\n";
-                    }
-                    
-                    if (!normalPath.empty()) {
-                        content += "    auto normalTexture" + std::to_string(shapeCounter) + " = textureManager.getTexture(\"" + normalPath + "\");\n";
-                        content += "    if (normalTexture" + std::to_string(shapeCounter) + ") material" + std::to_string(shapeCounter) + "->setNormalTexture(normalTexture" + std::to_string(shapeCounter) + ");\n";
-                    }
-                    
-                    if (!armPath.empty()) {
-                        content += "    auto armTexture" + std::to_string(shapeCounter) + " = textureManager.getTexture(\"" + armPath + "\");\n";
-                        content += "    if (armTexture" + std::to_string(shapeCounter) + ") material" + std::to_string(shapeCounter) + "->setARMTexture(armTexture" + std::to_string(shapeCounter) + ");\n";
-                    }
-
-                    if (!environmentPath.empty()) {
-                        content += "    auto environmentTexture" + std::to_string(shapeCounter) + " = textureManager.getTexture(\"" + environmentPath + "\");\n";
-                        content += "    if (environmentTexture" + std::to_string(shapeCounter) + ") material" + std::to_string(shapeCounter) + "->setEnvironmentTexture(environmentTexture" + std::to_string(shapeCounter) + ");\n";
-                    }
-                }
-                
-                content += "    meshRenderer" + std::to_string(shapeCounter) + "->setMaterial(material" + std::to_string(shapeCounter) + ");\n";
-                content += "    " + nodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + nodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                content += "    " + nodeName + "->getTransform().setScale(glm::vec3(" + 
-                          std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                
-                content += generateVisibilityCode(nodeName, node);
-                
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + nodeName + ");\n\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + nodeName + ");\n\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + nodeName + ");\n\n";
-                }
-                
-                shapeCounter++;
-            }
-        }
-        
-        // Model pass: Add model objects
-        int modelCounter = 1;
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<ModelRenderer>()) {
-                auto modelRenderer = node->getComponent<ModelRenderer>();
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                auto scale = transform.getScale();
-                
-                std::string modelNodeName = "modelNode" + std::to_string(modelCounter);
-                nodeNameMap[node.get()] = modelNodeName;
-                
-                content += "    // Add a model\n";
-                content += "    auto " + modelNodeName + " = gameScene->createNode(\"Model " + std::to_string(modelCounter) + "\");\n";
-                content += "    auto modelRenderer" + std::to_string(modelCounter) + " = " + modelNodeName + "->addComponent<ModelRenderer>();\n";
-                std::string modelPath = modelRenderer->getModelPath();
-                std::string relativePath = convertToLinuxPath(modelPath);
-                content += "    modelRenderer" + std::to_string(modelCounter) + "->loadModel(\"" + relativePath + "\");\n";
-                
-                content += "    " + modelNodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + modelNodeName + "->getTransform().setRotation(glm::quat(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f)));\n";
-                content += "    " + modelNodeName + "->getTransform().setScale(glm::vec3(" + 
-                          std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                
-                // Add to parent or root based on hierarchy
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    // Find the parent's generated name
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + modelNodeName + ");\n\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + modelNodeName + ");\n\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + modelNodeName + ");\n\n";
-                }
-                
-                modelCounter++;
-            }
-        }
-        
-        // Third pass: Add lights
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<LightComponent>()) {
-                auto lightComponent = node->getComponent<LightComponent>();
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                
-                std::string lightNodeName = "lightNode" + std::to_string(lightCounter);
-                nodeNameMap[node.get()] = lightNodeName;
-                
-                content += "    // Add a light\n";
-                content += "    auto " + lightNodeName + " = gameScene->createNode(\"Light " + std::to_string(lightCounter) + "\");\n";
-                content += "    auto lightComponent" + std::to_string(lightCounter) + " = " + lightNodeName + "->addComponent<LightComponent>();\n";
-                content += "    lightComponent" + std::to_string(lightCounter) + "->setType(LightType::" + 
-                          (lightComponent->getType() == LightType::POINT ? "POINT" : 
-                           lightComponent->getType() == LightType::DIRECTIONAL ? "DIRECTIONAL" : "SPOT") + ");\n";
-                content += "    lightComponent" + std::to_string(lightCounter) + "->setColor(glm::vec3(" + 
-                          std::to_string(lightComponent->getColor().x) + "f, " + 
-                          std::to_string(lightComponent->getColor().y) + "f, " + 
-                          std::to_string(lightComponent->getColor().z) + "f));\n";
-                content += "    lightComponent" + std::to_string(lightCounter) + "->setIntensity(" + 
-                          std::to_string(lightComponent->getIntensity()) + "f);\n";
-                content += "    lightComponent" + std::to_string(lightCounter) + "->setRange(" + 
-                          std::to_string(lightComponent->getRange()) + "f);\n";
-                content += "    lightComponent" + std::to_string(lightCounter) + "->setShowGizmo(false);\n";
-                content += "    " + lightNodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + lightNodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                
-                // Add to parent or root based on hierarchy
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    // Find the parent's generated name
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + lightNodeName + ");\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + lightNodeName + ");\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + lightNodeName + ");\n";
-                }
-                
-                content += "    lightComponent" + std::to_string(lightCounter) + "->start();\n\n";
-                
-                lightCounter++;
-            }
-        }
-        
-        // Fourth pass: Add physics components
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<PhysicsComponent>()) {
-                auto physicsComponent = node->getComponent<PhysicsComponent>();
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                auto scale = transform.getScale();
-                
-                std::string physicsNodeName = "physicsNode" + std::to_string(physicsCounter);
-                nodeNameMap[node.get()] = physicsNodeName;
-                
-                content += "    // Add a physics collision node\n";
-                content += "    auto " + physicsNodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                content += "    " + physicsNodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + physicsNodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                content += "    " + physicsNodeName + "->getTransform().setScale(glm::vec3(" + 
-                          std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                
-                // Add PhysicsComponent with all its properties
-                content += "    auto physicsComponent" + std::to_string(physicsCounter) + " = " + physicsNodeName + "->addComponent<PhysicsComponent>();\n";
-                
-                // Set collision shape type
-                auto collisionShapeType = physicsComponent->getCollisionShapeType();
-                switch (collisionShapeType) {
-                    case CollisionShapeType::BOX:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::BOX);\n";
-                        break;
-                    case CollisionShapeType::SPHERE:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::SPHERE);\n";
-                        break;
-                    case CollisionShapeType::CAPSULE:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::CAPSULE);\n";
-                        break;
-                    case CollisionShapeType::CYLINDER:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::CYLINDER);\n";
-                        break;
-                    case CollisionShapeType::RAMP:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::RAMP);\n";
-                        break;
-                    case CollisionShapeType::PLANE:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::PLANE);\n";
-                        break;
-                }
-                
-                // Set body type
-                auto bodyType = physicsComponent->getBodyType();
-                switch (bodyType) {
-                    case PhysicsBodyType::STATIC:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setBodyType(PhysicsBodyType::STATIC);\n";
-                        break;
-                    case PhysicsBodyType::DYNAMIC:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setBodyType(PhysicsBodyType::DYNAMIC);\n";
-                        break;
-                    case PhysicsBodyType::KINEMATIC:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setBodyType(PhysicsBodyType::KINEMATIC);\n";
-                        break;
-                }
-                
-                // Set physics properties
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setMass(" + 
-                          std::to_string(physicsComponent->getMass()) + "f);\n";
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setFriction(" + 
-                          std::to_string(physicsComponent->getFriction()) + "f);\n";
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setRestitution(" + 
-                          std::to_string(physicsComponent->getRestitution()) + "f);\n";
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setLinearDamping(" + 
-                          std::to_string(physicsComponent->getLinearDamping()) + "f);\n";
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setAngularDamping(" + 
-                          std::to_string(physicsComponent->getAngularDamping()) + "f);\n";
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setShowCollisionShape(true);\n";
-                
-                // Add to parent or root based on hierarchy
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    // Find the parent's generated name
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + physicsNodeName + ");\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + physicsNodeName + ");\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + physicsNodeName + ");\n";
-                }
-                
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->start();\n\n";
-                
-                physicsCounter++;
-            }
-        }
-        
-        // Camera pass: Add camera after physics so we can add it to parent if needed
-        auto cameraNode = scene->getActiveCamera();
-        if (cameraNode) {
-            auto& transform = cameraNode->getTransform();
-            auto pos = transform.getPosition();
-            auto rot = transform.getEulerAngles();
-            auto cameraComponent = cameraNode->getComponent<CameraComponent>();
-            
-            content += "    // Create Main Camera as a child of Player (so it moves with PlayerRoot -> Player)\n";
-            content += "    // Scene structure: PlayerRoot (empty, move this) -> Player (PhysicsComponent) -> Main Camera\n";
-            content += "    auto cameraNode = gameScene->createNode(\"Main Camera\");\n";
-            content += "    auto cameraComponent = cameraNode->addComponent<CameraComponent>();\n";
-            
-            // Set camera settings if available
-            if (cameraComponent) {
-                content += "    cameraComponent->setFOV(" + std::to_string(cameraComponent->getFOV()) + "f);\n";
-                content += "    cameraComponent->setNearPlane(" + std::to_string(cameraComponent->getNearPlane()) + "f);\n";
-                content += "    cameraComponent->setFarPlane(" + std::to_string(cameraComponent->getFarPlane()) + "f);\n";
-                content += "    // Camera controls are now handled by Lua scripts only, not C++ code\n";
-                content += "    // cameraComponent->enableControls(false);  // Disabled - scripts control movement\n";
-            }
-            
-            content += "    cameraNode->getTransform().setPosition(glm::vec3(" + 
-                      std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));  // Local position relative to Player\n";
-            content += "    cameraNode->getTransform().setEulerAngles(glm::vec3(" + 
-                      std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-            
-            // Add to parent if it exists, otherwise add to root
-            if (cameraNode->getParent() && cameraNode->getParent() != scene->getRootNode().get()) {
-                // Find the parent's generated name
-                auto parentIt = nodeNameMap.find(cameraNode->getParent());
-                if (parentIt != nodeNameMap.end()) {
-                    content += "    " + parentIt->second + "->addChild(cameraNode);  // Add as child of " + cameraNode->getParent()->getName() + ", not Root!\n";
-                } else {
-                    // Parent not found in map, add to root
-                    content += "    gameScene->getRootNode()->addChild(cameraNode);\n";
-                }
-            } else {
-                // No parent or parent is root, add to root
-                content += "    gameScene->getRootNode()->addChild(cameraNode);\n";
-            }
-            
-            content += "    gameScene->setActiveCamera(cameraNode);\n\n";
-        }
-        
-        // Fourth pass: Add text components
-        int textCounter = 1;
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<TextComponent>()) {
-                auto textComponent = node->getComponent<TextComponent>();
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                auto scale = transform.getScale();
-                
-                std::string textNodeName = "textNode" + std::to_string(textCounter);
-                nodeNameMap[node.get()] = textNodeName;
-                
-                content += "    // Add a text component\n";
-                content += "    auto " + textNodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                content += "    " + textNodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + textNodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                content += "    " + textNodeName + "->getTransform().setScale(glm::vec3(" + 
-                          std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                
-                content += generateVisibilityCode(textNodeName, node);
-                
-                // Add TextComponent with all its properties
-                content += "    auto textComponent" + std::to_string(textCounter) + " = " + textNodeName + "->addComponent<TextComponent>();\n";
-                content += "    textComponent" + std::to_string(textCounter) + "->setText(\"" + escapeStringForCpp(textComponent->getText()) + "\");\n";
-                content += "    textComponent" + std::to_string(textCounter) + "->setFontPath(\"" + textComponent->getFontPath() + "\");\n";
-                content += "    textComponent" + std::to_string(textCounter) + "->setFontSize(" + std::to_string(textComponent->getFontSize()) + "f);\n";
-                
-                auto color = textComponent->getColor();
-                content += "    textComponent" + std::to_string(textCounter) + "->setColor(glm::vec4(" + 
-                          std::to_string(color.r) + "f, " + std::to_string(color.g) + "f, " + 
-                          std::to_string(color.b) + "f, " + std::to_string(color.a) + "f));\n";
-                
-                // Set render mode
-                std::string renderMode = "WORLD_SPACE";
-                switch (textComponent->getRenderMode()) {
-                    case TextRenderMode::WORLD_SPACE: renderMode = "WORLD_SPACE"; break;
-                    case TextRenderMode::SCREEN_SPACE: renderMode = "SCREEN_SPACE"; break;
-                }
-                content += "    textComponent" + std::to_string(textCounter) + "->setRenderMode(TextRenderMode::" + renderMode + ");\n";
-                
-                // Set alignment
-                std::string alignment = "LEFT";
-                switch (textComponent->getAlignment()) {
-                    case TextAlignment::LEFT: alignment = "LEFT"; break;
-                    case TextAlignment::CENTER: alignment = "CENTER"; break;
-                    case TextAlignment::RIGHT: alignment = "RIGHT"; break;
-                }
-                content += "    textComponent" + std::to_string(textCounter) + "->setAlignment(TextAlignment::" + alignment + ");\n";
-                
-                content += "    textComponent" + std::to_string(textCounter) + "->setScale(" + std::to_string(textComponent->getScale()) + "f);\n";
-                content += "    textComponent" + std::to_string(textCounter) + "->setLineSpacing(" + std::to_string(textComponent->getLineSpacing()) + "f);\n";
-                
-                // Add to parent or root
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + textNodeName + ");\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + textNodeName + ");\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + textNodeName + ");\n";
-                }
-                
-                content += "    textComponent" + std::to_string(textCounter) + "->start();\n\n";
-                
-                textCounter++;
-            }
-        }
-        
-        // Sixth pass: Add area3D components
-        int area3DCounter = 1;
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<Area3DComponent>()) {
-                auto area3DComponent = node->getComponent<Area3DComponent>();
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                auto scale = transform.getScale();
-                
-                std::string area3DNodeName = "area3DNode" + std::to_string(area3DCounter);
-                nodeNameMap[node.get()] = area3DNodeName;
-                
-                content += "    // Add an Area3D component\n";
-                content += "    auto " + area3DNodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                content += "    " + area3DNodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + area3DNodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                content += "    " + area3DNodeName + "->getTransform().setScale(glm::vec3(" + 
-                          std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                
-                // Add Area3DComponent with all its properties
-                content += "    auto area3DComponent" + std::to_string(area3DCounter) + " = " + area3DNodeName + "->addComponent<Area3DComponent>();\n";
-                
-                // Set shape type
-                auto shapeType = area3DComponent->getShape();
-                switch (shapeType) {
-                    case Area3DShape::BOX:
-                        content += "    area3DComponent" + std::to_string(area3DCounter) + "->setShape(Area3DShape::BOX);\n";
-                        break;
-                    case Area3DShape::SPHERE:
-                        content += "    area3DComponent" + std::to_string(area3DCounter) + "->setShape(Area3DShape::SPHERE);\n";
-                        break;
-                    case Area3DShape::CAPSULE:
-                        content += "    area3DComponent" + std::to_string(area3DCounter) + "->setShape(Area3DShape::CAPSULE);\n";
-                        break;
-                    case Area3DShape::CYLINDER:
-                        content += "    area3DComponent" + std::to_string(area3DCounter) + "->setShape(Area3DShape::CYLINDER);\n";
-                        break;
-                    case Area3DShape::PLANE:
-                        content += "    area3DComponent" + std::to_string(area3DCounter) + "->setShape(Area3DShape::PLANE);\n";
-                        break;
-                }
-                
-                // Set dimensions/radius/height based on shape
-                if (shapeType == Area3DShape::BOX) {
-                    auto dims = area3DComponent->getDimensions();
-                    content += "    area3DComponent" + std::to_string(area3DCounter) + "->setDimensions(glm::vec3(" + 
-                              std::to_string(dims.x) + "f, " + std::to_string(dims.y) + "f, " + std::to_string(dims.z) + "f));\n";
-                } else if (shapeType == Area3DShape::SPHERE) {
-                    content += "    area3DComponent" + std::to_string(area3DCounter) + "->setRadius(" + 
-                              std::to_string(area3DComponent->getRadius()) + "f);\n";
-                } else if (shapeType == Area3DShape::CAPSULE || shapeType == Area3DShape::CYLINDER) {
-                    content += "    area3DComponent" + std::to_string(area3DCounter) + "->setRadius(" + 
-                              std::to_string(area3DComponent->getRadius()) + "f);\n";
-                    content += "    area3DComponent" + std::to_string(area3DCounter) + "->setHeight(" + 
-                              std::to_string(area3DComponent->getHeight()) + "f);\n";
-                }
-                
-                // Set group if specified
-                if (area3DComponent->hasGroup()) {
-                    content += "    area3DComponent" + std::to_string(area3DCounter) + "->setGroup(\"" + area3DComponent->getGroup() + "\");\n";
-                }
-                
-                // Set monitor mode
-                content += "    area3DComponent" + std::to_string(area3DCounter) + "->setMonitorMode(" + 
-                          (area3DComponent->getMonitorMode() ? "true" : "false") + ");\n";
-                
-                // Add to parent or root
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + area3DNodeName + ");\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + area3DNodeName + ");\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + area3DNodeName + ");\n";
-                }
-                
-                content += "    area3DComponent" + std::to_string(area3DCounter) + "->start();\n\n";
-                
-                area3DCounter++;
-            }
-        }
-        
-        // Fifth pass: Add script components
-        int scriptCounter = 1;
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<ScriptComponent>()) {
-                auto scriptComponent = node->getComponent<ScriptComponent>();
-                
-                std::string scriptNodeName = "scriptNode" + std::to_string(scriptCounter);
-                nodeNameMap[node.get()] = scriptNodeName;
-                
-                content += "    // Add a script component\n";
-                content += "    auto " + scriptNodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                
-                // Add ScriptComponent with script path
-                content += "    auto scriptComponent" + std::to_string(scriptCounter) + " = " + scriptNodeName + "->addComponent<ScriptComponent>();\n";
-                content += "    scriptComponent" + std::to_string(scriptCounter) + "->loadScript(\"" + scriptComponent->getScriptPath() + "\");\n";
-                
-                // Set pause exempt if enabled
-                if (scriptComponent->isPauseExempt()) {
-                    content += "    scriptComponent" + std::to_string(scriptCounter) + "->setPauseExempt(true);\n";
-                }
-                
-                // Add to root
-                content += "    gameScene->getRootNode()->addChild(" + scriptNodeName + ");\n";
-                content += "    scriptComponent" + std::to_string(scriptCounter) + "->start();\n\n";
-                
-                scriptCounter++;
-            }
-        }
-        
-        std::string outputMessage = "    std::cout << \"Game scene loaded with camera, " + 
-                                    std::to_string(shapeCounter) + " shape(s), " + 
-                                    std::to_string(physicsCounter) + " physics component(s), " + 
-                                    std::to_string(textCounter - 1) + " text component(s), " + 
-                                    std::to_string(scriptCounter - 1) + " script component(s), " + 
-                                    std::to_string(area3DCounter - 1) + " area3D component(s), and " + 
-                                    std::to_string(lightCounter) + " light(s)!\" << std::endl;\n";
-        
-        content += outputMessage;
-    }
-    
-    content += R"(
-    // Load the game scene
-    sceneManager.loadScene(gameScene);
-    
-    std::cout << "Use WASD to move, mouse to look around" << std::endl;
-    std::cout << "Physics simulation is now active - objects will fall and collide!" << std::endl;
-    
-    // Run the game
-    engine.run();
-    
-    return 0;
-}
-
-#endif // LINUX_BUILD
-)";
-    
-    return content;
-}
-#endif // LINUX_BUILD
-
-#ifdef LINUX_BUILD
-std::string SceneSerializer::generateVitaMainContent(std::shared_ptr<Scene> scene, const std::vector<std::string>& discoveredTextures) {
-    if (!scene) return "";
-    
-    std::string content = R"(
-// Vita main file - runs the same scene as Linux game
-
-#include "Core/Engine.h"
-#include "Scene/Scene.h"
-#include "Scene/SceneNode.h"
-#include "Components/CameraComponent.h"
-#include "Components/MeshRenderer.h"
-#include "Components/ModelRenderer.h"
-#include "Components/LightComponent.h"
-#include "Components/PhysicsComponent.h"
-#include "Components/TextComponent.h"
-#include "Components/ScriptComponent.h"
-#include "Components/Area3DComponent.h"
-#include "Rendering/Mesh.h"
-#include "Rendering/Material.h"
-#include "Rendering/TextureManager.h"
-#include <vitasdk.h>
-#include <vitaGL.h>
-
-using namespace GameEngine;
-
-int main() {
-    // Initialize VitaGL first (CRITICAL for Vita builds)
-    vglInit(0);
-
-    sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
-    
-    // Create engine instance
-    Engine engine;
-    
-    // Initialize in game mode
-    if (!engine.initialize()) {
-        // On Vita, we can't use std::cerr, so just return error
-        return -1;
-    }
-    
-    // Enable editor mode for keyboard and mouse input
-#ifndef VITA_BUILD
-    engine.getInputManager().setEditorMode(true);
-#endif
-    
-    // Initialize texture discovery
-    auto& textureManager = TextureManager::getInstance();
-    textureManager.discoverAllTextures("assets/textures");
-    
-    // Create the same scene as the editor (camera + shapes)
-    auto& sceneManager = engine.getSceneManager();
-    auto gameScene = sceneManager.createScene("Vita Game Scene");
-    
-)";
-    
-    // Get the current scene from the editor
-    if (scene) {
-        // Add all mesh objects (recursively process all mesh nodes in the hierarchy)
-        auto allNodes = getAllSceneNodesFromScene(scene);
-        std::map<SceneNode*, std::string> nodeNameMap; // Map nodes to their generated names
-        int shapeCounter = 0; // Counter for all mesh objects (shapes)
-        
-        // Initialize counters for final output
-        int physicsCounter = 0;
-        int lightCounter = 0;
-        
-        // Sort nodes by depth so parents are processed before children
-        std::sort(allNodes.begin(), allNodes.end(), [](const std::shared_ptr<SceneNode>& a, const std::shared_ptr<SceneNode>& b) {
-            if (!a || !b) return false;
-            
-            // Calculate depth of each node
-            int depthA = 0, depthB = 0;
-            SceneNode* currentA = a->getParent();
-            SceneNode* currentB = b->getParent();
-            
-            while (currentA) { depthA++; currentA = currentA->getParent(); }
-            while (currentB) { depthB++; currentB = currentB->getParent(); }
-            
-            return depthA < depthB; // Process parents first
-        });
-        
-        // First pass: Create all nodes (including empty ones) to establish the hierarchy
-        for (auto& node : allNodes) {
-            if (node && node != scene->getRootNode()) {
-                std::string nodeName;
-                
-                // Determine node type and name
-                if (node->getComponent<MeshRenderer>()) {
-                    // This will be handled in the second pass
-                    continue;
-                } else if (node->getComponent<ModelRenderer>()) {
-                    // This will be handled in the model pass
-                    continue;
-                } else if (node->getComponent<LightComponent>()) {
-                    // This will be handled in the third pass
-                    continue;
-                } else if (node->getComponent<CameraComponent>()) {
-                    // Camera is handled separately
-                    continue;
-                } else if (node->getComponent<PhysicsComponent>()) {
-                    // Physics component is handled in a separate pass
-                    continue;
-                } else if (node->getComponent<TextComponent>()) {
-                    // Text component is handled in a separate pass
-                    continue;
-                } else if (node->getComponent<Area3DComponent>()) {
-                    // Area3D component is handled in a separate pass
-                    continue;
-                } else if (node->getComponent<ScriptComponent>()) {
-                    // Script component is handled in a separate pass
-                    continue;
-                } else {
-                    // This is an empty node - create it
-                    nodeName = "emptyNode" + std::to_string(nodeNameMap.size());
-                    nodeNameMap[node.get()] = nodeName;
-                    
-                    auto& transform = node->getTransform();
-                    auto pos = transform.getPosition();
-                    auto rot = transform.getEulerAngles();
-                    auto scale = transform.getScale();
-                    
-                    content += "    // Add an empty node\n";
-                    content += "    auto " + nodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                    content += "    " + nodeName + "->getTransform().setPosition(glm::vec3(" + 
-                              std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                    content += "    " + nodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                              std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                    content += "    " + nodeName + "->getTransform().setScale(glm::vec3(" + 
-                              std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                    
-                    content += generateVisibilityCode(nodeName, node);
-                    
-                    if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                        auto parentIt = nodeNameMap.find(node->getParent());
-                        if (parentIt != nodeNameMap.end()) {
-                            content += "    " + parentIt->second + "->addChild(" + nodeName + ");\n\n";
-                        } else {
-                            content += "    gameScene->getRootNode()->addChild(" + nodeName + ");\n\n";
-                        }
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + nodeName + ");\n\n";
-                    }
-                }
-            }
-        }
-        
-        // Second pass: Add mesh objects
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<MeshRenderer>()) {
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                auto scale = transform.getScale();
-                
-                // Get material color if available
-                auto meshRenderer = node->getComponent<MeshRenderer>();
-                glm::vec3 materialColor = glm::vec3(1.0f, 0.5f, 0.2f); // Default orange
-                if (meshRenderer && meshRenderer->getMaterial()) {
-                    materialColor = meshRenderer->getMaterial()->getColor();
-                }
-                
-                // Determine the mesh type and create appropriate code
-                auto mesh = meshRenderer->getMesh();
-                std::string meshType = "Cube"; // Default
-                std::string meshCreationCode = "Mesh::createCube()";
-                
-                if (mesh) {
-                    // Use the stored mesh type for reliable identification
-                    switch (mesh->getMeshType()) {
-                        case MeshType::QUAD:
-                            meshType = "Quad";
-                            meshCreationCode = "Mesh::createQuad()";
-                            break;
-                        case MeshType::PLANE:
-                            meshType = "Plane";
-                            meshCreationCode = "Mesh::createPlane(1.0f, 1.0f, 1)";
-                            break;
-                        case MeshType::CUBE:
-                            meshType = "Cube";
-                            meshCreationCode = "Mesh::createCube()";
-                            break;
-                        case MeshType::SPHERE:
-                            meshType = "Sphere";
-                            meshCreationCode = "Mesh::createSphere(32, 16)";
-                            break;
-                        case MeshType::CAPSULE:
-                            meshType = "Capsule";
-                            meshCreationCode = "Mesh::createCapsule(0.5f, 0.5f)";
-                            break;
-                        case MeshType::CYLINDER:
-                            meshType = "Cylinder";
-                            meshCreationCode = "Mesh::createCylinder(0.5f, 0.5f)";
-                            break;
-                        case MeshType::RAMP:
-                            meshType = "Ramp";
-                            meshCreationCode = "Mesh::createRamp()";
-                            break;
-                        case MeshType::LINE:
-                            meshType = "Line";
-                            meshCreationCode = "Mesh::createLineSegment()";
-                            break;
-                        default:
-                            meshType = "Cube";
-                            meshCreationCode = "Mesh::createCube()";
-                            break;
-                    }
-                }
-                
-                std::string nodeName = meshType + "Node" + std::to_string(shapeCounter);
-                nodeNameMap[node.get()] = nodeName;
-                
-                content += "    // Add a " + meshType + "\n";
-                content += "    auto " + nodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                content += "    auto meshRenderer" + std::to_string(shapeCounter) + " = " + nodeName + "->addComponent<MeshRenderer>();\n";
-                content += "    meshRenderer" + std::to_string(shapeCounter) + "->setMesh(" + meshCreationCode + ");\n";
-                content += "    auto material" + std::to_string(shapeCounter) + " = std::make_shared<Material>();\n";
-                content += "    material" + std::to_string(shapeCounter) + "->setColor(glm::vec3(" + 
-                          std::to_string(materialColor.x) + "f, " + std::to_string(materialColor.y) + "f, " + std::to_string(materialColor.z) + "f));\n";
-                
-                // Add texture loading based on actual material assignments
-                auto material = meshRenderer->getMaterial();
-                if (material) {
-                    content += "    // Load textures for material\n";
-                    
-                    // Use the actual texture paths assigned to this material
-                    std::string diffusePath = material->getDiffuseTexturePath();
-                    std::string normalPath = material->getNormalTexturePath();
-                    std::string armPath = material->getARMTexturePath();
-                    
-                    if (!diffusePath.empty()) {
-                        content += "    auto diffuseTexture" + std::to_string(shapeCounter) + " = textureManager.getTexture(\"" + diffusePath + "\");\n";
-                        content += "    if (diffuseTexture" + std::to_string(shapeCounter) + ") material" + std::to_string(shapeCounter) + "->setDiffuseTexture(diffuseTexture" + std::to_string(shapeCounter) + ");\n";
-                    }
-                    
-                    if (!normalPath.empty()) {
-                        content += "    auto normalTexture" + std::to_string(shapeCounter) + " = textureManager.getTexture(\"" + normalPath + "\");\n";
-                        content += "    if (normalTexture" + std::to_string(shapeCounter) + ") material" + std::to_string(shapeCounter) + "->setNormalTexture(normalTexture" + std::to_string(shapeCounter) + ");\n";
-                    }
-                    
-                    if (!armPath.empty()) {
-                        content += "    auto armTexture" + std::to_string(shapeCounter) + " = textureManager.getTexture(\"" + armPath + "\");\n";
-                        content += "    if (armTexture" + std::to_string(shapeCounter) + ") material" + std::to_string(shapeCounter) + "->setARMTexture(armTexture" + std::to_string(shapeCounter) + ");\n";
-                    }
-                }
-                
-                content += "    meshRenderer" + std::to_string(shapeCounter) + "->setMaterial(material" + std::to_string(shapeCounter) + ");\n";
-                content += "    " + nodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + nodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                content += "    " + nodeName + "->getTransform().setScale(glm::vec3(" + 
-                          std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                
-                content += generateVisibilityCode(nodeName, node);
-                
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + nodeName + ");\n\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + nodeName + ");\n\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + nodeName + ");\n\n";
-                }
-                
-                shapeCounter++;
-            }
-        }
-        
-        // Model pass: Add model objects
-        int modelCounter = 1;
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<ModelRenderer>()) {
-                auto modelRenderer = node->getComponent<ModelRenderer>();
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                auto scale = transform.getScale();
-                
-                std::string modelNodeName = "modelNode" + std::to_string(modelCounter);
-                nodeNameMap[node.get()] = modelNodeName;
-                
-                content += "    // Add a model\n";
-                content += "    auto " + modelNodeName + " = gameScene->createNode(\"Model " + std::to_string(modelCounter) + "\");\n";
-                content += "    auto modelRenderer" + std::to_string(modelCounter) + " = " + modelNodeName + "->addComponent<ModelRenderer>();\n";
-                // Convert absolute path to relative path for Vita
-                std::string modelPath = modelRenderer->getModelPath();
-                std::string relativePath = convertToVitaPath(modelPath);
-                content += "    modelRenderer" + std::to_string(modelCounter) + "->loadModel(\"" + relativePath + "\");\n";
-                
-                content += "    " + modelNodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + modelNodeName + "->getTransform().setRotation(glm::quat(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f)));\n";
-                content += "    " + modelNodeName + "->getTransform().setScale(glm::vec3(" + 
-                          std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                
-                // Add to parent or root based on hierarchy
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    // Find the parent's generated name
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + modelNodeName + ");\n\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + modelNodeName + ");\n\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + modelNodeName + ");\n\n";
-                }
-                
-                modelCounter++;
-            }
-        }
-        
-        // Third pass: Add lights
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<LightComponent>()) {
-                auto lightComponent = node->getComponent<LightComponent>();
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                
-                std::string lightNodeName = "lightNode" + std::to_string(lightCounter);
-                nodeNameMap[node.get()] = lightNodeName;
-                
-                content += "    // Add a light\n";
-                content += "    auto " + lightNodeName + " = gameScene->createNode(\"Light " + std::to_string(lightCounter) + "\");\n";
-                content += "    auto lightComponent" + std::to_string(lightCounter) + " = " + lightNodeName + "->addComponent<LightComponent>();\n";
-                content += "    lightComponent" + std::to_string(lightCounter) + "->setType(LightType::" + 
-                          (lightComponent->getType() == LightType::POINT ? "POINT" : 
-                           lightComponent->getType() == LightType::DIRECTIONAL ? "DIRECTIONAL" : "SPOT") + ");\n";
-                content += "    lightComponent" + std::to_string(lightCounter) + "->setColor(glm::vec3(" + 
-                          std::to_string(lightComponent->getColor().x) + "f, " + 
-                          std::to_string(lightComponent->getColor().y) + "f, " + 
-                          std::to_string(lightComponent->getColor().z) + "f));\n";
-                content += "    lightComponent" + std::to_string(lightCounter) + "->setIntensity(" + 
-                          std::to_string(lightComponent->getIntensity()) + "f);\n";
-                content += "    lightComponent" + std::to_string(lightCounter) + "->setRange(" + 
-                          std::to_string(lightComponent->getRange()) + "f);\n";
-                content += "    lightComponent" + std::to_string(lightCounter) + "->setShowGizmo(false);\n";
-                content += "    " + lightNodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + lightNodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                
-                // Add to parent or root based on hierarchy
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    // Find the parent's generated name
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + lightNodeName + ");\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + lightNodeName + ");\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + lightNodeName + ");\n";
-                }
-                
-                content += "    lightComponent" + std::to_string(lightCounter) + "->start();\n\n";
-                
-                lightCounter++;
-            }
-        }
-        
-        // Fourth pass: Add physics components
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<PhysicsComponent>()) {
-                auto physicsComponent = node->getComponent<PhysicsComponent>();
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                auto scale = transform.getScale();
-                
-                std::string physicsNodeName = "physicsNode" + std::to_string(physicsCounter);
-                nodeNameMap[node.get()] = physicsNodeName;
-                
-                content += "    // Add a physics collision node\n";
-                content += "    auto " + physicsNodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                content += "    " + physicsNodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + physicsNodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                content += "    " + physicsNodeName + "->getTransform().setScale(glm::vec3(" + 
-                          std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                
-                // Add PhysicsComponent with all its properties
-                content += "    auto physicsComponent" + std::to_string(physicsCounter) + " = " + physicsNodeName + "->addComponent<PhysicsComponent>();\n";
-                
-                // Set collision shape type
-                auto collisionShapeType = physicsComponent->getCollisionShapeType();
-                switch (collisionShapeType) {
-                    case CollisionShapeType::BOX:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::BOX);\n";
-                        break;
-                    case CollisionShapeType::SPHERE:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::SPHERE);\n";
-                        break;
-                    case CollisionShapeType::CAPSULE:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::CAPSULE);\n";
-                        break;
-                    case CollisionShapeType::CYLINDER:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::CYLINDER);\n";
-                        break;
-                    case CollisionShapeType::RAMP:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::RAMP);\n";
-                        break;
-                    case CollisionShapeType::PLANE:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setCollisionShape(CollisionShapeType::PLANE);\n";
-                        break;
-                }
-                
-                // Set body type
-                auto bodyType = physicsComponent->getBodyType();
-                switch (bodyType) {
-                    case PhysicsBodyType::STATIC:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setBodyType(PhysicsBodyType::STATIC);\n";
-                        break;
-                    case PhysicsBodyType::DYNAMIC:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setBodyType(PhysicsBodyType::DYNAMIC);\n";
-                        break;
-                    case PhysicsBodyType::KINEMATIC:
-                        content += "    physicsComponent" + std::to_string(physicsCounter) + "->setBodyType(PhysicsBodyType::KINEMATIC);\n";
-                        break;
-                }
-                
-                // Set physics properties
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setMass(" + 
-                          std::to_string(physicsComponent->getMass()) + "f);\n";
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setFriction(" + 
-                          std::to_string(physicsComponent->getFriction()) + "f);\n";
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setRestitution(" + 
-                          std::to_string(physicsComponent->getRestitution()) + "f);\n";
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setLinearDamping(" + 
-                          std::to_string(physicsComponent->getLinearDamping()) + "f);\n";
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setAngularDamping(" + 
-                          std::to_string(physicsComponent->getAngularDamping()) + "f);\n";
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->setShowCollisionShape(true);\n";
-                
-                // Add to parent or root based on hierarchy
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    // Find the parent's generated name
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + physicsNodeName + ");\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + physicsNodeName + ");\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + physicsNodeName + ");\n";
-                }
-                
-                content += "    physicsComponent" + std::to_string(physicsCounter) + "->start();\n\n";
-                
-                physicsCounter++;
-            }
-        }
-        
-        // Camera pass: Add camera after physics so we can add it to parent if needed
-        auto cameraNode = scene->getActiveCamera();
-        if (cameraNode) {
-            auto& transform = cameraNode->getTransform();
-            auto pos = transform.getPosition();
-            auto rot = transform.getEulerAngles();
-            auto cameraComponent = cameraNode->getComponent<CameraComponent>();
-            
-            content += "    // Create Main Camera as a child of Player (so it moves with PlayerRoot -> Player)\n";
-            content += "    // Scene structure: PlayerRoot (empty, move this) -> Player (PhysicsComponent) -> Main Camera\n";
-            content += "    auto cameraNode = gameScene->createNode(\"Main Camera\");\n";
-            content += "    auto cameraComponent = cameraNode->addComponent<CameraComponent>();\n";
-            
-            // Set camera settings if available
-            if (cameraComponent) {
-                content += "    cameraComponent->setFOV(" + std::to_string(cameraComponent->getFOV()) + "f);\n";
-                content += "    cameraComponent->setNearPlane(" + std::to_string(cameraComponent->getNearPlane()) + "f);\n";
-                content += "    cameraComponent->setFarPlane(" + std::to_string(cameraComponent->getFarPlane()) + "f);\n";
-                content += "    // Camera controls are now handled by Lua scripts only, not C++ code\n";
-                content += "    // cameraComponent->enableControls(false);  // Disabled - scripts control movement\n";
-            }
-            
-            content += "    cameraNode->getTransform().setPosition(glm::vec3(" + 
-                      std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));  // Local position relative to Player\n";
-            content += "    cameraNode->getTransform().setEulerAngles(glm::vec3(" + 
-                      std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-            
-            // Add to parent if it exists, otherwise add to root
-            if (cameraNode->getParent() && cameraNode->getParent() != scene->getRootNode().get()) {
-                // Find the parent's generated name
-                auto parentIt = nodeNameMap.find(cameraNode->getParent());
-                if (parentIt != nodeNameMap.end()) {
-                    content += "    " + parentIt->second + "->addChild(cameraNode);  // Add as child of " + cameraNode->getParent()->getName() + ", not Root!\n";
-                } else {
-                    // Parent not found in map, add to root
-                    content += "    gameScene->getRootNode()->addChild(cameraNode);\n";
-                }
-            } else {
-                // No parent or parent is root, add to root
-                content += "    gameScene->getRootNode()->addChild(cameraNode);\n";
-            }
-            
-            content += "    gameScene->setActiveCamera(cameraNode);\n\n";
-        }
-        
-        // Fourth pass: Add text components
-        int textCounter = 1;
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<TextComponent>()) {
-                auto textComponent = node->getComponent<TextComponent>();
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                auto scale = transform.getScale();
-                
-                std::string textNodeName = "textNode" + std::to_string(textCounter);
-                nodeNameMap[node.get()] = textNodeName;
-                
-                content += "    // Add a text component\n";
-                content += "    auto " + textNodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                content += "    " + textNodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + textNodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                content += "    " + textNodeName + "->getTransform().setScale(glm::vec3(" + 
-                          std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                
-                content += generateVisibilityCode(textNodeName, node);
-                
-                // Add TextComponent with all its properties
-                content += "    auto textComponent" + std::to_string(textCounter) + " = " + textNodeName + "->addComponent<TextComponent>();\n";
-                content += "    textComponent" + std::to_string(textCounter) + "->setText(\"" + escapeStringForCpp(textComponent->getText()) + "\");\n";
-                content += "    textComponent" + std::to_string(textCounter) + "->setFontPath(\"" + textComponent->getFontPath() + "\");\n";
-                content += "    textComponent" + std::to_string(textCounter) + "->setFontSize(" + std::to_string(textComponent->getFontSize()) + "f);\n";
-                
-                auto color = textComponent->getColor();
-                content += "    textComponent" + std::to_string(textCounter) + "->setColor(glm::vec4(" + 
-                          std::to_string(color.r) + "f, " + std::to_string(color.g) + "f, " + 
-                          std::to_string(color.b) + "f, " + std::to_string(color.a) + "f));\n";
-                
-                // Set render mode
-                std::string renderMode = "WORLD_SPACE";
-                switch (textComponent->getRenderMode()) {
-                    case TextRenderMode::WORLD_SPACE: renderMode = "WORLD_SPACE"; break;
-                    case TextRenderMode::SCREEN_SPACE: renderMode = "SCREEN_SPACE"; break;
-                }
-                content += "    textComponent" + std::to_string(textCounter) + "->setRenderMode(TextRenderMode::" + renderMode + ");\n";
-                
-                // Set alignment
-                std::string alignment = "LEFT";
-                switch (textComponent->getAlignment()) {
-                    case TextAlignment::LEFT: alignment = "LEFT"; break;
-                    case TextAlignment::CENTER: alignment = "CENTER"; break;
-                    case TextAlignment::RIGHT: alignment = "RIGHT"; break;
-                }
-                content += "    textComponent" + std::to_string(textCounter) + "->setAlignment(TextAlignment::" + alignment + ");\n";
-                
-                content += "    textComponent" + std::to_string(textCounter) + "->setScale(" + std::to_string(textComponent->getScale()) + "f);\n";
-                content += "    textComponent" + std::to_string(textCounter) + "->setLineSpacing(" + std::to_string(textComponent->getLineSpacing()) + "f);\n";
-                
-                // Add to parent or root
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + textNodeName + ");\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + textNodeName + ");\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + textNodeName + ");\n";
-                }
-                
-                content += "    textComponent" + std::to_string(textCounter) + "->start();\n\n";
-                
-                textCounter++;
-            }
-        }
-        
-        // Sixth pass: Add area3D components
-        int area3DCounter = 1;
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<Area3DComponent>()) {
-                auto area3DComponent = node->getComponent<Area3DComponent>();
-                auto& transform = node->getTransform();
-                auto pos = transform.getPosition();
-                auto rot = transform.getEulerAngles();
-                auto scale = transform.getScale();
-                
-                std::string area3DNodeName = "area3DNode" + std::to_string(area3DCounter);
-                nodeNameMap[node.get()] = area3DNodeName;
-                
-                content += "    // Add an Area3D component\n";
-                content += "    auto " + area3DNodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                content += "    " + area3DNodeName + "->getTransform().setPosition(glm::vec3(" + 
-                          std::to_string(pos.x) + "f, " + std::to_string(pos.y) + "f, " + std::to_string(pos.z) + "f));\n";
-                content += "    " + area3DNodeName + "->getTransform().setEulerAngles(glm::vec3(" + 
-                          std::to_string(rot.x) + "f, " + std::to_string(rot.y) + "f, " + std::to_string(rot.z) + "f));\n";
-                content += "    " + area3DNodeName + "->getTransform().setScale(glm::vec3(" + 
-                          std::to_string(scale.x) + "f, " + std::to_string(scale.y) + "f, " + std::to_string(scale.z) + "f));\n";
-                
-                // Add Area3DComponent with all its properties
-                content += "    auto area3DComponent" + std::to_string(area3DCounter) + " = " + area3DNodeName + "->addComponent<Area3DComponent>();\n";
-                
-                // Set shape type
-                auto shapeType = area3DComponent->getShape();
-                switch (shapeType) {
-                    case Area3DShape::BOX:
-                        content += "    area3DComponent" + std::to_string(area3DCounter) + "->setShape(Area3DShape::BOX);\n";
-                        break;
-                    case Area3DShape::SPHERE:
-                        content += "    area3DComponent" + std::to_string(area3DCounter) + "->setShape(Area3DShape::SPHERE);\n";
-                        break;
-                    case Area3DShape::CAPSULE:
-                        content += "    area3DComponent" + std::to_string(area3DCounter) + "->setShape(Area3DShape::CAPSULE);\n";
-                        break;
-                    case Area3DShape::CYLINDER:
-                        content += "    area3DComponent" + std::to_string(area3DCounter) + "->setShape(Area3DShape::CYLINDER);\n";
-                        break;
-                    case Area3DShape::PLANE:
-                        content += "    area3DComponent" + std::to_string(area3DCounter) + "->setShape(Area3DShape::PLANE);\n";
-                        break;
-                }
-                
-                // Set dimensions/radius/height based on shape
-                if (shapeType == Area3DShape::BOX) {
-                    auto dims = area3DComponent->getDimensions();
-                    content += "    area3DComponent" + std::to_string(area3DCounter) + "->setDimensions(glm::vec3(" + 
-                              std::to_string(dims.x) + "f, " + std::to_string(dims.y) + "f, " + std::to_string(dims.z) + "f));\n";
-                } else if (shapeType == Area3DShape::SPHERE) {
-                    content += "    area3DComponent" + std::to_string(area3DCounter) + "->setRadius(" + 
-                              std::to_string(area3DComponent->getRadius()) + "f);\n";
-                } else if (shapeType == Area3DShape::CAPSULE || shapeType == Area3DShape::CYLINDER) {
-                    content += "    area3DComponent" + std::to_string(area3DCounter) + "->setRadius(" + 
-                              std::to_string(area3DComponent->getRadius()) + "f);\n";
-                    content += "    area3DComponent" + std::to_string(area3DCounter) + "->setHeight(" + 
-                              std::to_string(area3DComponent->getHeight()) + "f);\n";
-                }
-                
-                // Set group if specified
-                if (area3DComponent->hasGroup()) {
-                    content += "    area3DComponent" + std::to_string(area3DCounter) + "->setGroup(\"" + area3DComponent->getGroup() + "\");\n";
-                }
-                
-                // Set monitor mode
-                content += "    area3DComponent" + std::to_string(area3DCounter) + "->setMonitorMode(" + 
-                          (area3DComponent->getMonitorMode() ? "true" : "false") + ");\n";
-                
-                // Add to parent or root
-                if (node->getParent() && node->getParent() != scene->getRootNode().get()) {
-                    auto parentIt = nodeNameMap.find(node->getParent());
-                    if (parentIt != nodeNameMap.end()) {
-                        content += "    " + parentIt->second + "->addChild(" + area3DNodeName + ");\n";
-                    } else {
-                        content += "    gameScene->getRootNode()->addChild(" + area3DNodeName + ");\n";
-                    }
-                } else {
-                    content += "    gameScene->getRootNode()->addChild(" + area3DNodeName + ");\n";
-                }
-                
-                content += "    area3DComponent" + std::to_string(area3DCounter) + "->start();\n\n";
-                
-                area3DCounter++;
-            }
-        }
-        
-        // Fifth pass: Add script components
-        int scriptCounter = 1;
-        for (auto& node : allNodes) {
-            if (node && node->getComponent<ScriptComponent>()) {
-                auto scriptComponent = node->getComponent<ScriptComponent>();
-                
-                std::string scriptNodeName = "scriptNode" + std::to_string(scriptCounter);
-                nodeNameMap[node.get()] = scriptNodeName;
-                
-                content += "    // Add a script component\n";
-                content += "    auto " + scriptNodeName + " = gameScene->createNode(\"" + node->getName() + "\");\n";
-                
-                // Add ScriptComponent with script path
-                content += "    auto scriptComponent" + std::to_string(scriptCounter) + " = " + scriptNodeName + "->addComponent<ScriptComponent>();\n";
-                content += "    scriptComponent" + std::to_string(scriptCounter) + "->loadScript(\"" + scriptComponent->getScriptPath() + "\");\n";
-                
-                // Set pause exempt if enabled
-                if (scriptComponent->isPauseExempt()) {
-                    content += "    scriptComponent" + std::to_string(scriptCounter) + "->setPauseExempt(true);\n";
-                }
-                
-                // Add to root
-                content += "    gameScene->getRootNode()->addChild(" + scriptNodeName + ");\n";
-                content += "    scriptComponent" + std::to_string(scriptCounter) + "->start();\n\n";
-                
-                scriptCounter++;
-            }
-        }
-    }
-    
-    content += R"(
-    // Load the game scene
-    sceneManager.loadScene(gameScene);
-    
-    // Run the game
-    engine.run();
-    
-    // Cleanup VitaGL
-    vglEnd();
-    
-    return 0;
-}
-)";
-    
-    return content;
+    std::cout << "Asset manifests updated." << std::endl;
 }
 #endif // LINUX_BUILD
 
@@ -1584,29 +86,6 @@ std::vector<std::shared_ptr<SceneNode>> SceneSerializer::getAllSceneNodesFromSce
     return allNodes;
 }
 
-std::string SceneSerializer::sanitizeNodeName(const std::string& name) {
-    std::string sanitized = name;
-    
-    // Replace spaces and special characters with underscores
-    for (char& c : sanitized) {
-        if (!isalnum(c) && c != '_') {
-            c = '_';
-        }
-    }
-    
-    // Ensure it starts with a letter or underscore
-    if (!sanitized.empty() && !isalpha(sanitized[0]) && sanitized[0] != '_') {
-        sanitized = "Node_" + sanitized;
-    }
-    
-    // Remove consecutive underscores
-    size_t pos = 0;
-    while ((pos = sanitized.find("__", pos)) != std::string::npos) {
-        sanitized.erase(pos, 1);
-    }
-    
-    return sanitized;
-}
 
 bool SceneSerializer::saveSceneToFile(std::shared_ptr<Scene> scene, const std::string& filepath) {
     if (!scene) {
@@ -1946,6 +425,8 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             std::string linuxFragmentPath = material->getShaderFragmentPathForPlatform("linux");
                             std::string vitaVertexPath = material->getShaderVertexPathForPlatform("vita");
                             std::string vitaFragmentPath = material->getShaderFragmentPathForPlatform("vita");
+                            std::string vulkanVertexPath = material->getShaderVertexPathForPlatform("vulkan");
+                            std::string vulkanFragmentPath = material->getShaderFragmentPathForPlatform("vulkan");
                             
                             if (!linuxVertexPath.empty() && !linuxFragmentPath.empty()) {
                                 materialJson["shaderVertexPathLinux"] = linuxVertexPath;
@@ -1955,6 +436,11 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             if (!vitaVertexPath.empty() && !vitaFragmentPath.empty()) {
                                 materialJson["shaderVertexPathVita"] = vitaVertexPath;
                                 materialJson["shaderFragmentPathVita"] = vitaFragmentPath;
+                            }
+
+                            if (!vulkanVertexPath.empty() && !vulkanFragmentPath.empty()) {
+                                materialJson["shaderVertexPathVulkan"] = vulkanVertexPath;
+                                materialJson["shaderFragmentPathVulkan"] = vulkanFragmentPath;
                             }
                             
                             if (material->isUsingCustomShader()) {
@@ -2004,10 +490,14 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                             std::string linuxFragmentPath = material->getShaderFragmentPathForPlatform("linux");
                             std::string vitaVertexPath = material->getShaderVertexPathForPlatform("vita");
                             std::string vitaFragmentPath = material->getShaderFragmentPathForPlatform("vita");
+                            std::string vulkanVertexPath = material->getShaderVertexPathForPlatform("vulkan");
+                            std::string vulkanFragmentPath = material->getShaderFragmentPathForPlatform("vulkan");
                             if (!linuxVertexPath.empty()) materialJson["shaderVertexPathLinux"] = linuxVertexPath;
                             if (!linuxFragmentPath.empty()) materialJson["shaderFragmentPathLinux"] = linuxFragmentPath;
                             if (!vitaVertexPath.empty()) materialJson["shaderVertexPathVita"] = vitaVertexPath;
                             if (!vitaFragmentPath.empty()) materialJson["shaderFragmentPathVita"] = vitaFragmentPath;
+                            if (!vulkanVertexPath.empty()) materialJson["shaderVertexPathVulkan"] = vulkanVertexPath;
+                            if (!vulkanFragmentPath.empty()) materialJson["shaderFragmentPathVulkan"] = vulkanFragmentPath;
                             json customTexArray = json::array();
                             for (const auto& entry : material->getCustomTextureUniforms()) {
                                 std::string path = entry.second;
@@ -2022,11 +512,65 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
                 } else if (component->getTypeName() == "ModelRenderer") {
                     auto modelRenderer = node->getComponent<ModelRenderer>();
                     if (modelRenderer) {
-                        componentJson["modelPath"] = modelRenderer->getModelPath();
+                        componentJson["modelPath"] = AssetPaths::toPortable(modelRenderer->getModelPath());
                         componentJson["modelName"] = modelRenderer->getModelName();
                         componentJson["isLoaded"] = modelRenderer->isModelLoaded();
                         componentJson["castShadows"] = modelRenderer->getCastShadows();
                         componentJson["receiveShadows"] = modelRenderer->getReceiveShadows();
+                    }
+                } else if (component->getTypeName() == "MaterialComponent") {
+                    auto materialComponent = node->getComponent<MaterialComponent>();
+                    if (materialComponent) {
+                        const MaterialOverride& overrides = materialComponent->getOverrides();
+
+                        componentJson["overrideBaseColor"] = overrides.overrideBaseColor;
+                        componentJson["baseColor"] = {overrides.baseColor.x, overrides.baseColor.y, overrides.baseColor.z};
+                        componentJson["overrideMetallic"] = overrides.overrideMetallic;
+                        componentJson["metallic"] = overrides.metallic;
+                        componentJson["overrideRoughness"] = overrides.overrideRoughness;
+                        componentJson["roughness"] = overrides.roughness;
+                        componentJson["overrideReflectionStrength"] = overrides.overrideReflectionStrength;
+                        componentJson["reflectionStrength"] = overrides.reflectionStrength;
+                        componentJson["overrideOpacity"] = overrides.overrideOpacity;
+                        componentJson["opacity"] = overrides.opacity;
+                        componentJson["overrideAlphaCutoff"] = overrides.overrideAlphaCutoff;
+                        componentJson["alphaCutoff"] = overrides.alphaCutoff;
+                        componentJson["overrideDoubleSided"] = overrides.overrideDoubleSided;
+                        componentJson["doubleSided"] = overrides.doubleSided;
+                        componentJson["overrideUVTransform"] = overrides.overrideUVTransform;
+                        componentJson["uvScale"] = {overrides.uvScale.x, overrides.uvScale.y};
+                        componentJson["uvOffset"] = {overrides.uvOffset.x, overrides.uvOffset.y};
+
+                        componentJson["overrideBlendMode"] = overrides.overrideBlendMode;
+                        switch (overrides.blendMode) {
+                            case BlendMode::Opaque:   componentJson["blendMode"] = "Opaque"; break;
+                            case BlendMode::Alpha:    componentJson["blendMode"] = "Alpha"; break;
+                            case BlendMode::Additive: componentJson["blendMode"] = "Additive"; break;
+                        }
+
+                        // Absent means "keep what the model loaded".
+                        if (!overrides.diffuseTexturePath.empty()) {
+                            componentJson["diffuseTexture"] = overrides.diffuseTexturePath;
+                        }
+                        if (!overrides.normalTexturePath.empty()) {
+                            componentJson["normalTexture"] = overrides.normalTexturePath;
+                        }
+                        if (!overrides.armTexturePath.empty()) {
+                            componentJson["armTexture"] = overrides.armTexturePath;
+                        }
+
+                        if (!overrides.shaderVertexPathLinux.empty() && !overrides.shaderFragmentPathLinux.empty()) {
+                            componentJson["shaderVertexPathLinux"] = overrides.shaderVertexPathLinux;
+                            componentJson["shaderFragmentPathLinux"] = overrides.shaderFragmentPathLinux;
+                        }
+                        if (!overrides.shaderVertexPathVita.empty() && !overrides.shaderFragmentPathVita.empty()) {
+                            componentJson["shaderVertexPathVita"] = overrides.shaderVertexPathVita;
+                            componentJson["shaderFragmentPathVita"] = overrides.shaderFragmentPathVita;
+                        }
+                        if (!overrides.shaderVertexPathVulkan.empty() && !overrides.shaderFragmentPathVulkan.empty()) {
+                            componentJson["shaderVertexPathVulkan"] = overrides.shaderVertexPathVulkan;
+                            componentJson["shaderFragmentPathVulkan"] = overrides.shaderFragmentPathVulkan;
+                        }
                     }
                 } else if (component->getTypeName() == "LightComponent") {
                     auto lightComp = node->getComponent<LightComponent>();
@@ -2448,16 +992,16 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                             std::string vitaVertexPath = materialJson["shaderVertexPathVita"];
                             std::string vitaFragmentPath = materialJson["shaderFragmentPathVita"];
                             if (!vitaVertexPath.empty() && !vitaFragmentPath.empty()) {
-#ifdef VITA_BUILD
-                                if (vitaVertexPath.find("app0:/") != 0 && vitaVertexPath.find("assets/") == 0) {
-                                    vitaVertexPath = "app0:/" + vitaVertexPath;
-                                }
-                                if (vitaFragmentPath.find("app0:/") != 0 && vitaFragmentPath.find("assets/") == 0) {
-                                    vitaFragmentPath = "app0:/" + vitaFragmentPath;
-                                }
-#endif
                                 material->setShaderFromPathsForPlatform(vitaVertexPath, vitaFragmentPath, "vita");
                                 loadedVitaPaths = true;
+                            }
+                        }
+
+                        if (materialJson.contains("shaderVertexPathVulkan") && materialJson.contains("shaderFragmentPathVulkan")) {
+                            std::string vulkanVertexPath = materialJson["shaderVertexPathVulkan"];
+                            std::string vulkanFragmentPath = materialJson["shaderFragmentPathVulkan"];
+                            if (!vulkanVertexPath.empty() && !vulkanFragmentPath.empty()) {
+                                material->setShaderFromPathsForPlatform(vulkanVertexPath, vulkanFragmentPath, "vulkan");
                             }
                         }
                         
@@ -2469,6 +1013,9 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                                 if (vertexPath.find("linux_shaders") != std::string::npos || 
                                     fragmentPath.find("linux_shaders") != std::string::npos) {
                                     material->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "linux");
+                                } else if (vertexPath.find("assets/vulkan") != std::string::npos ||
+                                           fragmentPath.find("assets/vulkan") != std::string::npos) {
+                                    material->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "vulkan");
                                 } else {
                                     material->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "vita");
                                 }
@@ -2540,12 +1087,14 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                         if (materialJson.contains("shaderVertexPathVita") && materialJson.contains("shaderFragmentPathVita")) {
                             std::string v = materialJson["shaderVertexPathVita"], f = materialJson["shaderFragmentPathVita"];
                             if (!v.empty() && !f.empty()) {
-#ifdef VITA_BUILD
-                                if (v.find("app0:/") != 0 && v.find("assets/") == 0) v = "app0:/" + v;
-                                if (f.find("app0:/") != 0 && f.find("assets/") == 0) f = "app0:/" + f;
-#endif
                                 material->setShaderFromPathsForPlatform(v, f, "vita");
                                 loadedVita = true;
+                            }
+                        }
+                        if (materialJson.contains("shaderVertexPathVulkan") && materialJson.contains("shaderFragmentPathVulkan")) {
+                            std::string v = materialJson["shaderVertexPathVulkan"], f = materialJson["shaderFragmentPathVulkan"];
+                            if (!v.empty() && !f.empty()) {
+                                material->setShaderFromPathsForPlatform(v, f, "vulkan");
                             }
                         }
                         if (!loadedLinux) {
@@ -2571,7 +1120,7 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     auto modelRenderer = node->addComponent<ModelRenderer>();
                     
                     if (componentJson.contains("modelPath")) {
-                        std::string modelPath = componentJson["modelPath"];
+                        std::string modelPath = AssetPaths::toPortable(componentJson["modelPath"]);
                         modelRenderer->loadModel(modelPath);
                     }
                     
@@ -2582,6 +1131,61 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     if (componentJson.contains("receiveShadows")) {
                         modelRenderer->setReceiveShadows(componentJson["receiveShadows"]);
                     }
+                } else if (type == "MaterialComponent") {
+                    auto materialComponent = node->addComponent<MaterialComponent>();
+                    MaterialOverride overrides;
+
+                    overrides.overrideBaseColor = componentJson.value("overrideBaseColor", false);
+                    if (componentJson.contains("baseColor") && componentJson["baseColor"].is_array()
+                        && componentJson["baseColor"].size() >= 3) {
+                        auto baseColor = componentJson["baseColor"];
+                        overrides.baseColor = glm::vec3(baseColor[0], baseColor[1], baseColor[2]);
+                    }
+
+                    overrides.overrideMetallic = componentJson.value("overrideMetallic", false);
+                    overrides.metallic = componentJson.value("metallic", overrides.metallic);
+                    overrides.overrideRoughness = componentJson.value("overrideRoughness", false);
+                    overrides.roughness = componentJson.value("roughness", overrides.roughness);
+                    overrides.overrideReflectionStrength = componentJson.value("overrideReflectionStrength", false);
+                    overrides.reflectionStrength = componentJson.value("reflectionStrength", overrides.reflectionStrength);
+                    overrides.overrideOpacity = componentJson.value("overrideOpacity", false);
+                    overrides.opacity = componentJson.value("opacity", overrides.opacity);
+                    overrides.overrideAlphaCutoff = componentJson.value("overrideAlphaCutoff", false);
+                    overrides.alphaCutoff = componentJson.value("alphaCutoff", overrides.alphaCutoff);
+                    overrides.overrideDoubleSided = componentJson.value("overrideDoubleSided", false);
+                    overrides.doubleSided = componentJson.value("doubleSided", overrides.doubleSided);
+
+                    overrides.overrideBlendMode = componentJson.value("overrideBlendMode", false);
+                    if (componentJson.contains("blendMode")) {
+                        std::string blendMode = componentJson["blendMode"];
+                        if (blendMode == "Alpha") overrides.blendMode = BlendMode::Alpha;
+                        else if (blendMode == "Additive") overrides.blendMode = BlendMode::Additive;
+                        else overrides.blendMode = BlendMode::Opaque;
+                    }
+
+                    overrides.overrideUVTransform = componentJson.value("overrideUVTransform", false);
+                    if (componentJson.contains("uvScale") && componentJson["uvScale"].is_array()
+                        && componentJson["uvScale"].size() >= 2) {
+                        auto uvScale = componentJson["uvScale"];
+                        overrides.uvScale = glm::vec2(uvScale[0], uvScale[1]);
+                    }
+                    if (componentJson.contains("uvOffset") && componentJson["uvOffset"].is_array()
+                        && componentJson["uvOffset"].size() >= 2) {
+                        auto uvOffset = componentJson["uvOffset"];
+                        overrides.uvOffset = glm::vec2(uvOffset[0], uvOffset[1]);
+                    }
+
+                    overrides.diffuseTexturePath = componentJson.value("diffuseTexture", std::string());
+                    overrides.normalTexturePath = componentJson.value("normalTexture", std::string());
+                    overrides.armTexturePath = componentJson.value("armTexture", std::string());
+
+                    overrides.shaderVertexPathLinux = componentJson.value("shaderVertexPathLinux", std::string());
+                    overrides.shaderFragmentPathLinux = componentJson.value("shaderFragmentPathLinux", std::string());
+                    overrides.shaderVertexPathVita = componentJson.value("shaderVertexPathVita", std::string());
+                    overrides.shaderFragmentPathVita = componentJson.value("shaderFragmentPathVita", std::string());
+                    overrides.shaderVertexPathVulkan = componentJson.value("shaderVertexPathVulkan", std::string());
+                    overrides.shaderFragmentPathVulkan = componentJson.value("shaderFragmentPathVulkan", std::string());
+                    materialComponent->setOverrides(overrides);
                 } else if (type == "LightComponent") {
                     auto lightComp = node->addComponent<LightComponent>();
                     
@@ -3398,23 +2002,14 @@ void SceneSerializer::updateMakefileWithAssets(const std::vector<std::string>& d
 #endif // LINUX_BUILD
 
 std::string SceneSerializer::convertToVitaPath(const std::string& path) {
-    // Convert absolute Linux path to relative Vita path
-    // e.g., /home/user/project/assets/models/lemon_1k.gltf/lemon_1k.gltf -> models/lemon_1k.gltf/lemon_1k.gltf
-    
-    std::string vitaPath = path;
-    
-    // Remove the "assets/" prefix if present
-    if (vitaPath.find("assets/") != std::string::npos) {
-        size_t assetsPos = vitaPath.find("assets/");
-        vitaPath = vitaPath.substr(assetsPos + 7); // Remove "assets/" (7 characters)
+    // VPK-relative: everything below the asset root, so
+    // /home/user/project/assets/models/well.glb becomes models/well.glb
+    const std::string portable = AssetPaths::toPortable(path);
+    const std::string assetsPrefix = AssetPaths::getAssetRoot() + "/";
+    if (portable.compare(0, assetsPrefix.length(), assetsPrefix) == 0) {
+        return portable.substr(assetsPrefix.length());
     }
-    
-    return vitaPath;
-}
-
-std::string SceneSerializer::convertToLinuxPath(const std::string& path) {
-    // For Linux builds, keep the full path as-is
-    return path;
+    return portable;
 }
 
 #ifdef LINUX_BUILD

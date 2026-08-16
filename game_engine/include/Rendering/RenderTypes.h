@@ -73,7 +73,8 @@ enum DescriptorSetIndex : uint32_t {
     SET_FRAME = 0,
     SET_MATERIAL = 1,
     SET_ENVIRONMENT = 2,
-    SET_ANIMATION = 3
+    SET_ANIMATION = 3,
+    SET_CUSTOM_TEXTURES = 4
 };
 
 static const uint32_t kMaxBones = 100;
