@@ -13,7 +13,7 @@ Cross-platform game engine for **PS Vita** and **Linux**, with a visual editor o
 - [x] PBR (with normal map)
 - [x] Multi-light Lighting System (Directional, Point, Spot)
 - [x] Custom Shader Support (Lit and Unlit, GLSL + CG templates)
-- [ ] **Vulkan Backend (WIP, Linux only)** — mesh and text rendering only; skyboxes, full PBR/lighting, skeletal animation, and editor support not yet ported
+- [x] Vulkan Backend (editor support not yet ported)
 
 ### Audio
 - [x] 2D Audio
