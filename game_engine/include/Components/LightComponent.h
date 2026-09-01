@@ -92,8 +92,14 @@ public:
     };
     
     LightData getLightData() const;
-    
+
 private:
+
+    float resolveShadowBias() const;
+
+    static constexpr int kShadowBiasReferenceTileSize = 1024;
+    static constexpr float kShadowBiasReferenceExtent = 25.0f;
+
     LightType type;
     
     glm::vec3 color;

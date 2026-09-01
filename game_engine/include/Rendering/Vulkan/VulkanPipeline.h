@@ -33,8 +33,11 @@ public:
     vk::raii::PipelineLayout& getGraphicsPipelineLayout();
     vk::raii::Pipeline& getGraphicsPipeline();
     vk::raii::Pipeline& getGraphicsPipeline(BlendMode blendMode, bool depthWrite, bool cullEnabled = true);
+    vk::raii::Pipeline* getInstancedGraphicsPipeline(bool depthWrite, bool cullEnabled);
+    bool hasInstancedPipelines() const;
     vk::raii::PipelineLayout& getTextPipelineLayout();
     vk::raii::Pipeline& getTextPipeline();
+    vk::raii::Pipeline& getWorldTextPipeline();
     vk::raii::PipelineLayout& getSkyboxPipelineLayout();
     vk::raii::Pipeline& getSkyboxPipeline();
     vk::raii::PipelineLayout& getBeamPipelineLayout();
@@ -53,7 +56,7 @@ public:
 
     vk::DescriptorSet getOrCreateMaterialDescriptorSet(const Material* materialKey, uint32_t imageIndex);
     vk::DescriptorSet getOrUpdateEnvironmentDescriptorSet( const FrameEnvironment& env, const VulkanResources::VulkanTexture& cubemap);
-    vk::DescriptorSet getOrCreateTextDescriptorSet(const TextMaterial* material, const VulkanResources::VulkanTexture& atlasTexture);
+    vk::DescriptorSet getOrCreateTextDescriptorSet(const TextMaterial* material, const VulkanResources::VulkanTexture& atlasTexture, uint32_t imageIndex);
     vk::DescriptorSet getAnimationDescriptorSet(uint32_t slot) const;
     void clearSceneDescriptorCaches();
 
@@ -65,7 +68,8 @@ private:
     void createAnimationDescriptorSetLayout();
     void createTextDescriptorSetLayout();
     void createGraphicsPipeline();
-    void createTextPipeline();
+    void createInstancedGraphicsPipeline();
+    void createTextPipeline(bool depthTestEnable, vk::raii::Pipeline& outPipeline);
     void createSkyboxPipeline();
     void createBeamPipeline();
     void createShadowPipeline();
@@ -89,6 +93,7 @@ private:
     static ShaderMaterialUniforms makeShaderMaterialUniforms(const Material& material);
     void writeMaterialDescriptorSet(vk::DescriptorSet set, const Material* material, uint32_t imageIndex);
     void writeShaderMaterialDescriptorSet(vk::DescriptorSet set, const Material* material, uint32_t imageIndex);
+    void writeTextDescriptorSet(vk::DescriptorSet set, const TextMaterial* material, const VulkanResources::VulkanTexture& atlasTexture, uint32_t imageIndex);
     static bool shaderSpvExists(const std::string& path);
     static std::string makeCustomPipelineCacheKey(const Material* material);
     static vk::PipelineColorBlendAttachmentState makeBlendAttachment(BlendMode blendMode);
@@ -98,6 +103,9 @@ private:
 
     static vk::VertexInputBindingDescription getMeshVertexBindingDescription();
     static std::array<vk::VertexInputAttributeDescription, 6> getMeshVertexAttributeDescriptions();
+    // Binding 0 stays the per-vertex mesh stream, binding 1 adds per-instance transforms (locations 6..12)
+    static std::array<vk::VertexInputBindingDescription, 2> getMeshInstancedVertexBindingDescriptions();
+    static std::array<vk::VertexInputAttributeDescription, 11> getMeshInstancedVertexAttributeDescriptions();
     static std::array<vk::VertexInputAttributeDescription, 1> getSkyboxVertexAttributeDescriptions();
     static std::array<vk::VertexInputAttributeDescription, 2> getShaderMaterialVertexAttributeDescriptions();
 
@@ -121,8 +129,10 @@ private:
     vk::raii::PipelineLayout pipelineLayout_ = nullptr;
     vk::raii::Pipeline graphicsPipeline_ = nullptr;
     std::unordered_map<uint32_t, vk::raii::Pipeline> defaultLitPipelineCache_;
+    std::unordered_map<uint32_t, vk::raii::Pipeline> instancedLitPipelineCache_;
     vk::raii::PipelineLayout textPipelineLayout_ = nullptr;
     vk::raii::Pipeline textPipeline_ = nullptr;
+    vk::raii::Pipeline worldTextPipeline_ = nullptr;
     vk::raii::PipelineLayout skyboxPipelineLayout_ = nullptr;
     vk::raii::Pipeline skyboxPipeline_ = nullptr;
     vk::raii::PipelineLayout beamPipelineLayout_ = nullptr;
@@ -149,7 +159,7 @@ private:
     std::unordered_map<const Material*, std::vector<MaterialDescriptorSlot>> materialDescriptorSets_;
     std::unordered_map<const Material*, std::vector<MaterialDescriptorSlot>> shaderMaterialDescriptorSets_;
     std::unordered_map<const Material*, std::unique_ptr<vk::raii::DescriptorSet>> customTextureDescriptorSets_;
-    std::unordered_map<const TextMaterial*, std::unique_ptr<vk::raii::DescriptorSet>> textMaterialDescriptorSets_;
+    std::unordered_map<const TextMaterial*, std::vector<MaterialDescriptorSlot>> textMaterialDescriptorSets_;
     std::unique_ptr<vk::raii::DescriptorSet> environmentDescriptorSet_;
     const void* currentEnvironmentKey_ = nullptr;
     std::vector<vk::raii::DescriptorSet> animationDescriptorSets_;

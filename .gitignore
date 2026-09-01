@@ -5,8 +5,11 @@
 # Build outputs
 /build/
 /build_linux/
+/build_linux_debug/
 /build_linux_gl/
+/build_linux_gl_debug/
 /build_editor/
+/build_editor_debug/
 /bin/
 /obj/
 

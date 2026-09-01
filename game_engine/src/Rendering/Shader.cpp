@@ -490,6 +490,34 @@ std::shared_ptr<Shader> Shader::getShadowDepthShader() {
     return shadowShader;
 }
 
+std::shared_ptr<Shader> Shader::getLightingInstancedShader() {
+    static std::shared_ptr<Shader> instancedShader = nullptr;
+    static bool loadAttempted = false;
+
+    if (loadAttempted) {
+        return instancedShader;
+    }
+    loadAttempted = true;
+
+    instancedShader = std::make_shared<Shader>();
+
+#ifdef VITA_BUILD
+    const char* vertexPath = "assets/shaders/lighting_instanced.vert";
+    const char* fragmentPath = "assets/shaders/lighting.frag";
+#else
+    const char* vertexPath = "assets/linux_shaders/lighting_instanced.vert";
+    const char* fragmentPath = "assets/linux_shaders/lighting.frag";
+#endif
+
+    if (!instancedShader->loadFromFiles(vertexPath, fragmentPath)) {
+        std::cerr << "Shader: instanced lighting shader not found, GPU instancing disabled"
+                  << " (falling back to per-entity draws)" << std::endl;
+        instancedShader.reset();
+    }
+
+    return instancedShader;
+}
+
 std::shared_ptr<Shader> Shader::getTextShader() {
     static std::shared_ptr<Shader> textShader = nullptr;
 
@@ -639,7 +667,15 @@ bool Shader::linkProgram() {
     glBindAttribLocation(program, 3, "tangent");
     glBindAttribLocation(program, 4, "boneWeights");
     glBindAttribLocation(program, 5, "boneIndices");
-    
+
+    glBindAttribLocation(program, 4, "iModelCol0");
+    glBindAttribLocation(program, 5, "iModelCol1");
+    glBindAttribLocation(program, 6, "iModelCol2");
+    glBindAttribLocation(program, 7, "iModelCol3");
+    glBindAttribLocation(program, 8, "iNormalCol0");
+    glBindAttribLocation(program, 9, "iNormalCol1");
+    glBindAttribLocation(program, 10, "iNormalCol2");
+
     glLinkProgram(program);
     
     GLint success;

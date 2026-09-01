@@ -27,6 +27,8 @@ void VulkanRenderer::beginFrame() {
     animationSlots_.clear();
     cameraVisible_.clear();
     shadowDraws_.clear();
+    instanceBatcher_.clear();
+    instanceBufferReady_ = false;
     stats.reset();
 }
 
@@ -136,10 +138,16 @@ void VulkanRenderer::recordRenderCommands(vk::CommandBuffer cmdBuf, uint32_t ima
         {environmentSet},
         {});
 
+    if (instanceBufferReady_) {
+        recordInstancedRenderCommands(cmdBuf, imageIndex, environmentSet);
+        defaultLitBound = false;
+    }
+
     for (size_t drawIndex = 0; drawIndex < renderQueue.size(); ++drawIndex) {
         const auto& rc = renderQueue[drawIndex];
         if (!rc.mesh) continue;
         if (drawIndex < cameraVisible_.size() && cameraVisible_[drawIndex] == 0) continue;
+        if (instanceBufferReady_ && instanceBatcher_.isBatched(drawIndex)) continue;
 
         if (rc.isBeam || (rc.material && rc.material->getVulkanShaderPipelineKind() != VulkanShaderPipelineKind::DefaultLit)) {
             recordShaderMaterialRenderCommand(cmdBuf, imageIndex, rc, GetEngine().getTime().getTotalTime(), drawIndex);
@@ -233,7 +241,6 @@ void VulkanRenderer::recordRenderCommands(vk::CommandBuffer cmdBuf, uint32_t ima
     }
 
     if (!textRenderQueue.empty()) {
-        cmdBuf.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline_->getTextPipeline());
         cmdBuf.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
             *pipeline_->getTextPipelineLayout(),
@@ -241,11 +248,14 @@ void VulkanRenderer::recordRenderCommands(vk::CommandBuffer cmdBuf, uint32_t ima
             {pipeline_->getDescriptorSet(imageIndex)},
             {});
 
+        cmdBuf.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline_->getWorldTextPipeline());
         for (const auto& tc : textRenderQueue) {
             if (tc.renderMode == TextRenderMode::WORLD_SPACE) {
                 recordTextRenderCommand(cmdBuf, tc);
             }
         }
+
+        cmdBuf.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline_->getTextPipeline());
         for (const auto& tc : textRenderQueue) {
             if (tc.renderMode == TextRenderMode::SCREEN_SPACE) {
                 recordTextRenderCommand(cmdBuf, tc);
@@ -321,7 +331,8 @@ void VulkanRenderer::recordTextRenderCommand(vk::CommandBuffer cmdBuf, const Tex
         vk::DescriptorSet matSet =
             pipeline_->getOrCreateTextDescriptorSet(
                 tc.material.get(),
-                atlasTex);
+                atlasTex,
+                currentImageIndex);
 
         cmdBuf.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics,
@@ -540,9 +551,10 @@ void VulkanRenderer::submitTextRenderCommand(const TextRenderCommand& command) {
 
 void VulkanRenderer::renderMesh(const Mesh& mesh, const Material& material, const glm::mat4& modelMatrix) {
     RenderCommand cmd;
-    cmd.mesh = std::make_shared<Mesh>(mesh);
-    cmd.material = std::make_shared<Material>(material);
+    cmd.mesh = std::shared_ptr<Mesh>(const_cast<Mesh*>(&mesh), [](Mesh*){});
+    cmd.material = std::shared_ptr<Material>(const_cast<Material*>(&material), [](Material*){});
     cmd.modelMatrix = modelMatrix;
+    cmd.normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
     submitRenderCommand(cmd);
 }
 
@@ -564,10 +576,119 @@ void VulkanRenderer::resolveFrameEnvironment(Scene& scene) {
     frameEnvironment_.cacheKey = environmentCubemap_;
 }
 
+bool VulkanRenderer::isInstanceablePipelineKind(const RenderCommand& command) {
+    return command.material
+        && command.material->getVulkanShaderPipelineKind() == VulkanShaderPipelineKind::DefaultLit;
+}
+
+void VulkanRenderer::buildInstanceBatches() {
+    instanceBatcher_.clear();
+    instanceBufferReady_ = false;
+
+    if (!instancingEnabled_ || !pipeline_ || !resources_ || !pipeline_->hasInstancedPipelines()) {
+        return;
+    }
+
+    instanceBatcher_.build(renderQueue, cameraVisible_, &VulkanRenderer::isInstanceablePipelineKind);
+
+    const auto& instanceData = instanceBatcher_.instanceData();
+    if (instanceData.empty()) {
+        return;
+    }
+
+    const vk::DeviceSize bytes = instanceData.size() * sizeof(InstanceData);
+    if (!resources_->writeInstanceBuffer(currentImageIndex, instanceData.data(), bytes)) {
+        instanceBatcher_.clear();
+        return;
+    }
+
+    instanceBufferReady_ = true;
+}
+
+void VulkanRenderer::recordInstancedRenderCommands(vk::CommandBuffer cmdBuf, uint32_t imageIndex, vk::DescriptorSet environmentSet) {
+    if (!instanceBufferReady_ || instanceBatcher_.empty()) {
+        return;
+    }
+
+    vk::Buffer instanceBuffer = resources_->getInstanceBuffer(imageIndex);
+    if (!instanceBuffer) {
+        return;
+    }
+
+    auto layout = *pipeline_->getGraphicsPipelineLayout();
+    bool boundDepthWrite = true;
+    bool boundCullEnabled = true;
+    bool pipelineBound = false;
+
+    for (const InstanceBatcher::Batch& batch : instanceBatcher_.batches()) {
+        const RenderCommand& rc = renderQueue[batch.queueIndex];
+        if (!rc.mesh) {
+            continue;
+        }
+
+        const bool depthWrite = rc.material ? rc.material->getDepthWrite() : true;
+        const bool cullEnabled = !rc.disableCulling;
+
+        if (!pipelineBound || depthWrite != boundDepthWrite || cullEnabled != boundCullEnabled) {
+            vk::raii::Pipeline* instancedPipeline = pipeline_->getInstancedGraphicsPipeline(depthWrite, cullEnabled);
+            if (!instancedPipeline) {
+                continue;
+            }
+            cmdBuf.bindPipeline(vk::PipelineBindPoint::eGraphics, **instancedPipeline);
+            boundDepthWrite = depthWrite;
+            boundCullEnabled = cullEnabled;
+            pipelineBound = true;
+
+            cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, static_cast<uint32_t>(SET_FRAME), {pipeline_->getDescriptorSet(imageIndex)}, {});
+            cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, static_cast<uint32_t>(SET_ENVIRONMENT), {environmentSet}, {});
+            cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, static_cast<uint32_t>(SET_ANIMATION), {pipeline_->getAnimationDescriptorSet(imageIndex * kMaxSkinnedDrawsPerFrame)}, {});
+        }
+
+        const VulkanMeshGpu& vulkanMesh = resources_->getOrUploadMesh(*rc.mesh);
+        if (vulkanMesh.vertexCount == 0) {
+            continue;
+        }
+
+        const std::array<vk::Buffer, 2> vertexBuffers = {
+            static_cast<vk::Buffer>(*vulkanMesh.vertexBuffer),
+            instanceBuffer
+        };
+        const std::array<vk::DeviceSize, 2> offsets = {
+            0,
+            static_cast<vk::DeviceSize>(batch.firstInstance) * sizeof(InstanceData)
+        };
+        cmdBuf.bindVertexBuffers(0, 2, vertexBuffers.data(), offsets.data());
+
+        if (vulkanMesh.indexCount > 0) {
+            cmdBuf.bindIndexBuffer(static_cast<vk::Buffer>(*vulkanMesh.indexBuffer), 0, vk::IndexType::eUint32);
+        }
+
+        if (rc.material) {
+            cmdBuf.bindDescriptorSets( vk::PipelineBindPoint::eGraphics, layout, static_cast<uint32_t>(SET_MATERIAL), {pipeline_->getOrCreateMaterialDescriptorSet(rc.material.get(), imageIndex)}, {});
+        }
+
+        PushConstants push{};
+        push.modelMatrix = rc.modelMatrix;
+        push.receiveShadows = (rc.receiveShadows && !shadowDraws_.empty()) ? 1 : 0;
+        cmdBuf.pushConstants(layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(PushConstants), &push);
+
+        if (vulkanMesh.indexCount > 0) {
+            cmdBuf.drawIndexed(vulkanMesh.indexCount, batch.instanceCount, 0, 0, 0);
+        } else {
+            cmdBuf.draw(vulkanMesh.vertexCount, batch.instanceCount, 0, 0);
+        }
+
+        stats.drawCalls++;
+        stats.triangles += static_cast<int>(rc.mesh->getTriangleCount()) * static_cast<int>(batch.instanceCount);
+        stats.vertices += static_cast<int>(rc.mesh->getVertexCount()) * static_cast<int>(batch.instanceCount);
+    }
+}
+
 void VulkanRenderer::prepareRenderResources() {
     sortRenderQueue();
     cullRenderQueue();
     buildShadowDrawList();
+    buildInstanceBatches();
 
     if (frameEnvironment_.active && environmentCubemap_) {
         resources_->getSkyboxMesh();
@@ -604,7 +725,7 @@ void VulkanRenderer::prepareRenderResources() {
                 atlas->atlasWidth,
                 atlas->atlasHeight,
                 atlas->cacheKey);
-            pipeline_->getOrCreateTextDescriptorSet(tc.material.get(), atlasTex);
+            pipeline_->getOrCreateTextDescriptorSet(tc.material.get(), atlasTex, currentImageIndex);
         }
     }
 
@@ -652,10 +773,10 @@ void VulkanRenderer::sortRenderQueue() {
             if (!a.material && !b.material) return false;
             if (!a.material) return false;
             if (!b.material) return true;
-            const bool aOpaque = (a.material->getBlendMode() == BlendMode::Opaque);
-            const bool bOpaque = (b.material->getBlendMode() == BlendMode::Opaque);
-            if (aOpaque != bOpaque) {
-                return aOpaque;
+            const int bucketA = static_cast<int>(getRenderSortBucket(*a.material));
+            const int bucketB = static_cast<int>(getRenderSortBucket(*b.material));
+            if (bucketA != bucketB) {
+                return bucketA < bucketB;
             }
             const auto shaderA = a.material->getShader();
             const auto shaderB = b.material->getShader();

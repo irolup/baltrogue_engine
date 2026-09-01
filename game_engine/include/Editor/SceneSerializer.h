@@ -9,6 +9,8 @@
 
 namespace GameEngine {
 
+class Material;
+
 class SceneSerializer {
 public:
     SceneSerializer() = default;
@@ -45,7 +47,11 @@ public:
     static nlohmann::json serializeNodeToJson(std::shared_ptr<SceneNode> node);
     static std::shared_ptr<SceneNode> deserializeNodeFromJson(const nlohmann::json& nodeJson);
 
+    static void clearMaterialCache();
+
 private:
+
+    static std::shared_ptr<Material> getOrCreateSharedMaterial(const nlohmann::json& materialJson);
     static std::vector<std::shared_ptr<SceneNode>> getAllSceneNodesFromScene(std::shared_ptr<Scene> scene);
     static void collectAllNodesRecursive(std::shared_ptr<SceneNode> node, std::vector<std::shared_ptr<SceneNode>>& allNodes);
     static std::string serializeSceneToJson(std::shared_ptr<Scene> scene);

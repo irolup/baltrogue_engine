@@ -4,6 +4,10 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <unordered_set>
+#include <unordered_map>
+#include <utility>
+#include <functional>
 #include <glm/glm.hpp>
 
 class btDiscreteDynamicsWorld;
@@ -12,6 +16,7 @@ class btCollisionDispatcher;
 class btBroadphaseInterface;
 class btConstraintSolver;
 class btRigidBody;
+class btCollisionObject;
 class btTypedConstraint;
 class btCollisionShape;
 class btMotionState;
@@ -54,6 +59,9 @@ public:
 
     void addConstraint(btTypedConstraint* constraint, bool disableCollisionsBetweenLinkedBodies = true);
     void removeConstraint(btTypedConstraint* constraint);
+
+    void addSensorObject(btCollisionObject* object);
+    void removeSensorObject(btCollisionObject* object);
     
     // Physics properties
     void setGravity(const glm::vec3& gravity);
@@ -122,6 +130,7 @@ private:
     // Physics components
     std::vector<PhysicsComponent*> physicsComponents;
     std::vector<JointComponent*> jointComponents;
+    std::vector<btCollisionObject*> sensorObjects;
     
     // Debug drawing
     bool debugDrawEnabled;
@@ -133,7 +142,20 @@ private:
 
     void cleanupPhysicsObjects();
     void syncAllTransformsFromPhysics();
-    
+
+    void dispatchContactEvents();
+
+    using ContactPair = std::pair<PhysicsComponent*, PhysicsComponent*>;
+    struct ContactPairHash {
+        size_t operator()(const ContactPair& pair) const {
+            const size_t a = std::hash<const void*>()(pair.first);
+            const size_t b = std::hash<const void*>()(pair.second);
+            return a ^ (b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2));
+        }
+    };
+    std::unordered_set<ContactPair, ContactPairHash> previousContactPairs_;
+    std::unordered_set<ContactPair, ContactPairHash> currentContactPairs_;
+    std::unordered_map<const btCollisionObject*, PhysicsComponent*> contactBodyLookup_;
 };
 
 } // namespace GameEngine

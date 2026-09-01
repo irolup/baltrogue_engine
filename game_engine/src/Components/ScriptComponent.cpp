@@ -2949,7 +2949,587 @@ void ScriptComponent::bindCommonFunctions() {
         return 3;
     });
     lua_setglobal(luaState, "getNodeAngularFactor");
-    
+
+    // Get angular velocity from a node PhysicsComponent
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        glm::vec3 angularVelocity = physicsComp->getAngularVelocity();
+                        lua_pushnumber(L, angularVelocity.x);
+                        lua_pushnumber(L, angularVelocity.y);
+                        lua_pushnumber(L, angularVelocity.z);
+                        return 3;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+        lua_pushnumber(L, 0);
+        return 3;
+    });
+    lua_setglobal(luaState, "getNodeAngularVelocity");
+
+    // Set linear factor on a node's PhysicsComponent
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float x = luaL_checknumber(L, 2);
+        float y = luaL_checknumber(L, 3);
+        float z = luaL_checknumber(L, 4);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->setLinearFactor(glm::vec3(x, y, z));
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+
+        return 0;
+    });
+    lua_setglobal(luaState, "setNodeLinearFactor");
+
+    // Get linear factor from a node s PhysicsComponent
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto& sceneManager = engine.getSceneManager();
+            auto activeScene = sceneManager.getCurrentScene();
+
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        glm::vec3 factor = physicsComp->getLinearFactor();
+                        lua_pushnumber(L, factor.x);
+                        lua_pushnumber(L, factor.y);
+                        lua_pushnumber(L, factor.z);
+                        return 3;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+
+        lua_pushnumber(L, 1);
+        lua_pushnumber(L, 1);
+        lua_pushnumber(L, 1);
+        return 3;
+    });
+    lua_setglobal(luaState, "getNodeLinearFactor");
+
+    // Get the mass of a node s PhysicsComponent (0 for static/kinematic bodies)
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        lua_pushnumber(L, physicsComp->getMass());
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushnumber(L, 0);
+        return 1;
+    });
+    lua_setglobal(luaState, "getNodeMass");
+
+    // Get a node's collision shape type + raw dimensions
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        const char* shapeName = "box";
+                        switch (physicsComp->getCollisionShapeType()) {
+                            case CollisionShapeType::BOX:      shapeName = "box"; break;
+                            case CollisionShapeType::SPHERE:   shapeName = "sphere"; break;
+                            case CollisionShapeType::CAPSULE:  shapeName = "capsule"; break;
+                            case CollisionShapeType::CYLINDER: shapeName = "cylinder"; break;
+                            case CollisionShapeType::RAMP:     shapeName = "ramp"; break;
+                            case CollisionShapeType::PLANE:    shapeName = "plane"; break;
+                        }
+                        glm::vec3 dims = physicsComp->getShapeDimensions();
+                        lua_pushstring(L, shapeName);
+                        lua_pushnumber(L, dims.x);
+                        lua_pushnumber(L, dims.y);
+                        lua_pushnumber(L, dims.z);
+                        return 4;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushnil(L);
+        return 1;
+    });
+    lua_setglobal(luaState, "getNodeCollisionShapeInfo");
+
+    // Apply a continuous torque (perframe, scales with deltaTime inside Bullet)
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float x = luaL_checknumber(L, 2);
+        float y = luaL_checknumber(L, 3);
+        float z = luaL_checknumber(L, 4);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->applyTorque(glm::vec3(x, y, z));
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "applyNodeTorque");
+
+    // Apply an instantaneous torque impulse (independent of deltaTime)
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float x = luaL_checknumber(L, 2);
+        float y = luaL_checknumber(L, 3);
+        float z = luaL_checknumber(L, 4);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->applyTorqueImpulse(glm::vec3(x, y, z));
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "applyNodeTorqueImpulse");
+
+    // Apply a continuous force to a node PhysicsComponent, optionally at a local-space point relative to the body's center of mass 
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float fx = luaL_checknumber(L, 2);
+        float fy = luaL_checknumber(L, 3);
+        float fz = luaL_checknumber(L, 4);
+        float px = luaL_optnumber(L, 5, 0.0);
+        float py = luaL_optnumber(L, 6, 0.0);
+        float pz = luaL_optnumber(L, 7, 0.0);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->applyForce(glm::vec3(fx, fy, fz), glm::vec3(px, py, pz));
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "applyNodeForce");
+
+    // Apply an instantaneous impulse to a node's PhysicsComponent
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float ix = luaL_checknumber(L, 2);
+        float iy = luaL_checknumber(L, 3);
+        float iz = luaL_checknumber(L, 4);
+        float px = luaL_optnumber(L, 5, 0.0);
+        float py = luaL_optnumber(L, 6, 0.0);
+        float pz = luaL_optnumber(L, 7, 0.0);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->applyImpulse(glm::vec3(ix, iy, iz), glm::vec3(px, py, pz));
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "applyNodeImpulse");
+
+    // Opt a node's PhysicsComponent in/out of having its simulated ROTATION written back onto  its node (or parent, per the existing sync rules) every physics step
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        bool sync = lua_toboolean(L, 2) != 0;
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->setSyncRotationFromPhysics(sync);
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "setNodeSyncRotationFromPhysics");
+
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        lua_pushboolean(L, physicsComp->isSyncRotationFromPhysics());
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushboolean(L, true);
+        return 1;
+    });
+    lua_setglobal(luaState, "getNodeSyncRotationFromPhysics");
+
+    // isNodeColliding(nodeName) -> bool, True while the body is touching anything
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        lua_pushboolean(L, physicsComp->isColliding());
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_setglobal(luaState, "isNodeColliding");
+
+    // getNodeContactCount(nodeName) -> number of bodies currently touched
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        lua_pushinteger(L, static_cast<lua_Integer>(physicsComp->getContacts().size()));
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushinteger(L, 0);
+        return 1;
+    });
+    lua_setglobal(luaState, "getNodeContactCount");
+
+    // getNodeContacts(nodeName) -> array of node names being touched
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        lua_newtable(L);
+        int written = 0;
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        for (PhysicsComponent* other : physicsComp->getContacts()) {
+                            if (!other || !other->getOwner()) continue;
+                            lua_pushstring(L, other->getOwner()->getName().c_str());
+                            lua_rawseti(L, -2, ++written);
+                        }
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        return 1;
+    });
+    lua_setglobal(luaState, "getNodeContacts");
+
+    // areNodesColliding(nodeA, nodeB) -> bool
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeNameA = luaL_checkstring(L, 1);
+        const char* nodeNameB = luaL_checkstring(L, 2);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeNameA && nodeNameB) {
+                auto nodeA = activeScene->findNode(nodeNameA);
+                auto nodeB = activeScene->findNode(nodeNameB);
+                if (nodeA && nodeB) {
+                    auto compA = nodeA->getComponent<PhysicsComponent>();
+                    auto compB = nodeB->getComponent<PhysicsComponent>();
+                    if (compA && compB) {
+                        for (PhysicsComponent* other : compA->getContacts()) {
+                            if (other == compB) {
+                                lua_pushboolean(L, true);
+                                return 1;
+                            }
+                        }
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushboolean(L, false);
+        return 1;
+    });
+    lua_setglobal(luaState, "areNodesColliding");
+
+    // Set angular damping on a node's PhysicsComponent (how quickly spin bleeds off on its own)
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float damping = luaL_checknumber(L, 2);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->setAngularDamping(damping);
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "setNodeAngularDamping");
+
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        lua_pushnumber(L, physicsComp->getAngularDamping());
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushnumber(L, 0);
+        return 1;
+    });
+    lua_setglobal(luaState, "getNodeAngularDamping");
+
+    // Set linear damping on a node's PhysicsComponent
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+        float damping = luaL_checknumber(L, 2);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        physicsComp->setLinearDamping(damping);
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        return 0;
+    });
+    lua_setglobal(luaState, "setNodeLinearDamping");
+
+    lua_pushcfunction(luaState, [](lua_State* L) -> int {
+        const char* nodeName = luaL_checkstring(L, 1);
+
+#ifndef VITA_BUILD
+        try {
+#endif
+            auto& engine = GetEngine();
+            auto activeScene = engine.getSceneManager().getCurrentScene();
+            if (activeScene && nodeName) {
+                auto node = activeScene->findNode(nodeName);
+                if (node) {
+                    auto physicsComp = node->getComponent<PhysicsComponent>();
+                    if (physicsComp) {
+                        lua_pushnumber(L, physicsComp->getLinearDamping());
+                        return 1;
+                    }
+                }
+            }
+#ifndef VITA_BUILD
+        } catch (...) {
+        }
+#endif
+        lua_pushnumber(L, 0);
+        return 1;
+    });
+    lua_setglobal(luaState, "getNodeLinearDamping");
+
     // Generic node rotation setter - sets any node's rotation by name
     lua_pushcfunction(luaState, [](lua_State* L) -> int {
         const char* nodeName = luaL_checkstring(L, 1);
@@ -3963,57 +4543,146 @@ void ScriptComponent::bindArea3DToLua() {
             auto comp = components[i];
             if (comp && comp->getOwner()) {
                 lua_pushinteger(L, i + 1);
-                
+
                 // Create component table
                 lua_newtable(L);
+                const std::string savedNodeName = comp->getOwner()->getName();
                 lua_pushstring(L, "nodeName");
-                lua_pushstring(L, comp->getOwner()->getName().c_str());
+                lua_pushstring(L, savedNodeName.c_str());
                 lua_settable(L, -3);
-                
-                // Add same functions as getComponent
-                // (Simplified - in practice you'd share this code)
-                lua_pushstring(L, "getBodyCount");
-                lua_pushcfunction(L, [](lua_State* L) -> int {
-                    const char* nodeName = nullptr;
-                    lua_pushstring(L, "nodeName");
-                    lua_gettable(L, -2);
-                    if (lua_isstring(L, -1)) {
-                        nodeName = lua_tostring(L, -1);
-                    }
-                    lua_pop(L, 1);
-                    
-                    if (!nodeName) {
-                        lua_pushinteger(L, 0);
-                        return 1;
-                    }
-                    
+
+                // Same functions as getComponent
+                lua_pushstring(L, "getBodiesInArea");
+                lua_pushstring(L, savedNodeName.c_str());
+                lua_pushcclosure(L, [](lua_State* L) -> int {
+                    const char* nodeName = lua_tostring(L, lua_upvalueindex(1));
+                    if (nodeName) {
 #ifndef VITA_BUILD
-                    try {
+                        try {
 #endif
-                        auto& engine = GetEngine();
-                        auto& sceneManager = engine.getSceneManager();
-                        auto activeScene = sceneManager.getCurrentScene();
-                        
-                        if (activeScene) {
-                            auto node = activeScene->findNode(nodeName);
-                            if (node) {
-                                auto area3DComp = node->getComponent<Area3DComponent>();
-                                if (area3DComp) {
-                                    lua_pushinteger(L, area3DComp->getBodyCount());
-                                    return 1;
+                            auto& engine = GetEngine();
+                            auto& sceneManager = engine.getSceneManager();
+                            auto activeScene = sceneManager.getCurrentScene();
+                            if (activeScene) {
+                                auto node = activeScene->findNode(nodeName);
+                                if (node) {
+                                    auto area3DComp = node->getComponent<Area3DComponent>();
+                                    if (area3DComp) {
+                                        auto bodies = area3DComp->getBodiesInArea();
+                                        lua_newtable(L);
+                                        for (size_t bi = 0; bi < bodies.size(); ++bi) {
+                                            lua_pushinteger(L, bi + 1);
+                                            lua_pushstring(L, bodies[bi].c_str());
+                                            lua_settable(L, -3);
+                                        }
+                                        return 1;
+                                    }
                                 }
                             }
-                        }
 #ifndef VITA_BUILD
-                    } catch (...) {
-                    }
+                        } catch (...) {
+                        }
 #endif
-                    
+                    }
+                    lua_newtable(L);
+                    return 1;
+                }, 1);
+                lua_settable(L, -3);
+
+                lua_pushstring(L, "isBodyInArea");
+                lua_pushstring(L, savedNodeName.c_str());
+                lua_pushcclosure(L, [](lua_State* L) -> int {
+                    const char* nodeName = lua_tostring(L, lua_upvalueindex(1));
+                    const char* bodyName = luaL_checkstring(L, 1);
+                    if (nodeName && bodyName) {
+#ifndef VITA_BUILD
+                        try {
+#endif
+                            auto& engine = GetEngine();
+                            auto& sceneManager = engine.getSceneManager();
+                            auto activeScene = sceneManager.getCurrentScene();
+                            if (activeScene) {
+                                auto node = activeScene->findNode(nodeName);
+                                if (node) {
+                                    auto area3DComp = node->getComponent<Area3DComponent>();
+                                    if (area3DComp) {
+                                        lua_pushboolean(L, area3DComp->isBodyInArea(bodyName));
+                                        return 1;
+                                    }
+                                }
+                            }
+#ifndef VITA_BUILD
+                        } catch (...) {
+                        }
+#endif
+                    }
+                    lua_pushboolean(L, false);
+                    return 1;
+                }, 1);
+                lua_settable(L, -3);
+
+                lua_pushstring(L, "getBodyCount");
+                lua_pushstring(L, savedNodeName.c_str());
+                lua_pushcclosure(L, [](lua_State* L) -> int {
+                    const char* nodeName = lua_tostring(L, lua_upvalueindex(1));
+                    if (nodeName) {
+#ifndef VITA_BUILD
+                        try {
+#endif
+                            auto& engine = GetEngine();
+                            auto& sceneManager = engine.getSceneManager();
+                            auto activeScene = sceneManager.getCurrentScene();
+                            if (activeScene) {
+                                auto node = activeScene->findNode(nodeName);
+                                if (node) {
+                                    auto area3DComp = node->getComponent<Area3DComponent>();
+                                    if (area3DComp) {
+                                        lua_pushinteger(L, area3DComp->getBodyCount());
+                                        return 1;
+                                    }
+                                }
+                            }
+#ifndef VITA_BUILD
+                        } catch (...) {
+                        }
+#endif
+                    }
                     lua_pushinteger(L, 0);
                     return 1;
-                });
+                }, 1);
                 lua_settable(L, -3);
-                
+
+                lua_pushstring(L, "getGroup");
+                lua_pushstring(L, savedNodeName.c_str());
+                lua_pushcclosure(L, [](lua_State* L) -> int {
+                    const char* nodeName = lua_tostring(L, lua_upvalueindex(1));
+                    if (nodeName) {
+#ifndef VITA_BUILD
+                        try {
+#endif
+                            auto& engine = GetEngine();
+                            auto& sceneManager = engine.getSceneManager();
+                            auto activeScene = sceneManager.getCurrentScene();
+                            if (activeScene) {
+                                auto node = activeScene->findNode(nodeName);
+                                if (node) {
+                                    auto area3DComp = node->getComponent<Area3DComponent>();
+                                    if (area3DComp && area3DComp->hasGroup()) {
+                                        lua_pushstring(L, area3DComp->getGroup().c_str());
+                                        return 1;
+                                    }
+                                }
+                            }
+#ifndef VITA_BUILD
+                        } catch (...) {
+                        }
+#endif
+                    }
+                    lua_pushnil(L);
+                    return 1;
+                }, 1);
+                lua_settable(L, -3);
+
                 lua_settable(L, -3);
             }
         }

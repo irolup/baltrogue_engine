@@ -1,7 +1,7 @@
 TITLEID     := VSDK00420
-# Fallback build name, used only when config/build_settings.txt is missing or has
-# no name for the platform. The real names live there (pc:executableName,
-# vita:vpkName) and the editor writes them.
+# Fallback build name, used only when project.baltproj is missing or has no name
+# for the platform. The real names live there (pc:executableName, vita:vpkName)
+# and the editor writes them.
 TARGET      := Baltrogue
 EDITOR_TARGET := game_editor
 
@@ -38,7 +38,9 @@ endif
 VITA_LIBS = -lvitaGL -lSceLibKernel_stub -lSceAppMgr_stub -lSceAppUtil_stub -lSceIofilemgr_stub -lmathneon \
     -lc -lSceCommonDialog_stub -lm -lSceGxm_stub -lSceDisplay_stub -lSceSysmodule_stub \
     -lvitashark -lSceShaccCg_stub -lSceKernelDmacMgr_stub -lstdc++ -lSceCtrl_stub \
-    -lSceAudio_stub -lSceTouch_stub -ltoloader -lSceShaccCgExt -ltaihen_stub -lm -L$(VENDOR_SOURCES)/lua/lib -llua -lz
+    -lSceAudio_stub -lSceTouch_stub -ltoloader -lSceShaccCgExt -ltaihen_stub -lm \
+    -lScePower_stub \
+    -L$(VENDOR_SOURCES)/lua/lib -llua -lz
 
 # Linux-specific libraries (LINUX_VULKAN_LIBS set below when Vulkan sources exist)
 ifeq ($(USE_VULKAN),1)
@@ -79,21 +81,31 @@ VULKAN_SHADER_SPVS := $(addsuffix .spv,$(VULKAN_SHADERS))
 # Linux Editor libraries (no external ImGui needed, we compile our own)
 LINUX_EDITOR_LIBS = $(LINUX_LIBS)
 
+DEBUG ?= 0
+ifeq ($(DEBUG),1)
+BUILD_SUFFIX := _debug
+LINUX_BUILD_FLAGS := -O0 -DDEBUG
+else
+BUILD_SUFFIX :=
+LINUX_BUILD_FLAGS := -O2
+endif
+
 # Build directories
 BUILD_DIR := build
 ifeq ($(USE_VULKAN),1)
-LINUX_BUILD_DIR := build_linux
+LINUX_BUILD_DIR := build_linux$(BUILD_SUFFIX)
 else
-LINUX_BUILD_DIR := build_linux_gl
+LINUX_BUILD_DIR := build_linux_gl$(BUILD_SUFFIX)
 endif
-EDITOR_BUILD_DIR := build_editor
+EDITOR_BUILD_DIR := build_editor$(BUILD_SUFFIX)
 
-# Build names and Vita LiveArea assets.
-BUILD_SETTINGS := $(wildcard config/build_settings.txt)
+# Build names and Vita LiveArea assets. A project may
+# name its file after itself instead of using the conventional name
+PROJECT_FILE := $(firstword $(wildcard project.baltproj) $(sort $(wildcard *.baltproj)))
 LIVEAREA_SCRIPT := scripts/build_livearea.sh
 LIVEAREA_MANIFEST := $(BUILD_DIR)/livearea_files.txt
 
-build_setting = $(if $(BUILD_SETTINGS),$(shell sed -n 's/^$(1)=//p' $(BUILD_SETTINGS) | tail -n 1))
+build_setting = $(if $(PROJECT_FILE),$(shell sed -n 's/.*"$(1)"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' $(PROJECT_FILE) | tail -n 1))
 
 LINUX_TARGET := $(or $(call build_setting,pc:executableName),$(TARGET))
 LINUX_GAME := $(LINUX_BUILD_DIR)/$(LINUX_TARGET)
@@ -136,13 +148,12 @@ TINYGLTF_CPPFILES := $(wildcard $(TINYGLTF_SOURCES)/*.cc)
 # Include SceneSerializer.cpp for JSON scene loading in Vita builds
 # Include pthread stub for Vita (provides pthread compatibility for libstdc++)
 ALL_CFILES := $(ENGINE_CFILES) game_engine/src/App/pthread_stub.c
-ALL_CPPFILES := game_engine/src/App/vita_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp game_engine/src/Editor/BuildSettings.cpp game_engine/src/Scene/SceneBinaryFormat.cpp
+ALL_CPPFILES := game_engine/src/App/vita_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp game_engine/src/Scene/SceneBinaryFormat.cpp
 
 # Linux game source files (new game main + engine + platform, excluding editor and old game files)
-# Include SceneSerializer.cpp for JSON scene loading in game builds, and
-# BuildSettings.cpp so the game can read its window title at startup
+# Include SceneSerializer.cpp for JSON scene loading in game builds
 LINUX_GAME_CFILES := $(ENGINE_CFILES)
-LINUX_GAME_CPPFILES := game_engine/src/App/game_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp game_engine/src/Editor/BuildSettings.cpp game_engine/src/Scene/SceneBinaryFormat.cpp $(VULKAN_CPPFILES)
+LINUX_GAME_CPPFILES := game_engine/src/App/game_main.cpp game_engine/src/App/Platform.cpp $(filter-out game_engine/src/Editor/%, $(ENGINE_CPPFILES)) game_engine/src/Editor/SceneSerializer.cpp game_engine/src/Scene/SceneBinaryFormat.cpp $(VULKAN_CPPFILES)
 
 # Editor source files
 EDITOR_SOURCES := game_engine/src/Editor
@@ -189,7 +200,7 @@ ASFLAGS = $(CFLAGS)
 # Linux compiler flags
 LINUX_CC = gcc
 LINUX_CXX = g++
-LINUX_CFLAGS = -g -O2 -Wall
+LINUX_CFLAGS = -g $(LINUX_BUILD_FLAGS) -Wall
 LINUX_CXXFLAGS = $(LINUX_CFLAGS) -std=c++20 -DBT_THREADSAFE=1
 
 # Include paths
@@ -246,6 +257,7 @@ $(EDITOR_BUILD_DIR):
 # Vita VPK creation
 VPK_ASSETS := \
 	assets/shaders/lighting.vert=assets/shaders/lighting.vert \
+	assets/shaders/lighting_instanced.vert=assets/shaders/lighting_instanced.vert \
 	assets/shaders/lighting.frag=assets/shaders/lighting.frag \
 	assets/shaders/text.vert=assets/shaders/text.vert \
 	assets/shaders/text.frag=assets/shaders/text.frag \
@@ -254,8 +266,7 @@ VPK_ASSETS := \
 	assets/shaders/shadow_depth.vert=assets/shaders/shadow_depth.vert \
 	assets/shaders/shadow_depth.frag=assets/shaders/shadow_depth.frag \
 	config/default_input_mappings.txt=config/default_input_mappings.txt \
-	config/build_settings.txt=config/build_settings.txt \
-	assets/textures/memes/biden_diff_.png=biden_diff_.png \
+	$(PROJECT_FILE)=project.baltproj \
 	assets/textures/terrain/Grass_01_diff.png=Grass_01_diff.png \
 	assets/textures/terrain/stonetiles_002_diff.png=stonetiles_002_diff.png \
 	assets/textures/skyboxes/skybox_1/right.jpg=right.jpg \
@@ -272,6 +283,10 @@ VPK_ASSETS := \
 	assets/scenes/main_menu.bscn=assets/scenes/main_menu.bscn \
 	assets/scenes/level_1.bscn=assets/scenes/level_1.bscn \
 	assets/scenes/level_2.bscn=assets/scenes/level_2.bscn \
+	assets/scenes/level_3.bscn=assets/scenes/level_3.bscn \
+	assets/scenes/level_4.bscn=assets/scenes/level_4.bscn \
+	assets/scenes/level_5.bscn=assets/scenes/level_5.bscn \
+	assets/scenes/level_6.bscn=assets/scenes/level_6.bscn \
 	assets/scripts/main_menu.lua=assets/scripts/main_menu.lua \
 	assets/scripts/pause_menu.lua=assets/scripts/pause_menu.lua \
 	assets/scripts/ui/controls_panel.lua=assets/scripts/ui/controls_panel.lua \
@@ -283,6 +298,7 @@ VPK_ASSETS := \
 	assets/scripts/tire_game/tire_camera.lua=assets/scripts/tire_game/tire_camera.lua \
 	assets/scripts/tire_game/tire_camera_collision.lua=assets/scripts/tire_game/tire_camera_collision.lua \
 	assets/scripts/tire_game/tire_checkpoint.lua=assets/scripts/tire_game/tire_checkpoint.lua \
+	assets/scripts/tire_game/tire_fall.lua=assets/scripts/tire_game/tire_fall.lua \
 	assets/scripts/tire_game/tire_ground.lua=assets/scripts/tire_game/tire_ground.lua \
 	assets/scripts/tire_game/tire_hud.lua=assets/scripts/tire_game/tire_hud.lua \
 	assets/scripts/tire_game/tire_input.lua=assets/scripts/tire_game/tire_input.lua \
@@ -298,7 +314,7 @@ VPK_OPTIONAL_PRESENT := $(wildcard $(VPK_OPTIONAL_ASSETS))
 
 VPK_ASSET_SOURCES := $(foreach pair,$(VPK_ASSETS),$(firstword $(subst =, ,$(pair))))
 
-$(LIVEAREA_MANIFEST): $(BUILD_SETTINGS) $(LIVEAREA_SOURCES) $(LIVEAREA_SCRIPT) | $(BUILD_DIR)
+$(LIVEAREA_MANIFEST): $(PROJECT_FILE) $(LIVEAREA_SOURCES) $(LIVEAREA_SCRIPT) | $(BUILD_DIR)
 	$(LIVEAREA_SCRIPT) $@
 
 $(VITA_VPK): $(BUILD_DIR)/eboot.bin $(LIVEAREA_MANIFEST) $(VPK_ASSET_SOURCES) $(VPK_OPTIONAL_PRESENT)
@@ -419,18 +435,18 @@ $(EDITOR_BUILD_DIR)/vendor/imguizmo/%.o: vendor/imguizmo/%.cpp | $(EDITOR_BUILD_
 
 # Clean all builds
 clean:
-	@rm -rf $(BUILD_DIR) build_linux build_linux_gl $(EDITOR_BUILD_DIR)
+	@rm -rf $(BUILD_DIR) build_linux build_linux_debug build_linux_gl build_linux_gl_debug build_editor build_editor_debug
 	@find $(VULKAN_SHADER_DIR) -name "*.spv" -delete
 
 clean-vita:
 	@rm -rf $(BUILD_DIR)
 
 clean-linux:
-	@rm -rf build_linux build_linux_gl
+	@rm -rf build_linux build_linux_debug build_linux_gl build_linux_gl_debug
 	@find $(VULKAN_SHADER_DIR) -name "*.spv" -delete
 
 clean-editor:
-	@rm -rf $(EDITOR_BUILD_DIR)
+	@rm -rf build_editor build_editor_debug
 
 # Also drop the generated binary scenes (only needed if the converter changed)
 clean-scenes:
@@ -480,27 +496,35 @@ run-editor: editor
 	$(EDITOR_BUILD_DIR)/$(EDITOR_TARGET)
 
 # Debug builds
-ifeq ($(USE_VULKAN),1)
-debug-linux: LINUX_CXXFLAGS += -DENABLE_VULKAN -DDEBUG -O0
-else
-debug-linux: LINUX_CXXFLAGS += -DDEBUG -O0
-endif
-debug-linux: linux
+debug-linux:
+	@$(MAKE) linux DEBUG=1
 
-debug-editor: LINUX_CXXFLAGS += -DDEBUG -O0
-debug-editor: editor
+debug-editor:
+	@$(MAKE) editor DEBUG=1
+
+run-debug: debug-linux
+	$(MAKE) --no-print-directory run DEBUG=1
+
+run-editor-debug: debug-editor
+	$(MAKE) --no-print-directory run-editor DEBUG=1
 
 # Help target
 help:
 	@echo "Available targets:"
 	@echo "  vita           - Build for PS Vita (default)"
-	@echo "  livearea       - Build sce_sys/ from config/build_settings.txt only"
+	@echo "  livearea       - Build sce_sys/ from project.baltproj only"
 	@echo "  linux          - Build game for Linux (includes Rendering/Vulkan/*.cpp)"
 	@echo "  editor         - Build editor for Linux"
 	@echo "  run            - Run Linux game build"
 	@echo "  run-editor     - Run Linux editor build"
-	@echo "  debug-linux    - Build Linux game with debug symbols"
-	@echo "  debug-editor   - Build Linux editor with debug symbols"
+	@echo "  debug-linux    - Build Linux game -O0 -DDEBUG into build_linux_debug/"
+	@echo "  debug-editor   - Build Linux editor -O0 -DDEBUG into build_editor_debug/"
+	@echo "  run-debug      - Build and run the debug Linux game"
+	@echo "  run-editor-debug - Build and run the debug editor"
+	@echo ""
+	@echo "  DEBUG=1        - Same as the debug-* targets on any Linux/editor rule."
+	@echo "                   Debug objects live in their own tree, so switching"
+	@echo "                   between debug and release does not need a clean."
 	@echo "  build-bullet   - Build Bullet Physics libraries"
 	@echo "  clean          - Clean all build directories"
 	@echo "  clean-vita     - Clean only build/ (Vita objects + vpk)"

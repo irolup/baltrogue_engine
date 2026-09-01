@@ -16,6 +16,8 @@
 #include "Editor/BuildSystem.h"
 #include "Editor/NodeTemplateSerializer.h"
 
+struct GLFWwindow;
+
 namespace GameEngine {
 
 class Scene;
@@ -52,6 +54,9 @@ public:
     void selectNode(std::shared_ptr<SceneNode> node);
     std::shared_ptr<SceneNode> getSelectedNode() const { return selectedNode.lock(); }
     void clearSelection();
+
+    bool focusCameraOnNode(const std::shared_ptr<SceneNode>& node);
+    bool canFocusCamera() const { return cameraMode == CameraMode::EDITOR_CAMERA && editorCamera != nullptr; }
     
     bool isViewportFocused() const { return viewportFocused; }
     void setViewportFocused(bool focused) { viewportFocused = focused; }
@@ -74,7 +79,7 @@ public:
 
     std::shared_ptr<SceneNode> instantiateNodeSubtree(std::shared_ptr<SceneNode> source,
                                                        std::shared_ptr<SceneNode> parent,
-                                                       const std::string& rootNameSuffix = "_Copy");
+                                                       const std::string& rootNameSuffix = "");
     std::shared_ptr<SceneNode> instantiateTemplate(const std::string& filepath,
                                                    std::shared_ptr<SceneNode> parent);
     
@@ -83,7 +88,12 @@ public:
     bool loadSceneFromFile(const std::string& filepath);
     const std::string& getActiveSceneFilePath() const { return activeSceneFilePath_; }
     void createNewScene();
-    
+
+    void updateWindowTitle();
+
+    void requestProjectRestart(const std::string& projectFilePath);
+    const std::string& getRequestedProjectRestart() const { return requestedProjectRestart_; }
+
     glm::vec2 getViewportSize() const { return viewportSize; }
     void setViewportSize(const glm::vec2& size);
     std::unique_ptr<Framebuffer>& getViewportFramebuffer() { return viewportFramebuffer; }
@@ -110,11 +120,16 @@ public:
     void setShowNavMeshDebugEnabled(bool enabled) { showNavMeshDebug = enabled; }
 
 private:
+
+    static void handleFileDrop(GLFWwindow* window, int count, const char** paths);
+
     void buildGridMesh();
     void renderGridInViewport(CameraComponent* camera);
     void compileSceneBinary(const std::string& jsonPath);
     std::shared_ptr<Scene> activeScene;
+
     std::string activeSceneFilePath_;
+    std::string requestedProjectRestart_;
     std::weak_ptr<SceneNode> selectedNode;
     
     CameraMode cameraMode;
@@ -159,6 +174,9 @@ private:
 
     void createDefaultScene();
     void makeSubtreeNamesUnique(std::shared_ptr<SceneNode> node);
+
+    static void accumulateWorldBounds(const std::shared_ptr<SceneNode>& node, glm::vec3& outMin, glm::vec3& outMax, bool& hasBounds);
+    
     void updateCameraFlyState();
     void beginCameraFly();
     void endCameraFly();

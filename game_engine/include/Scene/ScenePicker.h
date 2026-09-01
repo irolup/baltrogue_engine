@@ -34,10 +34,11 @@ public:
     static float getEmptyNodePickRadius() { return emptyNodePickRadius; }
     static void setEmptyNodePickRadius(float radius) { emptyNodePickRadius = radius; }
 
+    static bool localBounds(SceneNode& node, glm::vec3& outMin, glm::vec3& outMax);
+
 private:
     static void collectNodes(const std::shared_ptr<SceneNode>& node,
                              std::vector<std::shared_ptr<SceneNode>>& outNodes);
-    static bool localBounds(SceneNode& node, glm::vec3& outMin, glm::vec3& outMax);
 
     static float emptyNodePickRadius;
 };

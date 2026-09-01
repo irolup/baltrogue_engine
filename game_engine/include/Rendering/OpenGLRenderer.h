@@ -3,6 +3,7 @@
 #include "Rendering/IRenderer.h"
 #include "Rendering/RenderTypes.h"
 #include "Rendering/Frustum.h"
+#include "Rendering/InstanceBatcher.h"
 #include "Rendering/ShadowAtlasGL.h"
 #include "Platform.h"
 #include <glm/glm.hpp>
@@ -53,6 +54,9 @@ public:
     void setCullFace(bool enabled) override;
     void setFrustumCulling(bool enabled) override { frustumCullingEnabled = enabled; }
     bool isFrustumCullingEnabled() const override { return frustumCullingEnabled; }
+
+    void setInstancingEnabled(bool enabled) { instancingEnabled = enabled; }
+    bool isInstancingEnabled() const { return instancingEnabled; }
     
     void updateLightingUniforms() override;
     glm::vec3 extractCameraPosition(const glm::mat4& viewMatrix) override;
@@ -84,9 +88,26 @@ private:
     ShadowAtlasGL shadowAtlas;
     bool shadowAtlasReady = false;
 
+    bool instancingEnabled = true;
+    bool instancingSupported = true;
+    InstanceBatcher instanceBatcher;
+    std::vector<uint8_t> cameraVisible;
+    GLuint instanceVBO = 0;
+    size_t instanceVBOCapacity = 0;
+
     void processRenderQueue();
     void setupCamera();
     void applyMaterial(const Material& material);
+
+    void cullRenderQueue();
+    void buildInstanceBatches();
+
+    bool drawInstanceBatches(const glm::vec3& cameraPos);
+    bool ensureInstanceBuffer(size_t bytes);
+
+    static bool isInstanceableShader(const RenderCommand& command);
+
+    void applyEnvironmentMap(Material& material) const;
     void updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projMatrix);
     void renderSkybox(Scene& scene);
     void renderTextNodes(SceneNode& node, const glm::mat4& parentTransform);

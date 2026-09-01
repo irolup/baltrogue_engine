@@ -70,18 +70,23 @@ void MenuManager::shutdown() {
     std::cout << "MenuManager: Shutdown complete" << std::endl;
 }
 
-std::string MenuManager::createMenu(const std::string& menuId, MenuType type) {
-    if (menus.find(menuId) != menus.end()) {
+std::string MenuManager::createMenu(const std::string& menuId, MenuType type, lua_State* ownerState) {
+    auto existing = menus.find(menuId);
+    if (existing != menus.end()) {
         std::cerr << "MenuManager: Menu '" << menuId << "' already exists" << std::endl;
+        if (ownerState) {
+            existing->second.ownerState = ownerState;
+        }
         return menuId;
     }
-    
+
     Menu menu;
     menu.id = menuId;
     menu.type = type;
     menu.state = MenuState::HIDDEN;
     menu.selectedIndex = 0;
-    
+    menu.ownerState = ownerState;
+
     if (type == MenuType::PAUSE_MENU || type == MenuType::MAIN_MENU) {
         menu.pauseGame = true;
     } else {
@@ -300,22 +305,20 @@ void MenuManager::activateSelectedItem(const std::string& menuId) {
     }
     
     if (!item.action.empty()) {
-        if (!luaState) {
-            luaState = ScriptManager::getInstance().getGlobalLuaState();
-        }
-        
-        if (luaState) {
-            lua_getglobal(luaState, item.action.c_str());
-            if (lua_isfunction(luaState, -1)) {
-                lua_pushstring(luaState, menuId.c_str());
-                lua_pushstring(luaState, item.id.c_str());
-                
-                if (lua_pcall(luaState, 2, 0, 0) != LUA_OK) {
-                    std::cerr << "MenuManager: Error calling menu item action: " << lua_tostring(luaState, -1) << std::endl;
-                    lua_pop(luaState, 1);
+        lua_State* L = resolveMenuState(menu);
+
+        if (L) {
+            lua_getglobal(L, item.action.c_str());
+            if (lua_isfunction(L, -1)) {
+                lua_pushstring(L, menuId.c_str());
+                lua_pushstring(L, item.id.c_str());
+
+                if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+                    std::cerr << "MenuManager: Error calling menu item action: " << lua_tostring(L, -1) << std::endl;
+                    lua_pop(L, 1);
                 }
             } else {
-                lua_pop(luaState, 1);
+                lua_pop(L, 1);
             }
             }
         }
@@ -428,25 +431,42 @@ void MenuManager::handleMenuInput() {
     }
 }
 
-void MenuManager::callMenuCallback(const std::string& callbackName, const std::string& menuId) {
+lua_State* MenuManager::resolveMenuState(const Menu& menu) {
+    if (menu.ownerState) {
+        return menu.ownerState;
+    }
+
     if (!luaState) {
         luaState = ScriptManager::getInstance().getGlobalLuaState();
     }
-    
-    if (!luaState || callbackName.empty()) {
+    return luaState;
+}
+
+void MenuManager::callMenuCallback(const std::string& callbackName, const std::string& menuId) {
+    if (callbackName.empty()) {
         return;
     }
-    
-    lua_getglobal(luaState, callbackName.c_str());
-    if (lua_isfunction(luaState, -1)) {
-        lua_pushstring(luaState, menuId.c_str());
-        if (lua_pcall(luaState, 1, 0, 0) != LUA_OK) {
-            std::cerr << "MenuManager: Error calling menu callback '" << callbackName << "': " 
-                      << lua_tostring(luaState, -1) << std::endl;
-            lua_pop(luaState, 1);
+
+    auto it = menus.find(menuId);
+    if (it == menus.end()) {
+        return;
+    }
+
+    lua_State* L = resolveMenuState(it->second);
+    if (!L) {
+        return;
+    }
+
+    lua_getglobal(L, callbackName.c_str());
+    if (lua_isfunction(L, -1)) {
+        lua_pushstring(L, menuId.c_str());
+        if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+            std::cerr << "MenuManager: Error calling menu callback '" << callbackName << "': "
+                      << lua_tostring(L, -1) << std::endl;
+            lua_pop(L, 1);
         }
     } else {
-        lua_pop(luaState, 1);
+        lua_pop(L, 1);
     }
 }
 
@@ -468,6 +488,12 @@ void MenuManager::onLuaStateClosed(lua_State* L) {
     if (luaState == L) {
         luaState = nullptr;
     }
+
+    for (auto& entry : menus) {
+        if (entry.second.ownerState == L) {
+            entry.second.ownerState = nullptr;
+        }
+    }
 }
 
 void MenuManager::bindToLua(lua_State* L) {
@@ -482,7 +508,7 @@ void MenuManager::bindToLua(lua_State* L) {
     lua_pushcfunction(L, [](lua_State* L) -> int {
         const char* menuId = luaL_checkstring(L, 1);
         int type = luaL_optinteger(L, 2, static_cast<int>(MenuType::CUSTOM));
-        MenuManager::getInstance().createMenu(menuId, static_cast<MenuType>(type));
+        MenuManager::getInstance().createMenu(menuId, static_cast<MenuType>(type), L);
         return 0;
     });
     lua_setfield(L, -2, "createMenu");

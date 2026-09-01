@@ -59,14 +59,17 @@ struct Menu {
     
     bool showBackground;
     glm::vec4 backgroundColor;
-    
-    Menu() 
+
+    lua_State* ownerState;
+
+    Menu()
         : type(MenuType::CUSTOM)
         , state(MenuState::HIDDEN)
         , selectedIndex(0)
         , pauseGame(true)
         , showBackground(true)
         , backgroundColor(0.0f, 0.0f, 0.0f, 0.7f)
+        , ownerState(nullptr)
     {}
 };
 
@@ -78,7 +81,7 @@ public:
     void shutdown();
     ~MenuManager();
     
-    std::string createMenu(const std::string& menuId, MenuType type = MenuType::CUSTOM);
+    std::string createMenu(const std::string& menuId, MenuType type = MenuType::CUSTOM, lua_State* ownerState = nullptr);
     bool removeMenu(const std::string& menuId);
     Menu* getMenu(const std::string& menuId);
     
@@ -126,6 +129,8 @@ private:
     void handleMenuInput();
     
     void callMenuCallback(const std::string& callbackName, const std::string& menuId);
+
+    lua_State* resolveMenuState(const Menu& menu);
     
     void renderMenuBackground(IRenderer& renderer, const Menu& menu);
     void renderMenuItems(IRenderer& renderer, const Menu& menu);

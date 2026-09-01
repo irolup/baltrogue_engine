@@ -131,34 +131,27 @@ vk::DescriptorBufferInfo VulkanResources::getAnimationDescriptorBufferInfo(uint3
     return info;
 }
 
-void VulkanResources::ensureTextMaterialUniformBuffer(const TextMaterial* material, const TextMaterialUniforms& data) {
+void VulkanResources::ensureTextMaterialUniformBuffer(const TextMaterial* material, uint32_t imageIndex, const TextMaterialUniforms& data) {
     if (!material) return;
-    auto it = textMaterialUniformBuffers_.find(material);
-    vk::DeviceSize dataSize = sizeof(TextMaterialUniforms);
-    if (it != textMaterialUniformBuffers_.end()) {
-        // Update existing buffer
-        auto& mb = it->second;
-        if (mb.size == dataSize) {
-            void* mem = mb.memory.mapMemory(0, dataSize);
-            memcpy(mem, &data, static_cast<size_t>(dataSize));
-            mb.memory.unmapMemory();
-            return;
-        }
+
+    const uint32_t slotCount = getFrameSlotCount();
+    if (imageIndex >= slotCount) return;
+
+    std::vector<TextMaterialBuffer>& buffers = textMaterialUniformBuffers_[material];
+    if (buffers.size() != slotCount) {
+        buffers.clear();
+        buffers.resize(slotCount);
     }
 
-    vk::raii::Buffer buf = nullptr;
-    vk::raii::DeviceMemory mem = nullptr;
-    createBuffer(dataSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buf, mem);
-    void* mapped = mem.mapMemory(0, dataSize);
+    const vk::DeviceSize dataSize = sizeof(TextMaterialUniforms);
+    TextMaterialBuffer& materialBuffer = buffers[imageIndex];
+    if (materialBuffer.size != dataSize) {
+        createBuffer( dataSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, materialBuffer.buffer, materialBuffer.memory); materialBuffer.size = dataSize;
+    }
+
+    void* mapped = materialBuffer.memory.mapMemory(0, dataSize);
     memcpy(mapped, &data, static_cast<size_t>(dataSize));
-    mem.unmapMemory();
-
-    TextMaterialBuffer mb{};
-    mb.buffer = std::move(buf);
-    mb.memory = std::move(mem);
-    mb.size = dataSize;
-
-    textMaterialUniformBuffers_.emplace(material, std::move(mb));
+    materialBuffer.memory.unmapMemory();
 }
 
 vk::DescriptorBufferInfo VulkanResources::getMaterialDescriptorBufferInfo(const Material* material, uint32_t imageIndex) const {
@@ -187,14 +180,16 @@ vk::DescriptorBufferInfo VulkanResources::getShaderMaterialDescriptorBufferInfo(
     return info;
 }
 
-vk::DescriptorBufferInfo VulkanResources::getTextMaterialDescriptorBufferInfo(const TextMaterial* material) const {
+vk::DescriptorBufferInfo VulkanResources::getTextMaterialDescriptorBufferInfo(const TextMaterial* material, uint32_t imageIndex) const {
     vk::DescriptorBufferInfo info{};
     if (!material) return info;
     auto it = textMaterialUniformBuffers_.find(material);
-    if (it == textMaterialUniformBuffers_.end()) return info;
-    info.buffer = *it->second.buffer;
+    if (it == textMaterialUniformBuffers_.end() || imageIndex >= it->second.size()) return info;
+    const TextMaterialBuffer& materialBuffer = it->second[imageIndex];
+    if (materialBuffer.size == 0) return info;
+    info.buffer = *materialBuffer.buffer;
     info.offset = 0;
-    info.range = it->second.size;
+    info.range = materialBuffer.size;
     return info;
 }
 
@@ -235,6 +230,57 @@ vk::raii::Buffer& VulkanResources::getUniformBuffer(uint32_t index) {
 vk::raii::DeviceMemory& VulkanResources::getUniformBufferMemory(uint32_t index) {
     if (index >= uniformBuffersMemory_.size()) throw std::out_of_range("uniform buffer memory index out of range");
     return uniformBuffersMemory_[index];
+}
+
+bool VulkanResources::ensureInstanceBuffer(uint32_t imageIndex, vk::DeviceSize size) {
+    const uint32_t slotCount = getFrameSlotCount();
+    if (imageIndex >= slotCount || size == 0) {
+        return false;
+    }
+
+    if (instanceBuffers_.size() < slotCount) {
+        instanceBuffers_.resize(slotCount);
+    }
+
+    InstanceBuffer& slot = instanceBuffers_[imageIndex];
+    if (slot.mapped && slot.size >= size) {
+        return true;
+    }
+
+    vk::DeviceSize newSize = slot.size > 0 ? slot.size : 1024;
+    while (newSize < size) {
+        newSize *= 2;
+    }
+
+    vk::raii::Buffer buffer = nullptr;
+    vk::raii::DeviceMemory memory = nullptr;
+    createBuffer(newSize, vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer, memory);
+
+    void* mapped = memory.mapMemory(0, newSize);
+    if (!mapped) {
+        return false;
+    }
+
+    slot.buffer = std::move(buffer);
+    slot.memory = std::move(memory);
+    slot.mapped = mapped;
+    slot.size = newSize;
+    return true;
+}
+
+bool VulkanResources::writeInstanceBuffer(uint32_t imageIndex, const void* data, vk::DeviceSize size) {
+    if (!data || !ensureInstanceBuffer(imageIndex, size)) {
+        return false;
+    }
+    memcpy(instanceBuffers_[imageIndex].mapped, data, static_cast<size_t>(size));
+    return true;
+}
+
+vk::Buffer VulkanResources::getInstanceBuffer(uint32_t imageIndex) const {
+    if (imageIndex >= instanceBuffers_.size() || !instanceBuffers_[imageIndex].mapped) {
+        return nullptr;
+    }
+    return *instanceBuffers_[imageIndex].buffer;
 }
 
 

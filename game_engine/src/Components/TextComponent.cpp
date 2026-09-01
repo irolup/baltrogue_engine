@@ -25,6 +25,8 @@
 
 namespace GameEngine {
 
+uint32_t TextMaterial::nextRevision = 0;
+
 // Static maps for editor UI buffers - declared at namespace level to persist
 static std::map<TextComponent*, std::string> textBuffers;
 static std::map<TextComponent*, std::string> fontPathBuffers;
@@ -265,7 +267,11 @@ void TextComponent::setColor(const glm::vec4& newColor) {
     if (color != newColor) {
         color = newColor;
         needsUpdate = true;
-        
+
+        if (textMaterial) {
+            textMaterial->setColor(color);
+        }
+
         // In editor mode, immediately update the mesh since update() might not be called
         #ifdef EDITOR_BUILD
         if (isInitialized && needsUpdate) {
@@ -471,7 +477,7 @@ void TextComponent::initializeFont() {
 
         textMaterial = std::make_shared<TextMaterial>();
         textMaterial->fontAtlas = atlas;
-        textMaterial->color = color;
+        textMaterial->setColor(color);
 
         return;
 

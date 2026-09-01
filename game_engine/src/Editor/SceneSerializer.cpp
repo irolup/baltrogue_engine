@@ -33,6 +33,7 @@ using json = nlohmann::json;
 #include <iostream>
 #include <sstream>
 #include <map>
+#include <unordered_map>
 #include <algorithm>
 
 #ifdef LINUX_BUILD
@@ -121,10 +122,11 @@ bool SceneSerializer::saveSceneToFile(std::shared_ptr<Scene> scene, const std::s
 #else
     try {
         std::string jsonData = serializeSceneToJson(scene);
-        
-        std::ofstream file(filepath);
+
+        const std::string outputPath = AssetPaths::resolve(filepath);
+        std::ofstream file(outputPath);
         if (!file.is_open()) {
-            std::cerr << "Failed to open file for writing: " << filepath << std::endl;
+            std::cerr << "Failed to open file for writing: " << outputPath << std::endl;
             return false;
         }
         
@@ -249,7 +251,9 @@ std::shared_ptr<Scene> SceneSerializer::deserializeSceneFromJson(const json& sce
 #endif
         std::string sceneName = sceneJson.value("name", "Loaded Scene");
         auto scene = std::make_shared<Scene>(sceneName);
-        
+
+        clearMaterialCache();
+
         scene->getRootNode()->removeAllChildren();
         
         if (sceneJson.contains("physics") && sceneJson["physics"].is_object() && sceneJson["physics"].contains("gravity") && sceneJson["physics"]["gravity"].is_array() && sceneJson["physics"]["gravity"].size() >= 3) {
@@ -817,6 +821,157 @@ nlohmann::json SceneSerializer::serializeNodeToJson(std::shared_ptr<SceneNode> n
     return nodeJson;
 }
 
+static std::unordered_map<std::string, std::shared_ptr<Material>>& sharedMaterialCache() {
+    static std::unordered_map<std::string, std::shared_ptr<Material>> cache;
+    return cache;
+}
+
+void SceneSerializer::clearMaterialCache() {
+    sharedMaterialCache().clear();
+}
+
+std::shared_ptr<Material> SceneSerializer::getOrCreateSharedMaterial(const json& materialJson) {
+    const std::string cacheKey = materialJson.dump();
+    auto& cache = sharedMaterialCache();
+
+    auto found = cache.find(cacheKey);
+    if (found != cache.end()) {
+        found->second->setSharedInstance(true);
+        return found->second;
+    }
+
+    auto material = std::make_shared<Material>();
+
+    if (materialJson.contains("color")) {
+        auto color = materialJson["color"];
+        if (color.is_array() && color.size() >= 3) {
+            material->setColor(glm::vec3(color[0], color[1], color[2]));
+        }
+    }
+
+    if (materialJson.contains("metallic")) {
+        material->setMetallic(materialJson["metallic"]);
+    }
+    if (materialJson.contains("roughness")) {
+        material->setRoughness(materialJson["roughness"]);
+    }
+    if (materialJson.contains("reflectionStrength")) {
+        material->setReflectionStrength(materialJson["reflectionStrength"]);
+    }
+    if (materialJson.contains("blendMode")) {
+        std::string bm = materialJson["blendMode"];
+        if (bm == "Alpha") material->setBlendMode(BlendMode::Alpha);
+        else if (bm == "Additive") material->setBlendMode(BlendMode::Additive);
+        else material->setBlendMode(BlendMode::Opaque);
+    }
+    if (materialJson.contains("opacity")) {
+        material->setOpacity(materialJson["opacity"]);
+    }
+    if (materialJson.contains("depthWrite")) {
+        material->setDepthWrite(materialJson["depthWrite"]);
+    }
+    if (materialJson.contains("uvScale") && materialJson["uvScale"].is_array() && materialJson["uvScale"].size() >= 2) {
+        auto uvScale = materialJson["uvScale"];
+        material->setUVScale(glm::vec2(uvScale[0], uvScale[1]));
+    }
+    if (materialJson.contains("uvOffset") && materialJson["uvOffset"].is_array() && materialJson["uvOffset"].size() >= 2) {
+        auto uvOffset = materialJson["uvOffset"];
+        material->setUVOffset(glm::vec2(uvOffset[0], uvOffset[1]));
+    }
+
+    auto& textureManager = TextureManager::getInstance();
+
+    if (materialJson.contains("diffuseTexture")) {
+        std::string diffusePath = materialJson["diffuseTexture"];
+        auto diffuseTexture = textureManager.getTexture(diffusePath);
+        if (diffuseTexture) {
+            material->setDiffuseTexture(diffuseTexture, diffusePath);
+        }
+    }
+
+    if (materialJson.contains("normalTexture")) {
+        std::string normalPath = materialJson["normalTexture"];
+        auto normalTexture = textureManager.getTexture(normalPath);
+        if (normalTexture) {
+            material->setNormalTexture(normalTexture, normalPath);
+        }
+    }
+
+    if (materialJson.contains("armTexture")) {
+        std::string armPath = materialJson["armTexture"];
+        auto armTexture = textureManager.getTexture(armPath);
+        if (armTexture) {
+            material->setARMTexture(armTexture, armPath);
+        }
+    }
+
+    bool loadedLinuxPaths = false;
+    bool loadedVitaPaths = false;
+
+    if (materialJson.contains("shaderVertexPathLinux") && materialJson.contains("shaderFragmentPathLinux")) {
+        std::string linuxVertexPath = materialJson["shaderVertexPathLinux"];
+        std::string linuxFragmentPath = materialJson["shaderFragmentPathLinux"];
+        if (!linuxVertexPath.empty() && !linuxFragmentPath.empty()) {
+            material->setShaderFromPathsForPlatform(linuxVertexPath, linuxFragmentPath, "linux");
+            loadedLinuxPaths = true;
+        }
+    }
+
+    if (materialJson.contains("shaderVertexPathVita") && materialJson.contains("shaderFragmentPathVita")) {
+        std::string vitaVertexPath = materialJson["shaderVertexPathVita"];
+        std::string vitaFragmentPath = materialJson["shaderFragmentPathVita"];
+        if (!vitaVertexPath.empty() && !vitaFragmentPath.empty()) {
+            material->setShaderFromPathsForPlatform(vitaVertexPath, vitaFragmentPath, "vita");
+            loadedVitaPaths = true;
+        }
+    }
+
+    if (materialJson.contains("shaderVertexPathVulkan") && materialJson.contains("shaderFragmentPathVulkan")) {
+        std::string vulkanVertexPath = materialJson["shaderVertexPathVulkan"];
+        std::string vulkanFragmentPath = materialJson["shaderFragmentPathVulkan"];
+        if (!vulkanVertexPath.empty() && !vulkanFragmentPath.empty()) {
+            material->setShaderFromPathsForPlatform(vulkanVertexPath, vulkanFragmentPath, "vulkan");
+        }
+    }
+
+    if (!loadedLinuxPaths && !loadedVitaPaths &&
+        materialJson.contains("shaderVertexPath") && materialJson.contains("shaderFragmentPath")) {
+        std::string vertexPath = materialJson["shaderVertexPath"];
+        std::string fragmentPath = materialJson["shaderFragmentPath"];
+        if (!vertexPath.empty() && !fragmentPath.empty()) {
+            if (vertexPath.find("linux_shaders") != std::string::npos ||
+                fragmentPath.find("linux_shaders") != std::string::npos) {
+                material->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "linux");
+            } else if (vertexPath.find("assets/vulkan") != std::string::npos ||
+                       fragmentPath.find("assets/vulkan") != std::string::npos) {
+                material->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "vulkan");
+            } else {
+                material->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "vita");
+            }
+        }
+    }
+
+    if (materialJson.contains("customTextureUniforms") && materialJson["customTextureUniforms"].is_array()) {
+        for (const auto& entry : materialJson["customTextureUniforms"]) {
+            if (entry.contains("name") && entry.contains("path")) {
+                std::string name = entry["name"];
+                std::string path = entry["path"];
+                if (!name.empty() && !path.empty()) {
+                    material->addCustomTextureUniform(name, path);
+                }
+            }
+        }
+    }
+
+    auto& shaderManager = ShaderManager::getInstance();
+    if (material->getShader() && material->getShader()->isValid()) {
+        shaderManager.registerShaderType(material->getShader(), ShaderType::Lit);
+    }
+
+    cache.emplace(cacheKey, material);
+    return material;
+}
+
 std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& nodeJson) {
 #ifndef VITA_BUILD
     try {
@@ -828,7 +983,6 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
         node->setVisible(nodeJson.value("visible", true));
         node->setActive(nodeJson.value("active", true));
         
-        // Transform
         if (nodeJson.contains("transform")) {
             auto& transform = node->getTransform();
             auto& transformJson = nodeJson["transform"];
@@ -855,7 +1009,6 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
             }
         }
         
-        // Components
         if (nodeJson.contains("components") && nodeJson["components"].is_array()) {
             auto& componentsArray = nodeJson["components"];
 #ifdef LINUX_BUILD
@@ -878,8 +1031,6 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     if (componentJson.contains("farPlane")) {
                         cameraComp->setFarPlane(componentJson["farPlane"]);
                     }
-                    // Don't restore active state from JSON here - let scene->setActiveCamera() handle it
-                    // This ensures the scene's activeCamera reference and component state stay in sync
                 } else if (type == "MeshRenderer") {
                     auto meshRenderer = node->addComponent<MeshRenderer>();
                     
@@ -911,135 +1062,7 @@ std::shared_ptr<SceneNode> SceneSerializer::deserializeNodeFromJson(const json& 
                     }
                     
                     if (componentJson.contains("material")) {
-                        auto material = std::make_shared<Material>();
-                        auto& materialJson = componentJson["material"];
-                        if (materialJson.contains("color")) {
-                            auto color = materialJson["color"];
-                            if (color.is_array() && color.size() >= 3) {
-                                material->setColor(glm::vec3(color[0], color[1], color[2]));
-                            }
-                        }
-                        
-                        if (materialJson.contains("metallic")) {
-                            material->setMetallic(materialJson["metallic"]);
-                        }
-                        if (materialJson.contains("roughness")) {
-                            material->setRoughness(materialJson["roughness"]);
-                        }
-                        if (materialJson.contains("reflectionStrength")) {
-                            material->setReflectionStrength(materialJson["reflectionStrength"]);
-                        }
-                        if (materialJson.contains("blendMode")) {
-                            std::string bm = materialJson["blendMode"];
-                            if (bm == "Alpha") material->setBlendMode(BlendMode::Alpha);
-                            else if (bm == "Additive") material->setBlendMode(BlendMode::Additive);
-                            else material->setBlendMode(BlendMode::Opaque);
-                        }
-                        if (materialJson.contains("opacity")) {
-                            material->setOpacity(materialJson["opacity"]);
-                        }
-                        if (materialJson.contains("depthWrite")) {
-                            material->setDepthWrite(materialJson["depthWrite"]);
-                        }
-                        if (materialJson.contains("uvScale") && materialJson["uvScale"].is_array() && materialJson["uvScale"].size() >= 2) {
-                            auto uvScale = materialJson["uvScale"];
-                            material->setUVScale(glm::vec2(uvScale[0], uvScale[1]));
-                        }
-                        if (materialJson.contains("uvOffset") && materialJson["uvOffset"].is_array() && materialJson["uvOffset"].size() >= 2) {
-                            auto uvOffset = materialJson["uvOffset"];
-                            material->setUVOffset(glm::vec2(uvOffset[0], uvOffset[1]));
-                        }
-                        
-                        auto& textureManager = TextureManager::getInstance();
-                        
-                        if (materialJson.contains("diffuseTexture")) {
-                            std::string diffusePath = materialJson["diffuseTexture"];
-                            auto diffuseTexture = textureManager.getTexture(diffusePath);
-                            if (diffuseTexture) {
-                                material->setDiffuseTexture(diffuseTexture, diffusePath);
-                            }
-                        }
-                        
-                        if (materialJson.contains("normalTexture")) {
-                            std::string normalPath = materialJson["normalTexture"];
-                            auto normalTexture = textureManager.getTexture(normalPath);
-                            if (normalTexture) {
-                                material->setNormalTexture(normalTexture, normalPath);
-                            }
-                        }
-                        
-                        if (materialJson.contains("armTexture")) {
-                            std::string armPath = materialJson["armTexture"];
-                            auto armTexture = textureManager.getTexture(armPath);
-                            if (armTexture) {
-                                material->setARMTexture(armTexture, armPath);
-                            }
-                        }
-                        
-                        bool loadedLinuxPaths = false;
-                        bool loadedVitaPaths = false;
-                        
-                        if (materialJson.contains("shaderVertexPathLinux") && materialJson.contains("shaderFragmentPathLinux")) {
-                            std::string linuxVertexPath = materialJson["shaderVertexPathLinux"];
-                            std::string linuxFragmentPath = materialJson["shaderFragmentPathLinux"];
-                            if (!linuxVertexPath.empty() && !linuxFragmentPath.empty()) {
-                                material->setShaderFromPathsForPlatform(linuxVertexPath, linuxFragmentPath, "linux");
-                                loadedLinuxPaths = true;
-                            }
-                        }
-                        
-                        if (materialJson.contains("shaderVertexPathVita") && materialJson.contains("shaderFragmentPathVita")) {
-                            std::string vitaVertexPath = materialJson["shaderVertexPathVita"];
-                            std::string vitaFragmentPath = materialJson["shaderFragmentPathVita"];
-                            if (!vitaVertexPath.empty() && !vitaFragmentPath.empty()) {
-                                material->setShaderFromPathsForPlatform(vitaVertexPath, vitaFragmentPath, "vita");
-                                loadedVitaPaths = true;
-                            }
-                        }
-
-                        if (materialJson.contains("shaderVertexPathVulkan") && materialJson.contains("shaderFragmentPathVulkan")) {
-                            std::string vulkanVertexPath = materialJson["shaderVertexPathVulkan"];
-                            std::string vulkanFragmentPath = materialJson["shaderFragmentPathVulkan"];
-                            if (!vulkanVertexPath.empty() && !vulkanFragmentPath.empty()) {
-                                material->setShaderFromPathsForPlatform(vulkanVertexPath, vulkanFragmentPath, "vulkan");
-                            }
-                        }
-                        
-                        if (!loadedLinuxPaths && !loadedVitaPaths && 
-                            materialJson.contains("shaderVertexPath") && materialJson.contains("shaderFragmentPath")) {
-                            std::string vertexPath = materialJson["shaderVertexPath"];
-                            std::string fragmentPath = materialJson["shaderFragmentPath"];
-                            if (!vertexPath.empty() && !fragmentPath.empty()) {
-                                if (vertexPath.find("linux_shaders") != std::string::npos || 
-                                    fragmentPath.find("linux_shaders") != std::string::npos) {
-                                    material->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "linux");
-                                } else if (vertexPath.find("assets/vulkan") != std::string::npos ||
-                                           fragmentPath.find("assets/vulkan") != std::string::npos) {
-                                    material->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "vulkan");
-                                } else {
-                                    material->setShaderFromPathsForPlatform(vertexPath, fragmentPath, "vita");
-                                }
-                            }
-                        }
-                        
-                        if (materialJson.contains("customTextureUniforms") && materialJson["customTextureUniforms"].is_array()) {
-                            for (const auto& entry : materialJson["customTextureUniforms"]) {
-                                if (entry.contains("name") && entry.contains("path")) {
-                                    std::string name = entry["name"];
-                                    std::string path = entry["path"];
-                                    if (!name.empty() && !path.empty()) {
-                                        material->addCustomTextureUniform(name, path);
-                                    }
-                                }
-                            }
-                        }
-                        
-                        auto& shaderManager = ShaderManager::getInstance();
-                        if (material->getShader() && material->getShader()->isValid()) {
-                            shaderManager.registerShaderType(material->getShader(), ShaderType::Lit);
-                        }
-                        
-                        meshRenderer->setMaterial(material);
+                        meshRenderer->setMaterial(getOrCreateSharedMaterial(componentJson["material"]));
                     }
                 } else if (type == "BeamRenderer") {
                     auto beamRenderer = node->addComponent<BeamRenderer>();

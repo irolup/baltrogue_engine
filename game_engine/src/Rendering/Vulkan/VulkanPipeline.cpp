@@ -1,5 +1,6 @@
 #include "Rendering/Vulkan/VulkanPipeline.h"
 #include "Core/AssetPaths.h"
+#include "Rendering/InstanceBatcher.h"
 #include "Rendering/Material.h"
 #include "Rendering/TextMaterial.h"
 #include "Rendering/ShadowMap.h"
@@ -12,6 +13,7 @@ namespace GameEngine {
 
 namespace {
 constexpr const char* kDefaultVertexShaderSpvPath = "assets/vulkan/default_lit.vert.spv";
+constexpr const char* kDefaultInstancedVertexShaderSpvPath = "assets/vulkan/default_lit_instanced.vert.spv";
 constexpr const char* kDefaultFragmentShaderSpvPath = "assets/vulkan/default_lit.frag.spv";
 constexpr const char* kTextVertexShaderSpvPath = "assets/vulkan/text.vert.spv";
 constexpr const char* kTextFragmentShaderSpvPath = "assets/vulkan/text.frag.spv";
@@ -35,7 +37,9 @@ void VulkanPipeline::create(VulkanDevice& device, VulkanResources& vulkanResourc
     createTextDescriptorSetLayout();
 
     createGraphicsPipeline();
-    createTextPipeline();
+    createInstancedGraphicsPipeline();
+    createTextPipeline(false, textPipeline_);
+    createTextPipeline(true, worldTextPipeline_);
     createSkyboxPipeline();
     createBeamPipeline();
 
@@ -144,7 +148,8 @@ void VulkanPipeline::createDescriptorPoolAndSets() {
     uint32_t shaderMaterialDescriptorCapacity = std::max<uint32_t>(imageCount * 64, imageCount);
     uint32_t customTextureDescriptorCapacity = shaderMaterialDescriptorCapacity;
     uint32_t animationDescriptorCapacity = kMaxSkinnedDrawsPerFrame * imageCount;
-    uint32_t textMaterialDescriptorCapacity = std::max<uint32_t>(imageCount * 16, imageCount);
+    const uint32_t maxTextMaterialsPerScene = 16;
+    uint32_t textMaterialDescriptorCapacity = maxTextMaterialsPerScene * imageCount;
     std::array poolSizes = {
         vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, imageCount + materialDescriptorCapacity + shaderMaterialDescriptorCapacity + animationDescriptorCapacity + textMaterialDescriptorCapacity),
         // + imageCount for the shadow atlas bound alongside each frame UBO.
@@ -623,37 +628,20 @@ vk::DescriptorSet VulkanPipeline::getOrUpdateEnvironmentDescriptorSet( const Fra
     return **environmentDescriptorSet_;
 }
 
-vk::DescriptorSet VulkanPipeline::getOrCreateTextDescriptorSet(const TextMaterial* material, const VulkanResources::VulkanTexture& atlasTexture){
-    auto it = textMaterialDescriptorSets_.find(material);
-    if (it != textMaterialDescriptorSets_.end()) {
-        const vk::DescriptorBufferInfo bufferInfo = resources_->getTextMaterialDescriptorBufferInfo(material);
-        if (bufferInfo.buffer) {
-            return *it->second;
-        }
-        textMaterialDescriptorSets_.erase(it);
-    }
-
-    vk::DescriptorSetAllocateInfo allocInfo{};
-    allocInfo.descriptorPool = *descriptorPool_;
-    vk::DescriptorSetLayout layout = *textDescriptorSetLayout_;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &layout;
-
-    auto sets = device_->getDevice().allocateDescriptorSets(allocInfo);
-    vk::raii::DescriptorSet set = std::move(sets.front());
-
+void VulkanPipeline::writeTextDescriptorSet(vk::DescriptorSet set, const TextMaterial* material, const VulkanResources::VulkanTexture& atlasTexture, uint32_t imageIndex) {
     if (material) {
         TextMaterialUniforms mu{};
         mu.color = material->getColor();
-        resources_->ensureTextMaterialUniformBuffer(material, mu);
+        resources_->ensureTextMaterialUniformBuffer(material, imageIndex, mu);
     }
+
     vk::DescriptorImageInfo diffuseInfo{};
     diffuseInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     diffuseInfo.imageView = *atlasTexture.view;
     diffuseInfo.sampler = *atlasTexture.sampler;
 
+    vk::DescriptorBufferInfo bufferInfo = resources_->getTextMaterialDescriptorBufferInfo(material, imageIndex);
 
-    vk::DescriptorBufferInfo bufferInfo = resources_->getTextMaterialDescriptorBufferInfo(material);
     std::array<vk::WriteDescriptorSet, 2> writes{};
 
     writes[0].dstSet = set;
@@ -670,10 +658,21 @@ vk::DescriptorSet VulkanPipeline::getOrCreateTextDescriptorSet(const TextMateria
     writes[1].descriptorCount = 1;
     writes[1].pBufferInfo = &bufferInfo;
 
-    device_->getDevice().updateDescriptorSets({writes[0], writes[1]}, {});
-    textMaterialDescriptorSets_.emplace(material, std::make_unique<vk::raii::DescriptorSet>(std::move(set)));
-    return *textMaterialDescriptorSets_[material].get();
+    device_->getDevice().updateDescriptorSets(writes, {});
+}
 
+vk::DescriptorSet VulkanPipeline::getOrCreateTextDescriptorSet(const TextMaterial* material, const VulkanResources::VulkanTexture& atlasTexture, uint32_t imageIndex){
+    MaterialDescriptorSlot& slot = acquireDescriptorSlot(
+        textMaterialDescriptorSets_[material], *textDescriptorSetLayout_, imageIndex);
+
+    const uint32_t revision = material ? material->getRevision() : 0;
+    if (!slot.written || slot.appliedRevision != revision) {
+        writeTextDescriptorSet(**slot.set, material, atlasTexture, imageIndex);
+        slot.appliedRevision = revision;
+        slot.written = true;
+    }
+
+    return **slot.set;
 }
 
 void VulkanPipeline::clearSceneDescriptorCaches() {
@@ -1074,13 +1073,135 @@ void VulkanPipeline::createGraphicsPipeline() {
     defaultLitPipelineCache_.erase(defaultKey);
 }
 
+void VulkanPipeline::createInstancedGraphicsPipeline() {
+    instancedLitPipelineCache_.clear();
+
+    if (!shaderSpvExists(kDefaultInstancedVertexShaderSpvPath)) {
+        std::cerr << "Vulkan: " << kDefaultInstancedVertexShaderSpvPath << " missing, GPU instancing disabled (falling back to per-entity draws)." << std::endl;
+        return;
+    }
+
+    vk::raii::ShaderModule vertexShaderModule = createShaderModule(readFile(kDefaultInstancedVertexShaderSpvPath));
+    vk::raii::ShaderModule fragmentShaderModule = createShaderModule(readFile(kDefaultFragmentShaderSpvPath));
+
+    vk::PipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.stage = vk::ShaderStageFlagBits::eVertex;
+    vertShaderStageInfo.module = vertexShaderModule;
+    vertShaderStageInfo.pName = "main";
+
+    vk::PipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.stage = vk::ShaderStageFlagBits::eFragment;
+    fragShaderStageInfo.module = fragmentShaderModule;
+    fragShaderStageInfo.pName = "main";
+
+    vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+    auto bindingDescriptions = getMeshInstancedVertexBindingDescriptions();
+    auto attributeDescriptions = getMeshInstancedVertexAttributeDescriptions();
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
+    vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
+    vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+
+    vk::PipelineViewportStateCreateInfo viewportState{};
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    vk::PipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.depthClampEnable = vk::False;
+    rasterizer.rasterizerDiscardEnable = vk::False;
+    rasterizer.polygonMode = vk::PolygonMode::eFill;
+    rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
+    rasterizer.depthBiasEnable = vk::False;
+    rasterizer.lineWidth = 1.0f;
+
+    vk::PipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+    multisampling.sampleShadingEnable = vk::False;
+
+    std::vector<vk::DynamicState> dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+    vk::PipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    vk::Format depthFormat = resources_->findDepthFormat();
+    vk::Format colorAttachmentFormat = swapChain_->getSurfaceFormat().format;
+
+    vk::PipelineRenderingCreateInfo pipelineRenderingInfo{};
+    pipelineRenderingInfo.colorAttachmentCount = 1;
+    pipelineRenderingInfo.pColorAttachmentFormats = &colorAttachmentFormat;
+    pipelineRenderingInfo.depthAttachmentFormat = depthFormat;
+
+    const bool depthWriteOptions[] = { true, false };
+    const bool cullOptions[] = { true, false };
+
+    for (bool depthWrite : depthWriteOptions) {
+        for (bool cullEnabled : cullOptions) {
+            rasterizer.cullMode = cullEnabled ? vk::CullModeFlagBits::eBack : vk::CullModeFlagBits::eNone;
+
+            vk::PipelineDepthStencilStateCreateInfo depthStencil{};
+            depthStencil.depthTestEnable = vk::True;
+            depthStencil.depthWriteEnable = depthWrite ? vk::True : vk::False;
+            depthStencil.depthCompareOp = depthWrite ? vk::CompareOp::eLess : vk::CompareOp::eLessOrEqual;
+            depthStencil.depthBoundsTestEnable = vk::False;
+            depthStencil.stencilTestEnable = vk::False;
+
+            vk::PipelineColorBlendAttachmentState colorBlendAttachment = makeBlendAttachment(BlendMode::Opaque);
+            vk::PipelineColorBlendStateCreateInfo colorBlending{};
+            colorBlending.logicOpEnable = vk::False;
+            colorBlending.logicOp = vk::LogicOp::eCopy;
+            colorBlending.attachmentCount = 1;
+            colorBlending.pAttachments = &colorBlendAttachment;
+
+            vk::GraphicsPipelineCreateInfo pipelineCreateInfo{};
+            pipelineCreateInfo.stageCount = 2;
+            pipelineCreateInfo.pStages = shaderStages;
+            pipelineCreateInfo.pVertexInputState = &vertexInputInfo;
+            pipelineCreateInfo.pInputAssemblyState = &inputAssembly;
+            pipelineCreateInfo.pViewportState = &viewportState;
+            pipelineCreateInfo.pRasterizationState = &rasterizer;
+            pipelineCreateInfo.pMultisampleState = &multisampling;
+            pipelineCreateInfo.pDepthStencilState = &depthStencil;
+            pipelineCreateInfo.pColorBlendState = &colorBlending;
+            pipelineCreateInfo.pDynamicState = &dynamicState;
+            pipelineCreateInfo.layout = pipelineLayout_;
+            pipelineCreateInfo.renderPass = nullptr;
+
+            vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain{
+                pipelineCreateInfo,
+                pipelineRenderingInfo
+            };
+
+            const uint32_t key = makeDefaultLitPipelineKey(BlendMode::Opaque, depthWrite, cullEnabled);
+            instancedLitPipelineCache_.emplace(
+                key,
+                vk::raii::Pipeline( device_->getDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>())
+            );
+        }
+    }
+}
+
+vk::raii::Pipeline* VulkanPipeline::getInstancedGraphicsPipeline(bool depthWrite, bool cullEnabled) {
+    const uint32_t key = makeDefaultLitPipelineKey(BlendMode::Opaque, depthWrite, cullEnabled);
+    auto it = instancedLitPipelineCache_.find(key);
+    return (it == instancedLitPipelineCache_.end()) ? nullptr : &it->second;
+}
+
+bool VulkanPipeline::hasInstancedPipelines() const {
+    return !instancedLitPipelineCache_.empty();
+}
+
 uint32_t VulkanPipeline::makeDefaultLitPipelineKey(BlendMode blendMode, bool depthWrite, bool cullEnabled) {
     return (static_cast<uint32_t>(blendMode) & 0xFFu)
          | (depthWrite ? 0x100u : 0u)
          | (cullEnabled ? 0x200u : 0u);
 }
 
-void VulkanPipeline::createTextPipeline(){
+void VulkanPipeline::createTextPipeline(bool depthTestEnable, vk::raii::Pipeline& outPipeline){
     vk::raii::ShaderModule vertexShaderModule = createShaderModule(readFile(kTextVertexShaderSpvPath));
     vk::raii::ShaderModule fragmentShaderModule = createShaderModule(readFile(kTextFragmentShaderSpvPath));
 
@@ -1125,7 +1246,7 @@ void VulkanPipeline::createTextPipeline(){
     multisampling.sampleShadingEnable = vk::False;
 
     vk::PipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.depthTestEnable = vk::False;
+    depthStencil.depthTestEnable = depthTestEnable ? vk::True : vk::False;
     depthStencil.depthWriteEnable = vk::False;
     depthStencil.depthCompareOp = vk::CompareOp::eLessOrEqual;
     depthStencil.depthBoundsTestEnable = vk::False;
@@ -1194,7 +1315,7 @@ void VulkanPipeline::createTextPipeline(){
         pipelineRenderingInfo
     };
 
-    textPipeline_ = vk::raii::Pipeline(device_->getDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+    outPipeline = vk::raii::Pipeline(device_->getDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 }
 
 void VulkanPipeline::createShadowPipeline() {
@@ -1531,6 +1652,45 @@ std::array<vk::VertexInputAttributeDescription, 6> VulkanPipeline::getMeshVertex
     return a;
 }
 
+std::array<vk::VertexInputBindingDescription, 2> VulkanPipeline::getMeshInstancedVertexBindingDescriptions() {
+    std::array<vk::VertexInputBindingDescription, 2> b{};
+
+    b[0] = getMeshVertexBindingDescription();
+
+    b[1].binding = 1;
+    b[1].stride = sizeof(GameEngine::InstanceData);
+    b[1].inputRate = vk::VertexInputRate::eInstance;
+
+    return b;
+}
+
+std::array<vk::VertexInputAttributeDescription, 11> VulkanPipeline::getMeshInstancedVertexAttributeDescriptions() {
+    std::array<vk::VertexInputAttributeDescription, 11> a{};
+
+    const auto meshAttributes = getMeshVertexAttributeDescriptions();
+    for (size_t i = 0; i < 4; ++i) {
+        a[i] = meshAttributes[i];
+    }
+
+    for (uint32_t column = 0; column < 4; ++column) {
+        auto& attribute = a[4 + column];
+        attribute.binding = 1;
+        attribute.location = 6 + column;
+        attribute.format = vk::Format::eR32G32B32A32Sfloat;
+        attribute.offset = static_cast<uint32_t>(offsetof(GameEngine::InstanceData, modelMatrix) + column * sizeof(glm::vec4));
+    }
+
+    for (uint32_t column = 0; column < 3; ++column) {
+        auto& attribute = a[8 + column];
+        attribute.binding = 1;
+        attribute.location = 10 + column;
+        attribute.format = vk::Format::eR32G32B32A32Sfloat;
+        attribute.offset = static_cast<uint32_t>(offsetof(GameEngine::InstanceData, normalMatrix) + column * sizeof(glm::vec4));
+    }
+
+    return a;
+}
+
 std::array<vk::VertexInputAttributeDescription, 1> VulkanPipeline::getSkyboxVertexAttributeDescriptions() {
     std::array<vk::VertexInputAttributeDescription, 1> a{};
     a[0].binding = 0;
@@ -1606,6 +1766,10 @@ vk::raii::PipelineLayout& VulkanPipeline::getTextPipelineLayout(){
 
 vk::raii::Pipeline& VulkanPipeline::getTextPipeline(){
     return textPipeline_;
+}
+
+vk::raii::Pipeline& VulkanPipeline::getWorldTextPipeline(){
+    return worldTextPipeline_;
 }
 
 vk::raii::PipelineLayout& VulkanPipeline::getSkyboxPipelineLayout(){

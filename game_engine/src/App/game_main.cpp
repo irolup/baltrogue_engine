@@ -1,13 +1,19 @@
 #ifdef LINUX_BUILD
 
 #include "Core/Engine.h"
+#include "Core/AssetPaths.h"
+#include "Core/Project.h"
 #include "Rendering/TextureManager.h"
-#include "Editor/BuildSettings.h"
 #include <iostream>
 
 using namespace GameEngine;
 
 int main() {
+
+    AssetPaths::initializeEngineRoot();
+    Project& project = Project::getInstance();
+    Project::openDefault();
+
     Engine engine;
 
     if (!engine.initialize()) {
@@ -15,28 +21,26 @@ int main() {
         return -1;
     }
 
-    BuildSettings buildSettings;
-    buildSettings.load();
-
-    engine.setWindowTitle(buildSettings.pc.title);
-    engine.setWindowSize(buildSettings.pc.windowWidth, buildSettings.pc.windowHeight);
-    if (buildSettings.pc.fullscreen) {
+    engine.setWindowTitle(project.pc.title);
+    engine.setWindowSize(project.pc.windowWidth, project.pc.windowHeight);
+    if (project.pc.fullscreen) {
         engine.setFullscreen(true);
     }
-    engine.getTime().setTargetFrameRate(buildSettings.pc.targetFrameRate);
+    engine.getTime().setTargetFrameRate(project.pc.targetFrameRate);
 
     engine.getInputManager().setEditorMode(true);
 
     TextureManager::getInstance().discoverAllTextures("assets/textures");
 
     auto& sceneManager = engine.getSceneManager();
-    if (!sceneManager.loadSceneFromFile("Main Menu", buildSettings.mainScene)) {
-        std::cerr << "Failed to load main scene: " << buildSettings.mainScene << std::endl;
+
+    if (!sceneManager.loadSceneFromFile(AssetPaths::deriveSceneName(project.mainScene), project.mainScene)) {
+        std::cerr << "Failed to load main scene: " << project.mainScene << std::endl;
         std::cerr << "Set it in the editor under Scene > Set as Main Scene." << std::endl;
         return -1;
     }
 
-    std::cout << "Main scene loaded from " << buildSettings.mainScene << std::endl;
+    std::cout << "Main scene loaded from " << project.mainScene << std::endl;
 
     engine.run();
     return 0;

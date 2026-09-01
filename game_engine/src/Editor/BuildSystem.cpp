@@ -1,12 +1,13 @@
 #ifdef LINUX_BUILD
 
 #include "Editor/BuildSystem.h"
-#include "Editor/BuildSettings.h"
+#include "Core/Project.h"
 #include "Editor/EditorConsole.h"
 
 #include <filesystem>
 #include <vector>
 #include <iostream>
+#include <thread>
 
 namespace GameEngine {
 
@@ -28,10 +29,9 @@ BuildSystem::~BuildSystem() {
 }
 
 std::string BuildSystem::getGameExecutablePath() const {
-    BuildSettings settings;
-    settings.load();
-    const std::string directory = (settings.pc.renderer == "opengl") ? "build_linux_gl/" : "build_linux/";
-    return directory + settings.pc.executableName;
+    const PcBuildSettings& pc = Project::getInstance().pc;
+    const std::string directory = (pc.renderer == "opengl") ? "build_linux_gl/" : "build_linux/";
+    return directory + pc.executableName;
 }
 
 bool BuildSystem::gameExecutableExists() const {
@@ -91,12 +91,16 @@ bool BuildSystem::startBuild(Target target) {
 
     std::vector<std::string> command = { "make", rule };
     if (target == Target::Linux) {
-        BuildSettings settings;
-        settings.load();
-        if (settings.pc.renderer == "opengl") {
+        if (Project::getInstance().pc.renderer == "opengl") {
             command.push_back("USE_VULKAN=0");
         }
     }
+
+    unsigned int jobs = std::thread::hardware_concurrency();
+    if (jobs == 0) {
+        jobs = 1;
+    }
+    command.push_back("-j" + std::to_string(jobs));
 
     std::string description;
     for (const std::string& part : command) {
@@ -169,9 +173,7 @@ void BuildSystem::onBuildFinished() {
         EditorConsole::getInstance().logInfo("Build succeeded");
 
         if (buildTarget == Target::Vita) {
-            BuildSettings settings;
-            settings.load();
-            EditorConsole::getInstance().logInfo("VPK: build/" + settings.vita.vpkName + ".vpk");
+            EditorConsole::getInstance().logInfo("VPK: build/" + Project::getInstance().vita.vpkName + ".vpk");
         }
 
         if (startGameAfterBuild) {

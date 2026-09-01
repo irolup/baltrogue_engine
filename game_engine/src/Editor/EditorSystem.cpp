@@ -2,10 +2,13 @@
 
 #include "Editor/EditorSystem.h"
 #include "Editor/EditorConsole.h"
+#include "Editor/EditorTheme.h"
 #include "Editor/EditorUI.h"
+#include "Editor/ProjectAssets.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneNode.h"
 #include "Scene/SceneBinaryFormat.h"
+#include "Scene/ScenePicker.h"
 #include <imgui.h>
 #include "../../vendor/imguizmo/ImGuizmo.h"
 #include "Components/CameraComponent.h"
@@ -18,7 +21,9 @@
 #include "Components/RaycastComponent.h"
 #include "Components/SkyboxComponent.h"
 #include "Components/NavVolumeComponent.h"
+#include "Core/AssetPaths.h"
 #include "Core/Engine.h"
+#include "Core/Project.h"
 #include "Rendering/LightingManager.h"
 #include "Rendering/Material.h"
 #include "Rendering/Shader.h"
@@ -39,6 +44,7 @@
 #include <memory>
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <functional>
 #include <glm/gtc/quaternion.hpp>
 
@@ -84,14 +90,8 @@ bool EditorSystem::initialize() {
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
     io.IniFilename = "config/imgui.ini";
     
-    ImGui::StyleColorsDark();
-    
-    ImGuiStyle& style = ImGui::GetStyle();
-    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-        style.WindowRounding = 0.0f;
-        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-    }
-    
+    EditorTheme::apply(EditorTheme::getCurrent());
+
     GLFWwindow* window = glfwGetCurrentContext();
     if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) {
         std::cerr << "Failed to initialize ImGui GLFW backend" << std::endl;
@@ -102,10 +102,26 @@ bool EditorSystem::initialize() {
         std::cerr << "Failed to initialize ImGui OpenGL3 backend" << std::endl;
         return false;
     }
-    
+
+    glfwSetDropCallback(window, &EditorSystem::handleFileDrop);
+
     createDefaultScene();
     
     return true;
+}
+
+void EditorSystem::handleFileDrop(GLFWwindow* window, int count, const char** paths) {
+    (void)window;
+
+    for (int i = 0; i < count; ++i) {
+        std::string error;
+        const std::string imported = ProjectAssets::importIntoProject(paths[i], error);
+        if (imported.empty()) {
+            EditorConsole::getInstance().logError(error);
+        } else {
+            EditorConsole::getInstance().logInfo("Imported " + imported);
+        }
+    }
 }
 
 void EditorSystem::shutdown() {
@@ -127,6 +143,12 @@ void EditorSystem::shutdown() {
     gridLineCount = 0;
 
     ShadowManager::getInstance().saveSettings();
+
+    Project& project = Project::getInstance();
+    if (project.isLoaded()) {
+        project.save();
+    }
+
     shadowAtlas.destroy();
     shadowCasters.clear();
     shadowAtlasReady = false;
@@ -264,6 +286,70 @@ void EditorSystem::selectNode(std::shared_ptr<SceneNode> node) {
             activeScene->setSelectedNode(node);
         }
     }
+}
+
+void EditorSystem::accumulateWorldBounds(const std::shared_ptr<SceneNode>& node, glm::vec3& outMin, glm::vec3& outMax, bool& hasBounds) {
+    if (!node) {
+        return;
+    }
+
+    glm::vec3 localMin(0.0f);
+    glm::vec3 localMax(0.0f);
+    if (ScenePicker::localBounds(*node, localMin, localMax)) {
+        const glm::mat4 world = node->getWorldMatrix();
+        for (int corner = 0; corner < 8; ++corner) {
+            const glm::vec3 localCorner(
+                (corner & 1) ? localMax.x : localMin.x,
+                (corner & 2) ? localMax.y : localMin.y,
+                (corner & 4) ? localMax.z : localMin.z);
+            const glm::vec3 worldCorner = glm::vec3(world * glm::vec4(localCorner, 1.0f));
+
+            if (!hasBounds) {
+                outMin = worldCorner;
+                outMax = worldCorner;
+                hasBounds = true;
+            } else {
+                outMin = glm::min(outMin, worldCorner);
+                outMax = glm::max(outMax, worldCorner);
+            }
+        }
+    }
+
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        accumulateWorldBounds(node->getChild(i), outMin, outMax, hasBounds);
+    }
+}
+
+bool EditorSystem::focusCameraOnNode(const std::shared_ptr<SceneNode>& node) {
+    if (!node || !canFocusCamera()) {
+        return false;
+    }
+
+    glm::vec3 boundsMin(0.0f);
+    glm::vec3 boundsMax(0.0f);
+    bool hasBounds = false;
+    accumulateWorldBounds(node, boundsMin, boundsMax, hasBounds);
+    if (!hasBounds) {
+        return false;
+    }
+
+    const glm::vec3 center = (boundsMin + boundsMax) * 0.5f;
+    const float radius = glm::max(glm::length(boundsMax - boundsMin) * 0.5f, 0.25f);
+
+    auto& transform = editorCamera->getTransform();
+
+    const glm::vec3 forward = glm::normalize(transform.getRotation() * glm::vec3(0.0f, 0.0f, -1.0f));
+
+    float distance = radius * 3.0f;
+    if (auto* cameraComponent = editorCamera->getComponent<CameraComponent>()) {
+        const float halfFov = glm::radians(cameraComponent->getFOV()) * 0.5f;
+        if (halfFov > 0.01f) {
+            distance = (radius / std::tan(halfFov)) * 1.3f;
+        }
+    }
+
+    transform.setPosition(center - forward * distance);
+    return true;
 }
 
 void EditorSystem::clearSelection() {
@@ -542,15 +628,32 @@ void EditorSystem::handleGameCameraInput(float deltaTime) {
 
 std::string EditorSystem::generateUniqueNodeName(const std::string& baseName) {
     if (!activeScene) return baseName;
-    
-    std::string name = baseName;
-    int counter = 1;
-    
-    while (activeScene->findNode(name)) {
-        name = baseName + " (" + std::to_string(counter) + ")";
-        counter++;
+
+    if (!activeScene->findNode(baseName)) {
+        return baseName;
     }
-    
+
+    size_t numStart = baseName.size();
+    while (numStart > 0 && std::isdigit(static_cast<unsigned char>(baseName[numStart - 1]))) {
+        --numStart;
+    }
+
+    std::string root = baseName.substr(0, numStart);
+    int nextNumber = 1;
+    if (numStart < baseName.size()) {
+        nextNumber = std::stoi(baseName.substr(numStart)) + 1;
+    }
+
+    while (!root.empty() && std::isspace(static_cast<unsigned char>(root.back()))) {
+        root.pop_back();
+    }
+
+    std::string name;
+    do {
+        name = root + std::to_string(nextNumber);
+        ++nextNumber;
+    } while (activeScene->findNode(name));
+
     return name;
 }
 
@@ -934,10 +1037,10 @@ void EditorSystem::renderSceneDirectly(Scene& scene, CameraComponent* camera) {
     renderShadowPassDirectly(camera);
     renderSkyboxDirectly(scene, camera, viewMatrix, projectionMatrix);
     if (rootNode) {
-        renderNodeDirectly(rootNode, glm::mat4(1.0f), viewMatrix, projectionMatrix, isEditorCamera, 1);
-    }
-    if (rootNode) {
-        renderNodeDirectly(rootNode, glm::mat4(1.0f), viewMatrix, projectionMatrix, isEditorCamera, 2);
+        // opaque, cutout, then blended (see Material.h)
+        for (int renderPass = 1; renderPass <= 3; ++renderPass) {
+            renderNodeDirectly(rootNode, glm::mat4(1.0f), viewMatrix, projectionMatrix, isEditorCamera, renderPass);
+        }
     }
     
     renderPhysicsDebugShapes(viewMatrix, projectionMatrix);
@@ -1125,9 +1228,8 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
         auto material = meshRenderer->getRenderMaterial();
 
         if (mesh && material) {
-            bool opaque = (material->getBlendMode() == BlendMode::Opaque);
-            if (renderPass == 1 && !opaque) { /* skip transparent in opaque pass */ }
-            else if (renderPass == 2 && opaque) { /* skip opaque in transparent pass */ }
+            const int materialPass = static_cast<int>(getRenderSortBucket(*material)) + 1;
+            if (renderPass != materialPass) { /* drawn in its own pass */ }
             else {
                 if (activeScene) {
                     auto activeSkyboxNode = activeScene->getActiveSkybox();
@@ -1217,9 +1319,7 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
                 }
                 if (!material) continue;
 
-                bool opaque = (material->getBlendMode() == BlendMode::Opaque);
-                if (renderPass == 1 && !opaque) continue;
-                if (renderPass == 2 && opaque) continue;
+                if (renderPass != static_cast<int>(getRenderSortBucket(*material)) + 1) continue;
 
                 glm::mat4 gltfNodeTransform = (i < meshNodeTransforms.size())
                     ? meshNodeTransforms[i]
@@ -1307,13 +1407,9 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
     }
     
 #ifdef EDITOR_BUILD
-    if (renderPass != 2) {
+    if (renderPass == 1) {
     auto area3DComponent = node->getComponent<Area3DComponent>();
-    // Gate Area3D wireframes behind the global debug toggle so they don't
-    // unexpectedly show up after loading a scene.
-    if (area3DComponent &&
-        area3DComponent->getShowDebugShape() &&
-        PhysicsManager::getInstance().isDebugDrawEnabled()) {
+    if (area3DComponent && area3DComponent->getShowDebugShape()) {
         area3DComponent->renderDebugWireframe(viewMatrix, projectionMatrix);
     }
 #endif
@@ -1423,7 +1519,6 @@ void EditorSystem::renderNodeDirectly(std::shared_ptr<SceneNode> node, const glm
 
 void EditorSystem::renderPhysicsDebugShapes(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
 #ifdef EDITOR_BUILD
-    auto& physicsManager = PhysicsManager::getInstance();
     if (!activeScene) return;
     
     auto debugMaterial = std::make_shared<Material>();
@@ -1473,8 +1568,8 @@ void EditorSystem::renderPhysicsDebugShapes(const glm::mat4& viewMatrix, const g
             if (!node || !node->isVisible() || !node->isActive()) return;
             
             auto physicsComponent = node->getComponent<PhysicsComponent>();
-            if (physicsComponent && physicsComponent->isEnabled() && 
-                physicsManager.isDebugDrawEnabled() && physicsComponent->getShowCollisionShape()) {
+            if (physicsComponent && physicsComponent->isEnabled() &&
+                physicsComponent->getShowCollisionShape()) {
                 physicsComponent->renderDebugShape(*debugMaterial, viewMatrix, projectionMatrix);
             }
             
@@ -1652,8 +1747,10 @@ bool EditorSystem::saveSceneToFile(const std::string& filepath) {
         return false;
     }
 
-    activeSceneFilePath_ = filepath;
-    compileSceneBinary(filepath);
+    activeSceneFilePath_ = AssetPaths::toPortable(filepath);
+    compileSceneBinary(activeSceneFilePath_);
+    Project::getInstance().addRecentScene(activeSceneFilePath_);
+    updateWindowTitle();
     return true;
 }
 
@@ -1677,7 +1774,9 @@ bool EditorSystem::loadSceneFromFile(const std::string& filepath) {
     auto loadedScene = SceneSerializer::loadSceneFromFile(filepath);
     if (loadedScene) {
         setActiveScene(loadedScene);
-        activeSceneFilePath_ = filepath;
+        activeSceneFilePath_ = AssetPaths::toPortable(filepath);
+        Project::getInstance().addRecentScene(activeSceneFilePath_);
+        updateWindowTitle();
         return true;
     }
     return false;
@@ -1687,6 +1786,19 @@ void EditorSystem::createNewScene() {
     createDefaultScene();
     activeSceneFilePath_.clear();
     clearSelection();
+    updateWindowTitle();
+}
+
+void EditorSystem::updateWindowTitle() {
+    const Project& project = Project::getInstance();
+    const std::string scene = activeSceneFilePath_.empty() ? "Untitled Scene" : activeSceneFilePath_;
+
+    GetEngine().setWindowTitle(project.name + " - " + scene + " - Baltrogue Editor");
+}
+
+void EditorSystem::requestProjectRestart(const std::string& projectFilePath) {
+    requestedProjectRestart_ = projectFilePath;
+    GetEngine().setRunning(false);
 }
 
 } // namespace GameEngine

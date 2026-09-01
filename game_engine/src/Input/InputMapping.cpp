@@ -2,6 +2,7 @@
 #include "Input/InputManager.h"
 #include "Core/Engine.h"
 #include "Core/AssetPaths.h"
+#include "Core/Project.h"
 #include <fstream>
 #include <iostream>
 #include <algorithm>
@@ -33,28 +34,30 @@ void InputMappingManager::initialize() {
 #endif
 
     shutdownCalled = false;
-    
+
+    const Project& project = Project::getInstance();
+
     // Check if saved mappings file exists
-    std::ifstream savedFile(AssetPaths::resolve("config/input_mappings.txt"));
+    std::ifstream savedFile(AssetPaths::resolve(project.inputMap));
     bool hasSavedMappings = savedFile.is_open();
     savedFile.close();
     
     if (hasSavedMappings) {
         // If user has saved mappings, load only those (not defaults)
-        loadMappingsFromFile("config/input_mappings.txt", true);
+        loadMappingsFromFile(project.inputMap, true);
 #ifdef VITA_BUILD
         printf("InputMappingManager: Loaded saved mappings, total mappings: %zu\n", mappings.size());
 #endif
     } else {
         // If no saved mappings, load defaults
-        loadMappingsFromFile("config/default_input_mappings.txt", true);
+        loadMappingsFromFile(project.defaultInputMap, true);
 #ifdef VITA_BUILD
         printf("InputMappingManager: Loaded default mappings, total mappings: %zu\n", mappings.size());
 #endif
     }
     
     // Enable hot-reload for the input mappings file
-    enableHotReload("config/input_mappings.txt");
+    enableHotReload(project.inputMap);
     
 #ifdef VITA_BUILD
     printf("InputMappingManager: Final mappings count: %zu\n", mappings.size());
@@ -69,7 +72,7 @@ void InputMappingManager::shutdown() {
 
     // Auto-save mappings on shutdown (editor only).
 #ifdef EDITOR_BUILD
-    saveMappingsToFile("config/input_mappings.txt");
+    saveMappingsToFile(Project::getInstance().inputMap);
 #endif
 
     mappings.clear();
@@ -280,7 +283,7 @@ void InputMappingManager::loadMappingsFromFile(const std::string& filePath, bool
 }
 
 void InputMappingManager::saveMappingsToFile(const std::string& filePath) const {
-    std::ofstream file(filePath);
+    std::ofstream file(AssetPaths::resolve(filePath));
     if (!file.is_open()) {
         std::cout << "InputMappingManager: Could not create file " << filePath << std::endl;
         return;
@@ -545,13 +548,13 @@ float InputMappingManager::getAnalogValue(const InputMapping& mapping) const {
 }
 
 void InputMappingManager::enableHotReload(const std::string& filePath) {
-    hotReloadFilePath = filePath;
+    hotReloadFilePath = AssetPaths::resolve(filePath);
     hotReloadEnabled = true;
     
 #ifdef LINUX_BUILD
     // Get initial file modification time
     try {
-        auto fileTime = std::filesystem::last_write_time(filePath);
+        auto fileTime = std::filesystem::last_write_time(hotReloadFilePath);
         lastFileModificationTime = std::chrono::duration_cast<std::chrono::seconds>(
             fileTime.time_since_epoch()).count();
     } catch (const std::exception& e) {
@@ -563,7 +566,7 @@ void InputMappingManager::enableHotReload(const std::string& filePath) {
     lastFileModificationTime = time(nullptr);
 #endif
     
-    std::cout << "InputMappingManager: Hot-reload enabled for " << filePath << std::endl;
+    std::cout << "InputMappingManager: Hot-reload enabled for " << hotReloadFilePath << std::endl;
 }
 
 void InputMappingManager::disableHotReload() {

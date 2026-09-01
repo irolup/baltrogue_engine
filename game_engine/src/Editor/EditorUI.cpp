@@ -2,6 +2,7 @@
 
 #include "Editor/EditorUI.h"
 #include "Editor/EditorConsole.h"
+#include "Editor/EditorTheme.h"
 #include "Core/AssetPaths.h"
 #include "Core/Ray.h"
 #include "Scene/ScenePicker.h"
@@ -27,10 +28,13 @@
 #include "Components/SkyboxComponent.h"
 #include "Components/BeamRenderer.h"
 #include "Core/Engine.h"
+#include "Core/Project.h"
 #include "Editor/BuildSystem.h"
 #include "Editor/SceneSerializer.h"
 #include "Editor/FileDialog.h"
-#include "Editor/BuildSettings.h"
+#include "Editor/LiveAreaBuilder.h"
+#include "Editor/ProjectAssets.h"
+#include "Editor/RecentProjects.h"
 #include "Editor/NodeTemplateSerializer.h"
 #include "Rendering/Framebuffer.h"
 #include "Rendering/ShadowMap.h"
@@ -41,6 +45,7 @@
 #include "Input/InputMapping.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -49,6 +54,7 @@
 
 // ImGui includes
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
@@ -60,11 +66,12 @@ namespace GameEngine {
 
 EditorUI::EditorUI(EditorSystem& editorSystem)
     : editor(editorSystem)
+    , browser(editorSystem)
     , showDemoWindow(false)
     , showSceneGraph(true)
     , showProperties(true)
     , showViewport(true)
-    , showFileExplorer(false)
+    , showFileExplorer(true)
     , showInputMapping(false)
     , showMemoryViewer(false)
     , showBuildSettings(false)
@@ -77,7 +84,6 @@ EditorUI::EditorUI(EditorSystem& editorSystem)
     , fileExplorerHeight(200.0f)
     , expandAllNodes(false)
     , collapseAllNodes(false)
-    , focusOnSelectedNode(false)
 {
 }
 
@@ -105,6 +111,16 @@ void EditorUI::setupDockspace() {
     ImGui::End();
 }
 
+bool EditorUI::rotationCacheMatches(const glm::quat& cached, const glm::quat& current) {
+    return std::abs(glm::dot(cached, current)) > 1.0f - 1e-6f;
+}
+
+void EditorUI::syncRotationEditCache(SceneNode* node, const glm::quat& rotation) {
+    rotationEditCacheNode = node;
+    rotationEditCacheQuat = rotation;
+    rotationEditCache = glm::degrees(glm::eulerAngles(rotation));
+}
+
 void EditorUI::attachNewNode(const std::shared_ptr<SceneNode>& parent, const std::shared_ptr<SceneNode>& newNode) {
     if (!parent || !newNode) {
         return;
@@ -129,11 +145,120 @@ void EditorUI::openSceneFromDialog() {
     if (!FileDialog::isValidResult(filepath)) {
         return;
     }
+    openScenePath(filepath);
+}
+
+void EditorUI::openScenePath(const std::string& filepath) {
+    if (!ProjectAssets::isInsideProject(filepath)) {
+        EditorConsole::getInstance().logWarning(
+            "Scene is outside the project: " + filepath +
+            " - its asset references resolve against this project, and saving writes back outside it.");
+    }
+
     if (editor.loadSceneFromFile(filepath)) {
         std::cout << "Scene loaded from: " << filepath << std::endl;
     } else {
-        std::cout << "Failed to load scene from: " << filepath << std::endl;
+        EditorConsole::getInstance().logError("Failed to load scene from: " + filepath);
     }
+}
+
+void EditorUI::openProjectFromDialog() {
+    const std::string filepath = FileDialog::openProjectFileDialog("Open Project");
+    if (!FileDialog::isValidResult(filepath)) {
+        return;
+    }
+    editor.requestProjectRestart(filepath);
+}
+
+void EditorUI::renderProjectMenuItems() {
+    Project& project = Project::getInstance();
+
+    if (ImGui::MenuItem("New Project...")) {
+        openNewProjectPopup = true;
+        newProjectError.clear();
+    }
+    if (ImGui::MenuItem("Open Project...")) {
+        openProjectFromDialog();
+    }
+
+    if (ImGui::BeginMenu("Open Recent Project")) {
+        const std::vector<std::string> recent = RecentProjects::load();
+        if (recent.empty()) {
+            ImGui::TextDisabled("No recent projects");
+        }
+        for (const std::string& entry : recent) {
+            const bool isCurrent = (entry == project.getFilePath());
+            if (ImGui::MenuItem(entry.c_str(), nullptr, isCurrent, !isCurrent)) {
+                editor.requestProjectRestart(entry);
+            }
+        }
+        if (!recent.empty()) {
+            ImGui::Separator();
+            if (ImGui::MenuItem("Clear List")) {
+                RecentProjects::clear();
+            }
+        }
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::MenuItem("Save Project", nullptr, false, project.isLoaded())) {
+        if (project.save()) {
+            EditorConsole::getInstance().logInfo("Saved " + project.getFilePath());
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Writes %s: build settings, main scene and recent scenes.", Project::kFileName);
+    }
+}
+
+void EditorUI::renderNewProjectPopup() {
+    if (openNewProjectPopup) {
+        ImGui::OpenPopup("NewProject");
+        openNewProjectPopup = false;
+    }
+
+    if (!ImGui::BeginPopupModal("NewProject", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        return;
+    }
+
+    ImGui::Text("Creates <folder>/%s and the asset folders a project needs.", Project::kFileName);
+    ImGui::Separator();
+
+    ImGui::InputText("Name", newProjectName, sizeof(newProjectName));
+    ImGui::InputText("Folder", newProjectLocation, sizeof(newProjectLocation));
+    ImGui::SameLine();
+    if (ImGui::Button("Browse...")) {
+        const std::string picked = FileDialog::openFolderDialog("New Project Folder");
+        if (FileDialog::isValidResult(picked)) {
+            std::snprintf(newProjectLocation, sizeof(newProjectLocation), "%s", picked.c_str());
+            if (newProjectName[0] == '\0') {
+                const std::string folderName = std::filesystem::path(picked).filename().string();
+                std::snprintf(newProjectName, sizeof(newProjectName), "%s", folderName.c_str());
+            }
+        }
+    }
+
+    if (!newProjectError.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", newProjectError.c_str());
+    }
+
+    ImGui::Separator();
+    ImGui::TextDisabled("The editor restarts into the new project.");
+
+    if (ImGui::Button("Create", ImVec2(120, 0))) {
+        if (Project::create(newProjectLocation, newProjectName, newProjectError)) {
+            const std::string created = (std::filesystem::path(newProjectLocation) / Project::kFileName).string();
+            ImGui::CloseCurrentPopup();
+            editor.requestProjectRestart(created);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+        newProjectError.clear();
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
 }
 
 void EditorUI::saveSceneAsDialog() {
@@ -235,11 +360,37 @@ void EditorUI::renderMenuBar() {
 
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
+            renderProjectMenuItems();
+            ImGui::Separator();
+
             if (ImGui::MenuItem("New Scene")) {
                 editor.createNewScene();
             }
             if (ImGui::MenuItem("Open Scene...", "Ctrl+O")) {
                 openSceneFromDialog();
+            }
+            if (ImGui::BeginMenu("Open Recent Scene")) {
+                const std::vector<std::string>& recentScenes = Project::getInstance().getRecentScenes();
+                if (recentScenes.empty()) {
+                    ImGui::TextDisabled("No recent scenes");
+                }
+                const std::vector<std::string> entries = recentScenes;
+                for (const std::string& entry : entries) {
+                    const bool isCurrent = (entry == editor.getActiveSceneFilePath());
+                    if (ImGui::MenuItem(entry.c_str(), nullptr, isCurrent, !isCurrent)) {
+                        openScenePath(entry);
+                    }
+                }
+                if (!entries.empty()) {
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Clear List")) {
+                        Project::getInstance().clearRecentScenes();
+                    }
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Scenes opened in this project. Saved with it.");
             }
             if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
                 saveActiveScene();
@@ -253,24 +404,40 @@ void EditorUI::renderMenuBar() {
             }
             ImGui::EndMenu();
         }
-        
+        renderNewProjectPopup();
+
         if (ImGui::BeginMenu("View")) {
             ImGui::MenuItem("Scene Graph", nullptr, &showSceneGraph);
             ImGui::MenuItem("Properties", nullptr, &showProperties);
             ImGui::MenuItem("Viewport", nullptr, &showViewport);
             ImGui::MenuItem("File Explorer", nullptr, &showFileExplorer);
             ImGui::MenuItem("Input Mapping", nullptr, &showInputMapping);
-            ImGui::MenuItem("Build Settings", nullptr, &showBuildSettings);
+            ImGui::MenuItem("Project Settings", nullptr, &showBuildSettings);
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Game name per platform: the Linux executable and window title, the VPK and its LiveArea images.");
+                ImGui::SetTooltip("The project's name, main scene and asset root, plus per-platform build names: the Linux executable and window title, the VPK and its LiveArea images.");
             }
             ImGui::Separator();
-            ImGui::MenuItem("Demo Window", nullptr, &showDemoWindow);
-            
-            bool physicsDebugEnabled = PhysicsManager::getInstance().isDebugDrawEnabled();
-            if (ImGui::MenuItem("Physics Debug Shapes", nullptr, &physicsDebugEnabled)) {
-                PhysicsManager::getInstance().setDebugDrawEnabled(physicsDebugEnabled);
+            if (ImGui::BeginMenu("Theme")) {
+                const EditorTheme::Id current = EditorTheme::getCurrent();
+                for (int i = 0; i < static_cast<int>(EditorTheme::Id::Count); ++i) {
+                    const EditorTheme::Id id = static_cast<EditorTheme::Id>(i);
+                    const char* label = EditorTheme::name(id);
+                    if (!label) {
+                        continue;
+                    }
+                    if (ImGui::MenuItem(label, nullptr, id == current)) {
+                        EditorTheme::apply(id);
+                    }
+                }
+                ImGui::EndMenu();
             }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Editor colour scheme. Applies immediately; not saved between sessions yet.");
+            }
+
+            ImGui::Separator();
+            ImGui::MenuItem("Demo Window", nullptr, &showDemoWindow);
+
             bool showNavMeshDebug = editor.isShowNavMeshDebugEnabled();
             if (ImGui::MenuItem("Nav Mesh Wireframe", nullptr, &showNavMeshDebug)) {
                 editor.setShowNavMeshDebugEnabled(showNavMeshDebug);
@@ -294,9 +461,6 @@ void EditorUI::renderMenuBar() {
                 openGridSettingsNextFrame = true;
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Disable All Physics Debug")) {
-                PhysicsManager::getInstance().setDebugDrawEnabled(false);
-            }
             if (ImGui::MenuItem("Physics Settings...")) {
                 openPhysicsSettingsNextFrame = true;
             }
@@ -483,7 +647,7 @@ void EditorUI::renderMenuBar() {
                         meshRenderer->setMesh(Mesh::createPlane(1.0f, 1.0f, 1));
 
                         auto material = std::make_shared<Material>();
-                        material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                        material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                         meshRenderer->setMaterial(material);
                         
                         attachNewNodeToSelection(scene, node);
@@ -498,7 +662,7 @@ void EditorUI::renderMenuBar() {
                         meshRenderer->setMesh(Mesh::createCube());
                         
                         auto material = std::make_shared<Material>();
-                        material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                        material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                         meshRenderer->setMaterial(material);
                         
                         attachNewNodeToSelection(scene, node);
@@ -513,7 +677,7 @@ void EditorUI::renderMenuBar() {
                         meshRenderer->setMesh(Mesh::createSphere(32, 16));
 
                         auto material = std::make_shared<Material>();
-                        material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                        material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                         meshRenderer->setMaterial(material);
                         
                         attachNewNodeToSelection(scene, node);
@@ -528,7 +692,7 @@ void EditorUI::renderMenuBar() {
                         meshRenderer->setMesh(Mesh::createCapsule(0.5f, 0.5f));
 
                         auto material = std::make_shared<Material>();
-                        material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                        material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                         meshRenderer->setMaterial(material);
                         
                         attachNewNodeToSelection(scene, node);
@@ -543,7 +707,7 @@ void EditorUI::renderMenuBar() {
                         meshRenderer->setMesh(Mesh::createCylinder(0.5f, 0.5f));
 
                         auto material = std::make_shared<Material>();
-                        material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                        material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                         meshRenderer->setMaterial(material);
                         
                         attachNewNodeToSelection(scene, node);
@@ -558,7 +722,7 @@ void EditorUI::renderMenuBar() {
                         meshRenderer->setMesh(Mesh::createRamp());
 
                         auto material = std::make_shared<Material>();
-                        material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                        material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                         meshRenderer->setMaterial(material);
 
                         attachNewNodeToSelection(scene, node);
@@ -686,7 +850,7 @@ void EditorUI::renderMenuBar() {
                         auto meshRenderer = meshNode->addComponent<MeshRenderer>();
                         meshRenderer->setMesh(Mesh::createCube());
                         auto material = std::make_shared<Material>();
-                        material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                        material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                         meshRenderer->setMaterial(material);
                         parentNode->addChild(meshNode);
                         
@@ -711,7 +875,7 @@ void EditorUI::renderMenuBar() {
                         auto meshRenderer = meshNode->addComponent<MeshRenderer>();
                         meshRenderer->setMesh(Mesh::createSphere(32, 16));
                         auto material = std::make_shared<Material>();
-                        material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                        material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                         meshRenderer->setMaterial(material);
                         parentNode->addChild(meshNode);
                         
@@ -875,8 +1039,23 @@ void EditorUI::renderSceneGraph() {
             collapseAllNodes = true;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Focus on Selected")) {
-            focusOnSelectedNode = true;
+        {
+            auto selected = editor.getSelectedNode();
+            const bool canFocus = selected && editor.canFocusCamera();
+            ImGui::BeginDisabled(!canFocus);
+            if (ImGui::Button("Focus on Selected")) {
+                editor.focusCameraOnNode(selected);
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                if (!selected) {
+                    ImGui::SetTooltip("Select a node first.");
+                } else if (!editor.canFocusCamera()) {
+                    ImGui::SetTooltip("Only available while the viewport uses the editor camera.");
+                } else {
+                    ImGui::SetTooltip("Move the editor camera to frame '%s'.", selected->getName().c_str());
+                }
+            }
         }
         ImGui::SameLine();
         if (ImGui::Button("Insert Template...")) {
@@ -893,22 +1072,75 @@ void EditorUI::renderSceneGraph() {
             }
         }
 
+        // Notice a selection change from anywhere
+        auto selectedNow = editor.getSelectedNode();
+        SceneNode* selectedPtr = selectedNow.get();
+        if (selectedPtr != lastSeenSelection) {
+            lastSeenSelection = selectedPtr;
+            revealSelectedNode = selectedPtr != nullptr;
+            scrollToSelectedNode = revealSelectedNode && !selectionChangedFromTree;
+        }
+        selectionChangedFromTree = false;
+
         auto rootNode = scene->getRootNode();
         if (rootNode) {
+            if (expandAllNodes || collapseAllNodes) {
+                setSceneSubtreeOpen(rootNode, expandAllNodes);
+            }
+            if (revealSelectedNode && selectedPtr) {
+                openScenePathToNode(rootNode, selectedPtr);
+            }
             renderSceneNode(rootNode, 0);
         }
 
-        if (expandAllNodes) {
-            expandAllNodes = false;
-        }
-        if (collapseAllNodes) {
-            collapseAllNodes = false;
-        }
+        expandAllNodes = false;
+        collapseAllNodes = false;
+        revealSelectedNode = false;
+        scrollToSelectedNode = false;
     } else {
         ImGui::Text("No active scene");
     }
     
     ImGui::End();
+}
+
+void EditorUI::setSceneSubtreeOpen(const std::shared_ptr<SceneNode>& node, bool open) {
+    if (!node) return;
+
+    ImGui::PushID(node.get());
+    const ImGuiID nodeId = ImGui::GetID((void*)(intptr_t)node.get());
+    ImGui::TreeNodeSetOpen(nodeId, open);
+
+    ImGui::PushOverrideID(nodeId);
+    for (size_t i = 0; i < node->getChildCount(); ++i) {
+        setSceneSubtreeOpen(node->getChild(i), open);
+    }
+    ImGui::PopID();
+
+    ImGui::PopID();
+}
+
+bool EditorUI::openScenePathToNode(const std::shared_ptr<SceneNode>& node, const SceneNode* target) {
+    if (!node || !target) return false;
+
+    ImGui::PushID(node.get());
+    const ImGuiID nodeId = ImGui::GetID((void*)(intptr_t)node.get());
+
+    bool found = (node.get() == target);
+    if (!found) {
+        ImGui::PushOverrideID(nodeId);
+        for (size_t i = 0; i < node->getChildCount() && !found; ++i) {
+            found = openScenePathToNode(node->getChild(i), target);
+        }
+        ImGui::PopID();
+
+        if (found) {
+            ImGui::TreeNodeSetOpen(nodeId, true);
+        }
+    }
+
+    ImGui::PopID();
+    return found;
 }
 
 void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
@@ -943,15 +1175,14 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
     
     ImGui::PushID(node.get());
 
-    if (expandAllNodes) {
-        ImGui::SetNextItemOpen(true, ImGuiCond_Always);
-    } else if (collapseAllNodes) {
-        ImGui::SetNextItemOpen(false, ImGuiCond_Always);
-    }
-    
     bool nodeOpen = ImGui::TreeNodeEx((void*)(intptr_t)node.get(), flags, "%s", nodeLabel.c_str());
-    
+
+    if (scrollToSelectedNode && node.get() == lastSeenSelection) {
+        ImGui::SetScrollHereY(0.5f);
+    }
+
     if (ImGui::IsItemClicked()) {
+        selectionChangedFromTree = true;
         editor.selectNode(node);
     }
 
@@ -971,6 +1202,25 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                 editor.reorderNodeBefore(dragged, node);
             }
         }
+
+        const std::string droppedModel = ProjectAssets::acceptDrop(ProjectAssets::Kind::Model);
+        if (!droppedModel.empty()) {
+            if (auto targetScene = editor.getActiveScene()) {
+                const std::string name = std::filesystem::path(droppedModel).stem().string();
+                auto child = targetScene->createNode(editor.generateUniqueNodeName(name));
+                auto renderer = child->addComponent<ModelRenderer>();
+                if (!renderer->loadModel(droppedModel)) {
+                    EditorConsole::getInstance().logError("Could not load " + droppedModel);
+                }
+                attachNewNode(node, child);
+            }
+        }
+
+        const std::string droppedTemplate = ProjectAssets::acceptDrop(ProjectAssets::Kind::Template);
+        if (!droppedTemplate.empty()) {
+            editor.instantiateTemplate(droppedTemplate, node);
+        }
+
         ImGui::EndDragDropTarget();
     }
     
@@ -1056,7 +1306,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             meshRenderer->setMesh(Mesh::createPlane(1.0f, 1.0f, 1));
                             
                             auto material = std::make_shared<Material>();
-                            material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                            material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                             meshRenderer->setMaterial(material);
                             
                             attachNewNode(node, child);
@@ -1071,7 +1321,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             meshRenderer->setMesh(Mesh::createCube());
                             
                             auto material = std::make_shared<Material>();
-                            material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                            material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                             meshRenderer->setMaterial(material);
                             
                             attachNewNode(node, child);
@@ -1086,7 +1336,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             meshRenderer->setMesh(Mesh::createSphere(32, 16));
                             
                             auto material = std::make_shared<Material>();
-                            material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                            material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                             meshRenderer->setMaterial(material);
                             
                             attachNewNode(node, child);
@@ -1101,7 +1351,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             meshRenderer->setMesh(Mesh::createCapsule(0.5f, 0.5f));
                             
                             auto material = std::make_shared<Material>();
-                            material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                            material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                             meshRenderer->setMaterial(material);
                             
                             attachNewNode(node, child);
@@ -1116,7 +1366,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             meshRenderer->setMesh(Mesh::createCylinder(0.5f, 0.5f));
                             
                             auto material = std::make_shared<Material>();
-                            material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                            material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                             meshRenderer->setMaterial(material);
                             
                             attachNewNode(node, child);
@@ -1131,7 +1381,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             meshRenderer->setMesh(Mesh::createRamp());
 
                             auto material = std::make_shared<Material>();
-                            material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                            material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                             meshRenderer->setMaterial(material);
 
                             attachNewNode(node, child);
@@ -1151,7 +1401,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             auto meshRenderer = meshNode->addComponent<MeshRenderer>();
                             meshRenderer->setMesh(Mesh::createCube());
                             auto material = std::make_shared<Material>();
-                            material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                            material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                         meshRenderer->setMaterial(material);
                         parentNode->addChild(meshNode);
                         
@@ -1177,7 +1427,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                             auto meshRenderer = meshNode->addComponent<MeshRenderer>();
                             meshRenderer->setMesh(Mesh::createSphere(32, 16));
                             auto material = std::make_shared<Material>();
-                            material->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+                            material->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
                         meshRenderer->setMaterial(material);
                         parentNode->addChild(meshNode);
                         
@@ -1376,7 +1626,7 @@ void EditorUI::renderSceneNode(std::shared_ptr<SceneNode> node, int depth) {
                     if (node->getParent()) {
                         parent = editor.findNodeShared(node->getParent());
                     }
-                    auto duplicate = editor.instantiateNodeSubtree(node, parent, "_Copy");
+                    auto duplicate = editor.instantiateNodeSubtree(node, parent, "");
                     if (duplicate) {
                         editor.selectNode(duplicate);
                     }
@@ -1447,22 +1697,18 @@ void EditorUI::renderProperties() {
             
             glm::vec3 position = transform.getPosition();
             if (ImGui::DragFloat3("Position", &position.x, 0.1f)) {
-                if (editor.isGridLockEnabled()) {
-                    glm::vec3 worldPos = glm::vec3(selected->getWorldMatrix()[3]);
-                    worldPos = editor.snapWorldToGrid(worldPos, true);
-                    if (selected->getParent()) {
-                        glm::vec4 localPos = glm::inverse(selected->getParent()->getWorldMatrix()) * glm::vec4(worldPos, 1.0f);
-                        position = glm::vec3(localPos);
-                    } else {
-                        position = worldPos;
-                    }
-                }
                 transform.setPosition(position);
             }
             
-            glm::vec3 rotation = transform.getEulerAngles();
+            if (selected.get() != rotationEditCacheNode ||
+                !rotationCacheMatches(rotationEditCacheQuat, transform.getRotation())) {
+                syncRotationEditCache(selected.get(), transform.getRotation());
+            }
+            glm::vec3 rotation = rotationEditCache;
             if (ImGui::DragFloat3("Rotation", &rotation.x, 1.0f)) {
+                rotationEditCache = rotation;
                 transform.setEulerAngles(rotation);
+                rotationEditCacheQuat = transform.getRotation();
             }
             
             glm::vec3 scale = transform.getScale();
@@ -1529,7 +1775,7 @@ void EditorUI::renderProperties() {
                         selected->addComponent<ModelRenderer>();
                     }
                 }
-                if (ImGui::MenuItem("Material Component")) {
+                if (ImGui::MenuItem("Material Overrides")) {
                     if (!selected->getComponent<MaterialComponent>()) {
                         selected->addComponent<MaterialComponent>();
                     }
@@ -1721,14 +1967,29 @@ void EditorUI::renderProperties() {
                 }
                 
                 if (ImGui::Button("Load Model...")) {
-                    std::string modelPath = FileDialog::openFileDialog("Select 3D Model", "*.gltf *.glb");
-                    if (!modelPath.empty()) {
-                        if (modelRenderer->loadModel(modelPath)) {
-                            std::cout << "Successfully loaded model: " << modelPath << std::endl;
+                    const std::string picked = FileDialog::openFileDialog("Select 3D Model", "*.gltf *.glb");
+                    if (FileDialog::isValidResult(picked)) {
+                        std::string importError;
+                        const std::string modelPath =
+                            ProjectAssets::importIntoProject(picked, importError);
+                        if (modelPath.empty()) {
+                            EditorConsole::getInstance().logError(importError);
+                        } else if (modelRenderer->loadModel(modelPath)) {
+                            EditorConsole::getInstance().logInfo("Loaded model: " + modelPath);
                         } else {
-                            std::cout << "Failed to load model: " << modelPath << std::endl;
+                            EditorConsole::getInstance().logError("Failed to load model: " + modelPath);
                         }
                     }
+                }
+                if (ImGui::BeginDragDropTarget()) {
+                    const std::string dropped = ProjectAssets::acceptDrop(ProjectAssets::Kind::Model);
+                    if (!dropped.empty() && !modelRenderer->loadModel(dropped)) {
+                        EditorConsole::getInstance().logError("Failed to load model: " + dropped);
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Or drag a model here from the File Explorer.");
                 }
                 
                 if (modelRenderer->isModelLoaded()) {
@@ -1890,6 +2151,31 @@ void EditorUI::renderViewport() {
         
         editor.setViewportHovered(ImGui::IsItemHovered());
 
+        if (ImGui::BeginDragDropTarget()) {
+            const std::string droppedModel = ProjectAssets::acceptDrop(ProjectAssets::Kind::Model);
+            if (!droppedModel.empty()) {
+                if (auto targetScene = editor.getActiveScene()) {
+                    const std::string name =
+                        std::filesystem::path(droppedModel).stem().string();
+                    auto node = targetScene->createNode(editor.generateUniqueNodeName(name));
+                    auto renderer = node->addComponent<ModelRenderer>();
+                    if (!renderer->loadModel(droppedModel)) {
+                        EditorConsole::getInstance().logError("Could not load " + droppedModel);
+                    }
+                    node->getTransform().setPosition(editor.getGridOrigin());
+                    attachNewNode(targetScene->getRootNode(), node);
+                }
+            }
+
+            const std::string droppedTemplate = ProjectAssets::acceptDrop(ProjectAssets::Kind::Template);
+            if (!droppedTemplate.empty()) {
+                if (auto targetScene = editor.getActiveScene()) {
+                    editor.instantiateTemplate(droppedTemplate, targetScene->getRootNode());
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+
         ImVec2 imageScreenPos = ImGui::GetItemRectMin();
         ImVec2 imageScreenSize = ImVec2(ImGui::GetItemRectMax().x - imageScreenPos.x, ImGui::GetItemRectMax().y - imageScreenPos.y);
         
@@ -1899,7 +2185,7 @@ void EditorUI::renderViewport() {
             ImGui::SetCursorPos(ImVec2(viewportPos.x + 10, viewportPos.y + 50));
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Create a camera to view the scene");
         } else {
-            if (selectedNode && isViewportFocused) {
+            if (selectedNode) {
                 auto cameraComponent = cameraNode->getComponent<CameraComponent>();
                 if (cameraComponent) {
                     ImGuizmo::Enable(!editor.isCameraFlyActive());
@@ -1926,7 +2212,7 @@ void EditorUI::renderViewport() {
                         matrix
                     );
                     
-                    if (manipulated && isViewportFocused) {
+                    if (manipulated && ImGuizmo::IsUsing()) {
                         glm::mat4 newWorldMatrix;
                         memcpy(glm::value_ptr(newWorldMatrix), matrix, 16 * sizeof(float));
                         glm::vec3 worldPos(newWorldMatrix[3][0], newWorldMatrix[3][1], newWorldMatrix[3][2]);
@@ -1937,21 +2223,24 @@ void EditorUI::renderViewport() {
                             newWorldMatrix[3][2] = worldPos.z;
                         }
                         auto parent = selectedNode->getParent();
-                        if (parent) {
-                            glm::mat4 parentWorldInverse = glm::inverse(parent->getWorldMatrix());
-                            glm::mat4 newLocalMatrix = parentWorldInverse * newWorldMatrix;
-                            float translation[3], rotation[3], scale[3];
-                            ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(newLocalMatrix), translation, rotation, scale);
-                            selectedNode->getTransform().setPosition(glm::vec3(translation[0], translation[1], translation[2]));
-                            selectedNode->getTransform().setEulerAngles(glm::vec3(rotation[0], rotation[1], rotation[2]));
-                            selectedNode->getTransform().setScale(glm::vec3(scale[0], scale[1], scale[2]));
-                        } else {
-                            float translation[3], rotation[3], scale[3];
-                            ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(newWorldMatrix), translation, rotation, scale);
-                            selectedNode->getTransform().setPosition(glm::vec3(translation[0], translation[1], translation[2]));
-                            selectedNode->getTransform().setEulerAngles(glm::vec3(rotation[0], rotation[1], rotation[2]));
-                            selectedNode->getTransform().setScale(glm::vec3(scale[0], scale[1], scale[2]));
-                        }
+
+                        glm::mat4 localMatrix = parent ? (glm::inverse(parent->getWorldMatrix()) * newWorldMatrix) : newWorldMatrix;
+                        glm::vec3 newPosition(localMatrix[3]);
+                        glm::vec3 newScale(
+                            glm::length(glm::vec3(localMatrix[0])),
+                            glm::length(glm::vec3(localMatrix[1])),
+                            glm::length(glm::vec3(localMatrix[2]))
+                        );
+                        glm::mat3 rotationMatrix(
+                            glm::vec3(localMatrix[0]) / newScale.x,
+                            glm::vec3(localMatrix[1]) / newScale.y,
+                            glm::vec3(localMatrix[2]) / newScale.z
+                        );
+                        glm::quat newRotation = glm::quat_cast(rotationMatrix);
+                        selectedNode->getTransform().setPosition(newPosition);
+                        selectedNode->getTransform().setRotation(newRotation);
+                        selectedNode->getTransform().setScale(newScale);
+                        syncRotationEditCache(selectedNode.get(), newRotation);
                     }
                 }
             }
@@ -2038,14 +2327,13 @@ void EditorUI::setActiveSceneAsMainScene() {
         return;
     }
 
-    BuildSettings settings;
-    settings.load();
-    settings.mainScene = AssetPaths::toPortable(scenePath);
+    Project& project = Project::getInstance();
+    project.mainScene = AssetPaths::toPortable(scenePath);
 
-    if (settings.save()) {
-        EditorConsole::getInstance().logInfo("Main scene set to " + settings.mainScene);
+    if (project.save()) {
+        EditorConsole::getInstance().logInfo("Main scene set to " + project.mainScene);
     } else {
-        EditorConsole::getInstance().logError("Could not write " + std::string(kBuildSettingsPath));
+        EditorConsole::getInstance().logError("Could not write " + std::string(Project::kFileName));
     }
 }
 
@@ -2078,6 +2366,13 @@ void EditorUI::renderConsole() {
         console.clear();
     }
     ImGui::SameLine();
+
+    const bool copyAll = ImGui::Button("Copy");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Copy every line currently shown (the severity filters apply).\n"
+                          "Right-click a line to copy just that one.");
+    }
+    ImGui::SameLine();
     ImGui::Checkbox("Info", &showInfoLogs);
     ImGui::SameLine();
     ImGui::Checkbox("Warnings", &showWarningLogs);
@@ -2091,6 +2386,10 @@ void EditorUI::renderConsole() {
     ImGui::Separator();
 
     ImGui::BeginChild("ConsoleScroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+    std::string copyBuffer;
+
+    int entryIndex = 0;
     for (const EditorConsole::Entry& entry : console.getEntries()) {
         ImVec4 color(0.85f, 0.85f, 0.85f, 1.0f);
         switch (entry.severity) {
@@ -2108,7 +2407,27 @@ void EditorUI::renderConsole() {
                 break;
         }
 
-        ImGui::TextColored(color, "%s", entry.message.c_str());
+        if (copyAll) {
+            copyBuffer += entry.message;
+            copyBuffer += '\n';
+        }
+
+        ImGui::PushID(entryIndex++);
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+        ImGui::TextUnformatted(entry.message.c_str());
+        ImGui::PopStyleColor();
+
+        if (ImGui::BeginPopupContextItem("LineContext")) {
+            if (ImGui::MenuItem("Copy line")) {
+                ImGui::SetClipboardText(entry.message.c_str());
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
+    }
+
+    if (copyAll) {
+        ImGui::SetClipboardText(copyBuffer.c_str());
     }
 
     if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
@@ -2120,9 +2439,10 @@ void EditorUI::renderConsole() {
 }
 
 void EditorUI::renderFileExplorer() {
-    ImGui::Begin("File Explorer", &showFileExplorer);
-    ImGui::Text("File explorer will be implemented here");
-    ImGui::End();
+    if (!showFileExplorer) {
+        return;
+    }
+    browser.draw(&showFileExplorer);
 }
 
 void EditorUI::renderInputMapping() {
@@ -2146,14 +2466,15 @@ void EditorUI::renderInputMapping() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Save to File")) {
-        inputMapping.saveMappingsToFile("config/input_mappings.txt");
+        inputMapping.saveMappingsToFile(Project::getInstance().inputMap);
         // Reload mappings to refresh the UI
         inputMapping.reloadMappings();
     }
     ImGui::SameLine();
     if (ImGui::Button("Open File in Editor")) {
 #ifdef LINUX_BUILD
-        int result = system("xdg-open config/input_mappings.txt &");
+        const std::string command = "xdg-open '" + AssetPaths::resolve(Project::getInstance().inputMap) + "' &";
+        int result = system(command.c_str());
         (void)result; // Ignore return value - we don't need to check if xdg-open succeeded
 #endif
     }
@@ -2294,7 +2615,7 @@ void EditorUI::renderInputMapping() {
     // Preset operations
     ImGui::Text("Preset Operations:");
     if (ImGui::Button("Load Default Mappings")) {
-        inputMapping.loadMappingsFromFile("config/default_input_mappings.txt", true);
+        inputMapping.loadMappingsFromFile(Project::getInstance().defaultInputMap, true);
     }
     ImGui::SameLine();
     if (ImGui::Button("Clear All Mappings")) {
@@ -2305,7 +2626,7 @@ void EditorUI::renderInputMapping() {
     
     // Help section
     ImGui::Text("Help:");
-    ImGui::BulletText("Hot-reload is enabled - changes to config/input_mappings.txt are automatically loaded");
+    ImGui::BulletText("Hot-reload is enabled - changes to %s are automatically loaded", Project::getInstance().inputMap.c_str());
     ImGui::BulletText("Use 'Open File in Editor' to edit mappings in a text editor");
     ImGui::BulletText("Input codes: W=87, A=65, S=83, D=68, Space=32, Shift=340, Ctrl=341, E=69, Esc=256");
     ImGui::BulletText("Vita buttons: Cross=16384, Circle=32768, Square=8192, Triangle=4096");
@@ -2356,10 +2677,24 @@ void EditorUI::drawLiveAreaImageSlot(const char* label, const char* requirement,
     ImGui::InputText(label, path, pathSize);
     ImGui::SameLine();
     if (ImGui::Button("Browse...")) {
-        std::string filepath = FileDialog::openImageFileDialog(label);
-        if (FileDialog::isValidResult(filepath)) {
-            std::snprintf(path, pathSize, "%s", FileDialog::toProjectRelativePath(filepath).c_str());
+        const std::string picked = FileDialog::openImageFileDialog(label);
+        if (FileDialog::isValidResult(picked)) {
+            // The Vita build tracks these as make prerequisites, so an absolute path outside the project would break the build on any other machine...
+            std::string importError;
+            const std::string imported = ProjectAssets::importIntoProject(picked, importError);
+            if (imported.empty()) {
+                EditorConsole::getInstance().logError(importError);
+            } else {
+                std::snprintf(path, pathSize, "%s", imported.c_str());
+            }
         }
+    }
+    if (ImGui::BeginDragDropTarget()) {
+        const std::string dropped = ProjectAssets::acceptDrop(ProjectAssets::Kind::Texture);
+        if (!dropped.empty()) {
+            std::snprintf(path, pathSize, "%s", dropped.c_str());
+        }
+        ImGui::EndDragDropTarget();
     }
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
@@ -2367,7 +2702,7 @@ void EditorUI::drawLiveAreaImageSlot(const char* label, const char* requirement,
     }
 
     ImGui::TextDisabled("    %s", requirement);
-    if (path[0] != '\0' && !std::filesystem::exists(path)) {
+    if (path[0] != '\0' && !AssetPaths::exists(AssetPaths::resolve(path))) {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "- file not found");
     }
@@ -2380,6 +2715,9 @@ void EditorUI::renderBuildSettings() {
 
     static bool loaded = false;
     static bool toolsAvailable = false;
+    static char projectName[64] = "";
+    static char assetRoot[128] = "";
+    static char inputMap[256] = "";
     static char pcTitle[64] = "";
     static char pcExecutableName[64] = "";
     static char mainScene[256] = "";
@@ -2399,38 +2737,50 @@ void EditorUI::renderBuildSettings() {
     static int styleIndex = 0;
     static std::string status;
 
-    if (!loaded) {
-        BuildSettings settings;
-        settings.load();
-        std::snprintf(pcTitle, sizeof(pcTitle), "%s", settings.pc.title.c_str());
-        std::snprintf(pcExecutableName, sizeof(pcExecutableName), "%s", settings.pc.executableName.c_str());
-        std::snprintf(mainScene, sizeof(mainScene), "%s", settings.mainScene.c_str());
-        windowWidth = settings.pc.windowWidth;
-        windowHeight = settings.pc.windowHeight;
-        fullscreen = settings.pc.fullscreen;
-        targetFrameRate = settings.pc.targetFrameRate;
-        rendererIndex = (settings.pc.renderer == "opengl") ? 1 : 0;
-        std::snprintf(vitaTitle, sizeof(vitaTitle), "%s", settings.vita.title.c_str());
-        std::snprintf(vitaTitleId, sizeof(vitaTitleId), "%s", settings.vita.titleId.c_str());
-        std::snprintf(vitaAppVersion, sizeof(vitaAppVersion), "%s", settings.vita.appVersion.c_str());
-        std::snprintf(vpkName, sizeof(vpkName), "%s", settings.vita.vpkName.c_str());
-        std::snprintf(icon0, sizeof(icon0), "%s", settings.vita.icon0Source.c_str());
-        std::snprintf(pic0, sizeof(pic0), "%s", settings.vita.pic0Source.c_str());
-        std::snprintf(bg0, sizeof(bg0), "%s", settings.vita.bg0Source.c_str());
-        std::snprintf(startup, sizeof(startup), "%s", settings.vita.startupSource.c_str());
-        styleIndex = (settings.vita.liveAreaStyle == "psmobile") ? 1 : 0;
+    Project& project = Project::getInstance();
 
-        toolsAvailable = BuildSettings::converterToolsAvailable();
+    if (!loaded) {
+        std::snprintf(projectName, sizeof(projectName), "%s", project.name.c_str());
+        std::snprintf(assetRoot, sizeof(assetRoot), "%s", project.assetRoot.c_str());
+        std::snprintf(inputMap, sizeof(inputMap), "%s", project.inputMap.c_str());
+        std::snprintf(pcTitle, sizeof(pcTitle), "%s", project.pc.title.c_str());
+        std::snprintf(pcExecutableName, sizeof(pcExecutableName), "%s", project.pc.executableName.c_str());
+        std::snprintf(mainScene, sizeof(mainScene), "%s", project.mainScene.c_str());
+        windowWidth = project.pc.windowWidth;
+        windowHeight = project.pc.windowHeight;
+        fullscreen = project.pc.fullscreen;
+        targetFrameRate = project.pc.targetFrameRate;
+        rendererIndex = (project.pc.renderer == "opengl") ? 1 : 0;
+        std::snprintf(vitaTitle, sizeof(vitaTitle), "%s", project.vita.title.c_str());
+        std::snprintf(vitaTitleId, sizeof(vitaTitleId), "%s", project.vita.titleId.c_str());
+        std::snprintf(vitaAppVersion, sizeof(vitaAppVersion), "%s", project.vita.appVersion.c_str());
+        std::snprintf(vpkName, sizeof(vpkName), "%s", project.vita.vpkName.c_str());
+        std::snprintf(icon0, sizeof(icon0), "%s", project.vita.icon0Source.c_str());
+        std::snprintf(pic0, sizeof(pic0), "%s", project.vita.pic0Source.c_str());
+        std::snprintf(bg0, sizeof(bg0), "%s", project.vita.bg0Source.c_str());
+        std::snprintf(startup, sizeof(startup), "%s", project.vita.startupSource.c_str());
+        styleIndex = (project.vita.liveAreaStyle == "psmobile") ? 1 : 0;
+
+        toolsAvailable = LiveAreaBuilder::converterToolsAvailable();
         loaded = true;
     }
 
     ImGui::Begin("Project Settings", &showBuildSettings);
 
-    ImGui::TextDisabled("Saved to %s. Each build reads its own tab.", kBuildSettingsPath);
+    if (project.isLoaded()) {
+        ImGui::TextDisabled("Saved to %s. Each build reads its own tab.", project.getFilePath().c_str());
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "No %s yet - saving writes one next to the editor's working directory.", Project::kFileName);
+    }
     ImGui::Separator();
 
     if (ImGui::BeginTabBar("BuildPlatforms")) {
-        if (ImGui::BeginTabItem("Game")) {
+        if (ImGui::BeginTabItem("Project")) {
+            ImGui::InputText("Project Name", projectName, sizeof(projectName));
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Shown in the editor title bar and the recent projects list.");
+            }
+
             ImGui::InputText("Main Scene", mainScene, sizeof(mainScene));
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Scene both builds boot into. Read at startup, no rebuild needed.");
@@ -2439,11 +2789,38 @@ void EditorUI::renderBuildSettings() {
             if (ImGui::Button("Browse##mainScene")) {
                 const std::string picked = FileDialog::openFileDialog("Select Main Scene");
                 if (FileDialog::isValidResult(picked)) {
-                    const std::string relative = FileDialog::toProjectRelativePath(picked);
-                    std::snprintf(mainScene, sizeof(mainScene), "%s", relative.c_str());
+                    if (ProjectAssets::isInsideProject(picked)) {
+                        std::snprintf(mainScene, sizeof(mainScene), "%s", AssetPaths::toPortable(picked).c_str());
+                    } else {
+                        EditorConsole::getInstance().logError( "Main scene must be inside the project: " + picked);
+                    }
                 }
             }
-            ImGui::TextDisabled("    the Vita reads the same value from the packed settings file");
+            if (ImGui::BeginDragDropTarget()) {
+                const std::string dropped = ProjectAssets::acceptDrop(ProjectAssets::Kind::Scene);
+                if (!dropped.empty()) {
+                    std::snprintf(mainScene, sizeof(mainScene), "%s", dropped.c_str());
+                }
+                ImGui::EndDragDropTarget();
+            }
+            ImGui::TextDisabled("    the Vita reads the same value from the packed project file");
+
+            ImGui::Separator();
+            ImGui::Text("Folders");
+
+            ImGui::InputText("Asset Root", assetRoot, sizeof(assetRoot));
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Project-relative folder every asset path is looked up under. Takes effect on the next start.");
+            }
+            ImGui::InputText("Input Map", inputMap, sizeof(inputMap));
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Where the editor and both builds read and write key bindings.");
+            }
+
+            ImGui::Separator();
+            ImGui::TextDisabled("Project root: %s",
+                                project.getRootPath().empty() ? "(working directory)" : project.getRootPath().c_str());
+            ImGui::TextDisabled("Engine version: %s", Project::kEngineVersion);
             ImGui::EndTabItem();
         }
 
@@ -2548,36 +2925,47 @@ void EditorUI::renderBuildSettings() {
     }
 
     if (saveRequested) {
-        BuildSettings settings;
-        settings.mainScene = mainScene;
-        settings.pc.title = pcTitle;
-        settings.pc.executableName = pcExecutableName;
-        settings.pc.windowWidth = windowWidth;
-        settings.pc.windowHeight = windowHeight;
-        settings.pc.fullscreen = fullscreen;
-        settings.pc.targetFrameRate = targetFrameRate;
-        settings.pc.renderer = (rendererIndex == 1) ? "opengl" : "vulkan";
-        settings.vita.title = vitaTitle;
-        settings.vita.titleId = vitaTitleId;
-        settings.vita.appVersion = vitaAppVersion;
-        settings.vita.vpkName = vpkName;
-        settings.vita.liveAreaStyle = (styleIndex == 1) ? "psmobile" : "a1";
-        settings.vita.icon0Source = icon0;
-        settings.vita.pic0Source = pic0;
-        settings.vita.bg0Source = bg0;
-        settings.vita.startupSource = startup;
+        Project edited = project;
+        edited.name = projectName;
+        edited.assetRoot = assetRoot;
+        edited.inputMap = inputMap;
+        edited.mainScene = mainScene;
+        edited.pc.title = pcTitle;
+        edited.pc.executableName = pcExecutableName;
+        edited.pc.windowWidth = windowWidth;
+        edited.pc.windowHeight = windowHeight;
+        edited.pc.fullscreen = fullscreen;
+        edited.pc.targetFrameRate = targetFrameRate;
+        edited.pc.renderer = (rendererIndex == 1) ? "opengl" : "vulkan";
+        edited.vita.title = vitaTitle;
+        edited.vita.titleId = vitaTitleId;
+        edited.vita.appVersion = vitaAppVersion;
+        edited.vita.vpkName = vpkName;
+        edited.vita.liveAreaStyle = (styleIndex == 1) ? "psmobile" : "a1";
+        edited.vita.icon0Source = icon0;
+        edited.vita.pic0Source = pic0;
+        edited.vita.bg0Source = bg0;
+        edited.vita.startupSource = startup;
 
-        const std::string error = settings.validate();
+        const std::string error = edited.validate();
         if (!error.empty()) {
             status = "Not saved: " + error;
-        } else if (!settings.save()) {
-            status = "Could not write " + std::string(kBuildSettingsPath);
         } else {
-            status = "Saved to " + std::string(kBuildSettingsPath);
-            if (generateRequested) {
-                std::string output;
-                const bool generated = BuildSettings::generateLiveAreaAssets(output);
-                status = (generated ? "Wrote sce_sys/\n" : "Generating sce_sys/ failed\n") + output;
+            project = edited;
+            const bool written = project.isLoaded()
+                ? project.save()
+                : project.saveAs((std::filesystem::current_path() / Project::kFileName).string());
+
+            if (!written) {
+                status = "Could not write " + std::string(Project::kFileName);
+            } else {
+                status = "Saved to " + project.getFilePath();
+                editor.updateWindowTitle();
+                if (generateRequested) {
+                    std::string output;
+                    const bool generated = LiveAreaBuilder::generateAssets(output);
+                    status = (generated ? "Wrote sce_sys/\n" : "Generating sce_sys/ failed\n") + output;
+                }
             }
         }
     }

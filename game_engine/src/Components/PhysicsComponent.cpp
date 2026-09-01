@@ -4,6 +4,7 @@
 #include "Scene/SceneNode.h"
 #include "Core/Transform.h"
 #include "Components/NavAgentComponent.h"
+#include "Components/Area3DComponent.h"
 #include "Rendering/Mesh.h"
 #include "Rendering/Renderer.h"
 #include "Rendering/Material.h"
@@ -39,14 +40,16 @@ PhysicsComponent::PhysicsComponent()
     , linearDamping(0.0f)
     , angularDamping(0.0f)
     , gravityEnabled(true)
+    , syncRotationFromPhysics(true)
     , rigidBody(nullptr)
     , collisionShape(nullptr)
     , motionState(nullptr)
     , isCollidingFlag(false)
-    , showCollisionShape(true)  // Enable collision shape visualization by default
+    , showCollisionShape(false)
     , collisionFilterGroup(-1)  // -1 = DefaultFilter/AllFilter, collide with everything
     , collisionFilterMask(-1)
     , lastWorldTransform(1.0f)
+    , lastShapeScale(1.0f, 1.0f, 1.0f)
     , destroyed(false)
 {
 }
@@ -55,6 +58,7 @@ PhysicsComponent::~PhysicsComponent() {
     if (!destroyed) {
         destroy();
     }
+    Area3DComponent::notifyBodyComponentDestroyed(this);
 }
 
 void PhysicsComponent::start() {
@@ -77,6 +81,7 @@ void PhysicsComponent::update(float deltaTime) {
     if (destroyed || !rigidBody || !owner) {
         return;
     }
+    checkAndApplyScaleChange();
     glm::mat4 worldTransform = owner->getWorldMatrix();
     if (worldTransform != lastWorldTransform) {
         lastWorldTransform = worldTransform;
@@ -86,7 +91,9 @@ void PhysicsComponent::update(float deltaTime) {
     if (destroyed || !rigidBody || !owner) {
         return;
     }
-    
+
+    checkAndApplyScaleChange();
+
     if (rigidBody && owner) {
         if (bodyType == PhysicsBodyType::KINEMATIC) {
             // Always sync kinematic body from node transform every frame so script-driven
@@ -100,6 +107,19 @@ void PhysicsComponent::update(float deltaTime) {
         }
     }
 #endif
+}
+
+void PhysicsComponent::checkAndApplyScaleChange() {
+    if (!rigidBody || !owner) {
+        return;
+    }
+    glm::vec3 currentScale = owner->getWorldScale();
+    const float kScaleEpsilon = 0.0001f;
+    if (std::abs(currentScale.x - lastShapeScale.x) > kScaleEpsilon ||
+        std::abs(currentScale.y - lastShapeScale.y) > kScaleEpsilon ||
+        std::abs(currentScale.z - lastShapeScale.z) > kScaleEpsilon) {
+        updateCollisionShape();
+    }
 }
 
 void PhysicsComponent::destroy() {
@@ -349,26 +369,30 @@ glm::vec3 PhysicsComponent::getLinearFactor() const {
 
 void PhysicsComponent::applyForce(const glm::vec3& force, const glm::vec3& point) {
     if (rigidBody) {
-        rigidBody->applyForce(btVector3(force.x, force.y, force.z), 
+        rigidBody->activate();
+        rigidBody->applyForce(btVector3(force.x, force.y, force.z),
                              btVector3(point.x, point.y, point.z));
     }
 }
 
 void PhysicsComponent::applyImpulse(const glm::vec3& impulse, const glm::vec3& point) {
     if (rigidBody) {
-        rigidBody->applyImpulse(btVector3(impulse.x, impulse.y, impulse.z), 
+        rigidBody->activate();
+        rigidBody->applyImpulse(btVector3(impulse.x, impulse.y, impulse.z),
                                btVector3(point.x, point.y, point.z));
     }
 }
 
 void PhysicsComponent::applyTorque(const glm::vec3& torque) {
     if (rigidBody) {
+        rigidBody->activate();
         rigidBody->applyTorque(btVector3(torque.x, torque.y, torque.z));
     }
 }
 
 void PhysicsComponent::applyTorqueImpulse(const glm::vec3& torque) {
     if (rigidBody) {
+        rigidBody->activate();
         rigidBody->applyTorqueImpulse(btVector3(torque.x, torque.y, torque.z));
     }
 }
@@ -393,20 +417,24 @@ void PhysicsComponent::syncTransformFromPhysics() {
         if (auto* parent = owner->getParent()) {
             glm::mat4 parentInv = glm::inverse(parent->getWorldMatrix());
             glm::vec3 localPos = glm::vec3(parentInv * glm::vec4(worldPos, 1.0f));
-            glm::quat localRot = glm::inverse(parent->getWorldRotation()) * worldRot;
             owner->getTransform().setPosition(localPos);
-            owner->getTransform().setRotation(localRot);
+            if (syncRotationFromPhysics) {
+                glm::quat localRot = glm::inverse(parent->getWorldRotation()) * worldRot;
+                owner->getTransform().setRotation(localRot);
+            }
         } else {
             owner->getTransform().setPosition(worldPos);
-            owner->getTransform().setRotation(worldRot);
+            if (syncRotationFromPhysics) {
+                owner->getTransform().setRotation(worldRot);
+            }
         }
 #else
         glm::vec3 physicsWorldPos = glm::vec3(pos.x(), pos.y(), pos.z());
         glm::quat physicsWorldRot = glm::quat(rot.w(), rot.x(), rot.y(), rot.z());
         
         if (bodyType == PhysicsBodyType::DYNAMIC || bodyType == PhysicsBodyType::KINEMATIC) {
-            bool rotationLocked = false;
-            if (rigidBody) {
+            bool rotationLocked = !syncRotationFromPhysics;
+            if (!rotationLocked && rigidBody) {
                 btVector3 angularFactor = rigidBody->getAngularFactor();
                 rotationLocked = (angularFactor.x() == 0.0f && angularFactor.y() == 0.0f && angularFactor.z() == 0.0f);
             }
@@ -540,6 +568,35 @@ void PhysicsComponent::setCollisionCallback(std::function<void(PhysicsComponent*
     collisionCallback = callback;
 }
 
+void PhysicsComponent::setCollisionExitCallback(std::function<void(PhysicsComponent*)> callback) {
+    collisionExitCallback = callback;
+}
+
+void PhysicsComponent::beginContactFrame() {
+    currentContacts.clear();
+    isCollidingFlag = false;
+}
+
+void PhysicsComponent::addContact(PhysicsComponent* other) {
+    if (!other) {
+        return;
+    }
+    currentContacts.push_back(other);
+    isCollidingFlag = true;
+}
+
+void PhysicsComponent::fireCollisionEnter(PhysicsComponent* other) {
+    if (collisionCallback) {
+        collisionCallback(other);
+    }
+}
+
+void PhysicsComponent::fireCollisionExit(PhysicsComponent* other) {
+    if (collisionExitCallback) {
+        collisionExitCallback(other);
+    }
+}
+
 void PhysicsComponent::setShowCollisionShape(bool show) {
     showCollisionShape = show;
 }
@@ -561,7 +618,8 @@ void PhysicsComponent::createRigidBody() {
     
     collisionShape = createBulletCollisionShape();
     if (!collisionShape) return;
-    
+    lastShapeScale = owner->getWorldScale();
+
     glm::mat4 worldTransform = owner->getWorldMatrix();
     
     glm::vec3 worldPos;
@@ -642,8 +700,21 @@ void PhysicsComponent::createRigidBody() {
         mass = 0.0f;
     } else {
         flags |= btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK;
-        rigidBody->setCcdMotionThreshold(0.1f);
-        rigidBody->setCcdSweptSphereRadius(0.1f);
+
+        // Size CCD to this body's actual geometry instead of a fixed constant
+        float ccdRadius = 0.1f;
+        if (collisionShape) {
+            btVector3 aabbMin, aabbMax;
+            collisionShape->getAabb(btTransform::getIdentity(), aabbMin, aabbMax);
+            btVector3 halfExtents = (aabbMax - aabbMin) * 0.5f;
+            float smallestExtent = halfExtents.x();
+            if (halfExtents.y() < smallestExtent) smallestExtent = halfExtents.y();
+            if (halfExtents.z() < smallestExtent) smallestExtent = halfExtents.z();
+            ccdRadius = smallestExtent * 0.5f;
+            if (ccdRadius < 0.05f) ccdRadius = 0.05f;
+        }
+        rigidBody->setCcdMotionThreshold(ccdRadius);
+        rigidBody->setCcdSweptSphereRadius(ccdRadius);
         rigidBody->setAngularFactor(btVector3(1.0f, 1.0f, 1.0f));
         rigidBody->setLinearFactor(btVector3(1.0f, 1.0f, 1.0f));
         rigidBody->setSleepingThresholds(0.1f, 0.1f);
@@ -704,7 +775,10 @@ void PhysicsComponent::updateCollisionShape() {
         }
         
         collisionShape = createBulletCollisionShape();
-        
+        if (owner) {
+            lastShapeScale = owner->getWorldScale();
+        }
+
         rigidBody->setCollisionShape(collisionShape);
         
         btVector3 localInertia(0, 0, 0);

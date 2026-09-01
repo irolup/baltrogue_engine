@@ -365,10 +365,11 @@ void OpenGLRenderer::processRenderQueue() {
             if (!a.material && !b.material) return false;
             if (!a.material) return false;
             if (!b.material) return true;
-            bool aOpaque = (a.material->getBlendMode() == BlendMode::Opaque);
-            bool bOpaque = (b.material->getBlendMode() == BlendMode::Opaque);
-            if (aOpaque != bOpaque)
-                return aOpaque;
+            // opaque -> cutout -> blended
+            const int bucketA = static_cast<int>(getRenderSortBucket(*a.material));
+            const int bucketB = static_cast<int>(getRenderSortBucket(*b.material));
+            if (bucketA != bucketB)
+                return bucketA < bucketB;
             auto shaderA = a.material->getShader();
             auto shaderB = b.material->getShader();
             if (shaderA != shaderB)
@@ -386,22 +387,22 @@ void OpenGLRenderer::processRenderQueue() {
         cameraPos = extractCameraPosition(cachedViewMatrix);
     }
 
-    for (const auto& command : renderQueue) {
-        if (!command.mesh) continue;
-        
-        if (!command.isBeam && frustumCullingEnabled && activeCamera) {
-            const glm::vec3 boundsMin = command.mesh->getBoundsMin();
-            const glm::vec3 boundsMax = command.mesh->getBoundsMax();
+    cullRenderQueue();
+    buildInstanceBatches();
+    const bool instancedDrawsIssued = drawInstanceBatches(cameraPos);
 
-            if (Frustum::areBoundsValid(boundsMin, boundsMax)) {
-                stats.totalObjectsTested++;
-                if (!cameraFrustum.containsAABB(boundsMin, boundsMax, command.modelMatrix)) {
-                    stats.culledObjects++;
-                    continue;
-                }
-            }
+    for (size_t commandIndex = 0; commandIndex < renderQueue.size(); ++commandIndex) {
+        const auto& command = renderQueue[commandIndex];
+        if (!command.mesh) continue;
+
+        if (commandIndex < cameraVisible.size() && cameraVisible[commandIndex] == 0) {
+            continue;
         }
-        
+        // Already covered by an instanced batch.
+        if (instancedDrawsIssued && instanceBatcher.isBatched(commandIndex)) {
+            continue;
+        }
+
         std::shared_ptr<Material> material = command.material;
         if (!material) {
             material = Material::getDefaultMaterial();
@@ -420,27 +421,8 @@ void OpenGLRenderer::processRenderQueue() {
         }
         
         auto shader = material->getShader();
-        bool isDefaultLit = shader && (shader == Shader::getLightingShader());
-        if (isDefaultLit && currentScene) {
-            auto activeSkyboxNode = currentScene->getActiveSkybox();
-            if (activeSkyboxNode) {
-                auto skyboxComp = activeSkyboxNode->getComponent<SkyboxComponent>();
-                if (skyboxComp && skyboxComp->isActive()) {
-                    auto envMap = skyboxComp->getCubemapTexture();
-                    if (envMap) {
-                        material->setTexture("u_EnvironmentMap", envMap);
-                        material->setBool("u_HasEnvironmentMap", true);
-                    } else {
-                        material->setBool("u_HasEnvironmentMap", false);
-                    }
-                } else {
-                    material->setBool("u_HasEnvironmentMap", false);
-                }
-            } else {
-                material->setBool("u_HasEnvironmentMap", false);
-            }
-        }
-        
+        applyEnvironmentMap(*material);
+
         applyMaterial(*material);
         
         if (shader && activeCamera && matricesCached) {
@@ -489,6 +471,183 @@ void OpenGLRenderer::processRenderQueue() {
     
     matricesCached = false;
     renderQueue.clear();
+}
+
+void OpenGLRenderer::applyEnvironmentMap(Material& material) const {
+    auto shader = material.getShader();
+    const bool isDefaultLit = shader && (shader == Shader::getLightingShader());
+    if (!isDefaultLit || !currentScene) {
+        return;
+    }
+
+    auto activeSkyboxNode = currentScene->getActiveSkybox();
+    if (activeSkyboxNode) {
+        auto skyboxComp = activeSkyboxNode->getComponent<SkyboxComponent>();
+        if (skyboxComp && skyboxComp->isActive()) {
+            auto envMap = skyboxComp->getCubemapTexture();
+            if (envMap) {
+                material.setTexture("u_EnvironmentMap", envMap);
+                material.setBool("u_HasEnvironmentMap", true);
+            } else {
+                material.setBool("u_HasEnvironmentMap", false);
+            }
+        } else {
+            material.setBool("u_HasEnvironmentMap", false);
+        }
+    } else {
+        material.setBool("u_HasEnvironmentMap", false);
+    }
+}
+
+void OpenGLRenderer::cullRenderQueue() {
+    cameraVisible.assign(renderQueue.size(), 1);
+
+    if (!frustumCullingEnabled || !activeCamera) {
+        return;
+    }
+
+    for (size_t i = 0; i < renderQueue.size(); ++i) {
+        const RenderCommand& command = renderQueue[i];
+        if (!command.mesh || command.isBeam) {
+            continue;
+        }
+
+        const glm::vec3 boundsMin = command.mesh->getBoundsMin();
+        const glm::vec3 boundsMax = command.mesh->getBoundsMax();
+        if (!Frustum::areBoundsValid(boundsMin, boundsMax)) {
+            continue;
+        }
+
+        stats.totalObjectsTested++;
+        if (!cameraFrustum.containsAABB(boundsMin, boundsMax, command.modelMatrix)) {
+            stats.culledObjects++;
+            cameraVisible[i] = 0;
+        }
+    }
+}
+
+bool OpenGLRenderer::isInstanceableShader(const RenderCommand& command) {
+    if (!command.material) {
+        return false;
+    }
+    const auto shader = command.material->getShader();
+    return !shader || shader == Shader::getLightingShader();
+}
+
+void OpenGLRenderer::buildInstanceBatches() {
+    instanceBatcher.clear();
+
+    if (!instancingEnabled || !instancingSupported) {
+        return;
+    }
+
+    instanceBatcher.build(renderQueue, cameraVisible, &OpenGLRenderer::isInstanceableShader);
+}
+
+bool OpenGLRenderer::ensureInstanceBuffer(size_t bytes) {
+    if (bytes == 0) {
+        return false;
+    }
+
+    if (!instanceVBO) {
+        glGenBuffers(1, &instanceVBO);
+        if (!instanceVBO) {
+            return false;
+        }
+        instanceVBOCapacity = 0;
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+
+    if (instanceVBOCapacity < bytes) {
+        size_t newCapacity = instanceVBOCapacity > 0 ? instanceVBOCapacity : 1024;
+        while (newCapacity < bytes) {
+            newCapacity *= 2;
+        }
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(newCapacity), nullptr, GL_STREAM_DRAW);
+        instanceVBOCapacity = newCapacity;
+    }
+
+    return true;
+}
+
+bool OpenGLRenderer::drawInstanceBatches(const glm::vec3& cameraPos) {
+    if (!instancingEnabled || !instancingSupported) {
+        return false;
+    }
+
+    const auto& batches = instanceBatcher.batches();
+    if (batches.empty()) {
+        return false;
+    }
+
+    auto instancedShader = Shader::getLightingInstancedShader();
+    if (!instancedShader || !instancedShader->isValid()) {
+        instancingSupported = false;
+        return false;
+    }
+
+    const auto& instanceData = instanceBatcher.instanceData();
+    const size_t bytes = instanceData.size() * sizeof(InstanceData);
+    if (!ensureInstanceBuffer(bytes)) {
+        instancingSupported = false;
+        return false;
+    }
+
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(instanceVBOCapacity), nullptr, GL_STREAM_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(bytes), instanceData.data());
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    bool drewAny = false;
+
+    for (const auto& batch : batches) {
+        const RenderCommand& command = renderQueue[batch.queueIndex];
+        std::shared_ptr<Material> material = command.material;
+        if (!command.mesh || !material) {
+            continue;
+        }
+
+        const bool cullingWasEnabled = cullFaceEnabled;
+        if (command.disableCulling && cullFaceEnabled) {
+            glDisable(GL_CULL_FACE);
+        }
+
+        if (activeCamera && matricesCached) {
+            material->setCameraPosition(cameraPos);
+        }
+        applyEnvironmentMap(*material);
+
+        material->applyWithShader(instancedShader);
+
+        if (activeCamera && matricesCached) {
+            instancedShader->setMat4("viewMatrix", cachedViewMatrix);
+            instancedShader->setMat4("projectionMatrix", cachedProjectionMatrix);
+            instancedShader->setFloat("u_Time", GetEngine().getTime().getTotalTime());
+            instancedShader->setVec2("u_ViewportSize", glm::vec2(viewport.z, viewport.w));
+            instancedShader->setInt("u_ReceiveShadows", (shadowAtlasReady && command.receiveShadows) ? 1 : 0);
+        }
+
+        if (command.mesh->drawInstanced(instanceVBO, batch.firstInstance, batch.instanceCount)) {
+            drewAny = true;
+            stats.drawCalls++;
+            stats.triangles += static_cast<int>(command.mesh->getTriangleCount() * batch.instanceCount);
+            stats.vertices += static_cast<int>(command.mesh->getVertexCount() * batch.instanceCount);
+        } else {
+            // The driver can't do instanced draws after all so we stop
+            instancingSupported = false;
+        }
+
+        if (!material->getDepthWrite()) {
+            glDepthMask(GL_TRUE);
+            glDepthFunc(GL_LESS);
+        }
+
+        if (command.disableCulling && cullingWasEnabled) {
+            glEnable(GL_CULL_FACE);
+        }
+    }
+
+    return drewAny && instancingSupported;
 }
 
 void OpenGLRenderer::renderShadowPass() {

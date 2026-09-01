@@ -140,15 +140,17 @@ public:
 
     void ensureMaterialUniformBuffer(const Material* material, uint32_t imageIndex, const MaterialUniforms& data);
     void ensureShaderMaterialUniformBuffer(const Material* material, uint32_t imageIndex, const ShaderMaterialUniforms& data);
-    void ensureTextMaterialUniformBuffer(const TextMaterial* material, const TextMaterialUniforms& data);
+    void ensureTextMaterialUniformBuffer(const TextMaterial* material, uint32_t imageIndex, const TextMaterialUniforms& data);
     void createAnimationUniformBuffers();
     void writeAnimationUniform(uint32_t slot, const std::vector<glm::mat4>& boneTransforms);
+    bool writeInstanceBuffer(uint32_t imageIndex, const void* data, vk::DeviceSize size);
+    vk::Buffer getInstanceBuffer(uint32_t imageIndex) const;
 
     vk::DescriptorBufferInfo getMaterialDescriptorBufferInfo(const Material* material, uint32_t imageIndex) const;
 
     uint32_t getFrameSlotCount() const;
     vk::DescriptorBufferInfo getShaderMaterialDescriptorBufferInfo(const Material* material, uint32_t imageIndex) const;
-    vk::DescriptorBufferInfo getTextMaterialDescriptorBufferInfo(const TextMaterial* material) const;
+    vk::DescriptorBufferInfo getTextMaterialDescriptorBufferInfo(const TextMaterial* material, uint32_t imageIndex) const;
     vk::DescriptorBufferInfo getAnimationDescriptorBufferInfo(uint32_t slot) const;
 
     std::vector<vk::raii::Buffer> uniformBuffers_;
@@ -214,8 +216,18 @@ private:
     
     std::unordered_map<const Material*, std::vector<MaterialBuffer>> materialUniformBuffers_;
     std::unordered_map<const Material*, std::vector<ShaderMaterialBuffer>> shaderMaterialUniformBuffers_;
-    std::unordered_map<const TextMaterial*, TextMaterialBuffer> textMaterialUniformBuffers_;
+    std::unordered_map<const TextMaterial*, std::vector<TextMaterialBuffer>> textMaterialUniformBuffers_;
     std::vector<AnimationBuffer> animationUniformBuffers_;
+
+    struct InstanceBuffer {
+        vk::raii::Buffer buffer{nullptr};
+        vk::raii::DeviceMemory memory{nullptr};
+        void* mapped = nullptr;
+        vk::DeviceSize size = 0;
+    };
+    std::vector<InstanceBuffer> instanceBuffers_;
+    
+    bool ensureInstanceBuffer(uint32_t imageIndex, vk::DeviceSize size);
 
     VulkanMeshGpu skyboxMeshGpu_{};
     bool skyboxMeshUploaded_ = false;

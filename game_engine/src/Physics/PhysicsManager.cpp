@@ -200,6 +200,7 @@ void PhysicsManager::update(float deltaTime) {
     if (dynamicsWorld) {
         int maxSubSteps = 20;
         dynamicsWorld->stepSimulation(deltaTime, maxSubSteps, FIXED_TIME_STEP);
+        dispatchContactEvents();
         syncAllTransformsFromPhysics();
     }
 }
@@ -207,8 +208,87 @@ void PhysicsManager::update(float deltaTime) {
 void PhysicsManager::stepSingleStep(float fixedTimeStep) {
     if (dynamicsWorld) {
         dynamicsWorld->stepSimulation(fixedTimeStep, 1, fixedTimeStep);
+        dispatchContactEvents();
         syncAllTransformsFromPhysics();
     }
+}
+
+void PhysicsManager::dispatchContactEvents() {
+    if (!dispatcher) {
+        return;
+    }
+
+    contactBodyLookup_.clear();
+    for (PhysicsComponent* component : physicsComponents) {
+        if (!component) {
+            continue;
+        }
+        component->beginContactFrame();
+        if (const btCollisionObject* body = component->getRigidBody()) {
+            contactBodyLookup_[body] = component;
+        }
+    }
+
+    auto resolveBody = [this](const btCollisionObject* obj) -> PhysicsComponent* {
+        if (!obj) {
+            return nullptr;
+        }
+        auto it = contactBodyLookup_.find(obj);
+        return (it == contactBodyLookup_.end()) ? nullptr : it->second;
+    };
+
+    currentContactPairs_.clear();
+
+    const int manifoldCount = dispatcher->getNumManifolds();
+    for (int i = 0; i < manifoldCount; ++i) {
+        btPersistentManifold* manifold = dispatcher->getManifoldByIndexInternal(i);
+        if (!manifold || manifold->getNumContacts() == 0) {
+            continue;
+        }
+
+        bool touching = false;
+        for (int point = 0; point < manifold->getNumContacts(); ++point) {
+            if (manifold->getContactPoint(point).getDistance() <= 0.0f) {
+                touching = true;
+                break;
+            }
+        }
+        if (!touching) {
+            continue;
+        }
+
+        PhysicsComponent* a = resolveBody(manifold->getBody0());
+        PhysicsComponent* b = resolveBody(manifold->getBody1());
+        // Area3D ghosts and anything else that is not a registered rigid body are skipped
+        if (!a || !b || a == b) {
+            continue;
+        }
+
+        ContactPair pair = (a < b) ? ContactPair(a, b) : ContactPair(b, a);
+        if (!currentContactPairs_.insert(pair).second) {
+            // Two bodies can share several manifolds (compound shapes), one contact entry each is enough
+            continue;
+        }
+
+        a->addContact(b);
+        b->addContact(a);
+    }
+
+    for (const ContactPair& pair : currentContactPairs_) {
+        if (previousContactPairs_.find(pair) == previousContactPairs_.end()) {
+            pair.first->fireCollisionEnter(pair.second);
+            pair.second->fireCollisionEnter(pair.first);
+        }
+    }
+
+    for (const ContactPair& pair : previousContactPairs_) {
+        if (currentContactPairs_.find(pair) == currentContactPairs_.end()) {
+            pair.first->fireCollisionExit(pair.second);
+            pair.second->fireCollisionExit(pair.first);
+        }
+    }
+
+    previousContactPairs_.swap(currentContactPairs_);
 }
 
 void PhysicsManager::syncAllTransformsFromPhysics() {
@@ -234,6 +314,29 @@ void PhysicsManager::addRigidBody(btRigidBody* body, int collisionFilterGroup, i
 void PhysicsManager::removeRigidBody(btRigidBody* body) {
     if (dynamicsWorld && body) {
         dynamicsWorld->removeRigidBody(body);
+    }
+}
+
+void PhysicsManager::addSensorObject(btCollisionObject* object) {
+    if (!dynamicsWorld || !object) {
+        return;
+    }
+    dynamicsWorld->addCollisionObject(object, btBroadphaseProxy::SensorTrigger, btBroadphaseProxy::AllFilter);
+    if (std::find(sensorObjects.begin(), sensorObjects.end(), object) == sensorObjects.end()) {
+        sensorObjects.push_back(object);
+    }
+}
+
+void PhysicsManager::removeSensorObject(btCollisionObject* object) {
+    if (!object) {
+        return;
+    }
+    if (dynamicsWorld) {
+        dynamicsWorld->removeCollisionObject(object);
+    }
+    auto it = std::find(sensorObjects.begin(), sensorObjects.end(), object);
+    if (it != sensorObjects.end()) {
+        sensorObjects.erase(it);
     }
 }
 
@@ -382,6 +485,14 @@ void PhysicsManager::unregisterPhysicsComponent(PhysicsComponent* component) {
         auto it = std::find(physicsComponents.begin(), physicsComponents.end(), component);
         if (it != physicsComponents.end()) {
             physicsComponents.erase(it);
+        }
+
+        for (auto pairIt = previousContactPairs_.begin(); pairIt != previousContactPairs_.end(); ) {
+            if (pairIt->first == component || pairIt->second == component) {
+                pairIt = previousContactPairs_.erase(pairIt);
+            } else {
+                ++pairIt;
+            }
         }
     }
 }
@@ -603,9 +714,8 @@ bool PhysicsManager::raycastFromTo(const glm::vec3& from, const glm::vec3& to, i
         // Optional: test trigger volumes (Area3D ghosts) when SensorTrigger is in the mask.
         sensorCallback.m_collisionFilterGroup = btBroadphaseProxy::DefaultFilter | btBroadphaseProxy::SensorTrigger;
         sensorCallback.m_collisionFilterMask = rayMask;
-        int n = dynamicsWorld->getNumCollisionObjects();
-        for (int i = 0; i < n; ++i) {
-            btCollisionObject* colObj = dynamicsWorld->getCollisionObjectArray()[i];
+        for (btCollisionObject* colObj : sensorObjects) {
+            if (!colObj) continue;
             btBroadphaseProxy* proxy = colObj->getBroadphaseHandle();
             if (!proxy || !(proxy->m_collisionFilterGroup & btBroadphaseProxy::SensorTrigger))
                 continue;

@@ -28,6 +28,7 @@ namespace GameEngine {
 
 // Static group registry initialization
 std::unordered_map<std::string, std::vector<Area3DComponent*>> Area3DComponent::groupRegistry;
+std::unordered_set<Area3DComponent*> Area3DComponent::liveInstances;
 
 // Helper function to convert Area3DShape to CollisionShapeType
 CollisionShapeType areaShapeToCollisionShape(Area3DShape shape) {
@@ -50,22 +51,39 @@ Area3DComponent::Area3DComponent()
     , monitorEnabled(true)
     , ghostObject(nullptr)
     , collisionShape(nullptr)
-    , showDebugShape(true)
+    , lastShapeScale(1.0f, 1.0f, 1.0f)
+    , showDebugShape(false)
 {
+    liveInstances.insert(this);
 }
 
 Area3DComponent::~Area3DComponent() {
     destroy();
+    liveInstances.erase(this);
+    notifyBodyComponentDestroyed(this);
+}
+
+void Area3DComponent::notifyBodyComponentDestroyed(Component* component) {
+    if (!component) {
+        return;
+    }
+    for (Area3DComponent* area : liveInstances) {
+        if (area == component) {
+            continue;
+        }
+        area->bodiesInArea.erase(component);
+        area->previousBodiesInArea.erase(component);
+    }
 }
 
 void Area3DComponent::start() {
-    // Create collision shape and ghost object
-    createCollisionShape();
-    createGhostObject();
-    
-    // Register with group if specified
+    if (!ghostObject) {
+        createCollisionShape();
+        createGhostObject();
+    }
+
     registerWithGroup();
-    
+
     // Initialize state tracking
     bodiesInArea.clear();
     previousBodiesInArea.clear();
@@ -76,6 +94,14 @@ void Area3DComponent::update(float deltaTime) {
         return;
     }
     
+    glm::vec3 currentScale = owner->getWorldScale();
+    const float kScaleEpsilon = 0.0001f;
+    if (std::abs(currentScale.x - lastShapeScale.x) > kScaleEpsilon ||
+        std::abs(currentScale.y - lastShapeScale.y) > kScaleEpsilon ||
+        std::abs(currentScale.z - lastShapeScale.z) > kScaleEpsilon) {
+        updateCollisionShape();
+    }
+
     // Update the ghost object's transform to match the node's world transform
     // Force recalculation of world matrix each frame to ensure it's up-to-date
     glm::mat4 worldMatrix = getWorldTransformMatrix();
@@ -177,11 +203,23 @@ void Area3DComponent::setDetectionTags(const std::vector<std::string>& tags) {
 }
 
 bool Area3DComponent::isBodyInArea(const std::string& bodyName) const {
-    return bodiesInArea.find(bodyName) != bodiesInArea.end();
+    for (Component* body : bodiesInArea) {
+        if (body && body->getOwner() && body->getOwner()->getName() == bodyName) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::vector<std::string> Area3DComponent::getBodiesInArea() const {
-    return std::vector<std::string>(bodiesInArea.begin(), bodiesInArea.end());
+    std::vector<std::string> names;
+    names.reserve(bodiesInArea.size());
+    for (Component* body : bodiesInArea) {
+        if (body && body->getOwner()) {
+            names.push_back(body->getOwner()->getName());
+        }
+    }
+    return names;
 }
 
 size_t Area3DComponent::getBodyCount() const {
@@ -202,13 +240,22 @@ void Area3DComponent::setShowDebugShape(bool show) {
 
 void Area3DComponent::createCollisionShape() {
     collisionShape = createBulletCollisionShape();
+    if (owner) {
+        lastShapeScale = owner->getWorldScale();
+    }
 }
 
 void Area3DComponent::createGhostObject() {
     if (!collisionShape) {
         return;
     }
-    
+
+    // Never overwrite a live ghost
+    if (ghostObject) {
+        return;
+    }
+
+
     // Create pair caching ghost object for trigger detection (sensor/trigger zone)
     // This type of object detects collisions but doesn't generate contact responses
     // Optimized for PS Vita - uses pair caching for efficient overlap detection
@@ -237,12 +284,12 @@ void Area3DComponent::createGhostObject() {
     ghostObject = pairCachingGhost;
     
     // Add to physics world for collision detection (as a sensor/trigger)
-    PhysicsManager::getInstance().getDynamicsWorld()->addCollisionObject(ghostObject, btBroadphaseProxy::SensorTrigger, btBroadphaseProxy::AllFilter);
+    PhysicsManager::getInstance().addSensorObject(ghostObject);
 }
 
 void Area3DComponent::destroyGhostObject() {
     if (ghostObject) {
-        PhysicsManager::getInstance().getDynamicsWorld()->removeCollisionObject(ghostObject);
+        PhysicsManager::getInstance().removeSensorObject(ghostObject);
         // Cast back to btPairCachingGhostObject for proper deletion
         btPairCachingGhostObject* pairCachingGhost = dynamic_cast<btPairCachingGhostObject*>(ghostObject);
         if (pairCachingGhost) {
@@ -265,7 +312,7 @@ void Area3DComponent::updateCollisionShape() {
     }
     
     // Remove from world temporarily
-    PhysicsManager::getInstance().getDynamicsWorld()->removeCollisionObject(ghostObject);
+    PhysicsManager::getInstance().removeSensorObject(ghostObject);
     
     // Delete old collision shape
     if (collisionShape) {
@@ -275,9 +322,12 @@ void Area3DComponent::updateCollisionShape() {
     // Create new collision shape
     collisionShape = createBulletCollisionShape();
     ghostObject->setCollisionShape(collisionShape);
+    if (owner) {
+        lastShapeScale = owner->getWorldScale();
+    }
     
     // Add back to world as sensor/trigger
-    PhysicsManager::getInstance().getDynamicsWorld()->addCollisionObject(ghostObject, btBroadphaseProxy::SensorTrigger, btBroadphaseProxy::AllFilter);
+    PhysicsManager::getInstance().addSensorObject(ghostObject);
 }
 
 void Area3DComponent::performCollisionDetection() {
@@ -285,8 +335,8 @@ void Area3DComponent::performCollisionDetection() {
         return;
     }
     
-    // Save previous state
-    previousBodiesInArea = bodiesInArea;
+    // Save previous state (wap, not copy)
+    previousBodiesInArea.swap(bodiesInArea);
     bodiesInArea.clear();
     
     // Use the ghost object's built-in overlap detection (optimized for PS Vita)
@@ -322,7 +372,6 @@ void Area3DComponent::performCollisionDetection() {
         if (!comp || !comp->getOwner() || comp == this) {
             continue;
         }
-        std::string bodyName = comp->getOwner()->getName();
         Area3DComponent* areaComp =
             (comp->getTypeName() == "Area3DComponent") ? static_cast<Area3DComponent*>(comp) : nullptr;
         
@@ -387,9 +436,13 @@ void Area3DComponent::performCollisionDetection() {
         
         if (isInside) {
             // Check if this object matches our detection tags (if any specified)
-            if (detectionTags.empty() || 
-                std::find(detectionTags.begin(), detectionTags.end(), bodyName) != detectionTags.end()) {
-                bodiesInArea.insert(bodyName);
+            if (detectionTags.empty()) {
+                bodiesInArea.insert(comp);
+            } else {
+                const std::string& bodyName = comp->getOwner()->getName();
+                if (std::find(detectionTags.begin(), detectionTags.end(), bodyName) != detectionTags.end()) {
+                    bodiesInArea.insert(comp);
+                }
             }
         }
     }
@@ -400,40 +453,32 @@ void Area3DComponent::handleCollisionEvents() {
         return;
     }
 
-    auto findUserData = [](const std::string& bodyName) -> void* {
-        btDiscreteDynamicsWorld* world = PhysicsManager::getInstance().getDynamicsWorld();
-        if (!world) {
-            return nullptr;
+    auto fire = [](const std::function<void(const std::string&, void*)>& callback, Component* body) {
+        if (!body || !body->getOwner()) {
+            return;
         }
-        for (int i = 0; i < world->getNumCollisionObjects(); i++) {
-            btCollisionObject* obj = world->getCollisionObjectArray()[i];
-            Component* comp = static_cast<Component*>(obj->getUserPointer());
-            if (comp && comp->getOwner() && comp->getOwner()->getName() == bodyName) {
-                return obj->getUserPointer();
-            }
-        }
-        return nullptr;
+        callback(body->getOwner()->getName(), body);
     };
 
     if (onBodyEntered) {
-        for (const auto& bodyName : bodiesInArea) {
-            if (previousBodiesInArea.find(bodyName) == previousBodiesInArea.end()) {
-                onBodyEntered(bodyName, findUserData(bodyName));
+        for (Component* body : bodiesInArea) {
+            if (previousBodiesInArea.find(body) == previousBodiesInArea.end()) {
+                fire(onBodyEntered, body);
             }
         }
     }
 
     if (onBodyExited) {
-        for (const auto& bodyName : previousBodiesInArea) {
-            if (bodiesInArea.find(bodyName) == bodiesInArea.end()) {
-                onBodyExited(bodyName, findUserData(bodyName));
+        for (Component* body : previousBodiesInArea) {
+            if (bodiesInArea.find(body) == bodiesInArea.end()) {
+                fire(onBodyExited, body);
             }
         }
     }
 
     if (onBodyStayed) {
-        for (const auto& bodyName : bodiesInArea) {
-            onBodyStayed(bodyName, findUserData(bodyName));
+        for (Component* body : bodiesInArea) {
+            fire(onBodyStayed, body);
         }
     }
 }

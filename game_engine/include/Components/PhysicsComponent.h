@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <functional>
+#include <vector>
 
 namespace GameEngine {
     class Renderer;
@@ -83,7 +84,10 @@ public:
     
     void setLinearFactor(const glm::vec3& factor);
     glm::vec3 getLinearFactor() const;
-    
+
+    void setSyncRotationFromPhysics(bool sync) { syncRotationFromPhysics = sync; }
+    bool isSyncRotationFromPhysics() const { return syncRotationFromPhysics; }
+
     void applyForce(const glm::vec3& force, const glm::vec3& point = glm::vec3(0.0f));
     void applyImpulse(const glm::vec3& impulse, const glm::vec3& point = glm::vec3(0.0f));
     void applyTorque(const glm::vec3& torque);
@@ -99,7 +103,16 @@ public:
     
     bool isColliding() const;
     void setCollisionCallback(std::function<void(PhysicsComponent*)> callback);
-    
+    void setCollisionExitCallback(std::function<void(PhysicsComponent*)> callback);
+
+    const std::vector<PhysicsComponent*>& getContacts() const { return currentContacts; }
+
+    void beginContactFrame();
+    void addContact(PhysicsComponent* other);
+    void fireCollisionEnter(PhysicsComponent* other);
+    void fireCollisionExit(PhysicsComponent* other);
+
+
     void setShowCollisionShape(bool show);
     bool getShowCollisionShape() const { return showCollisionShape; }
     
@@ -131,26 +144,31 @@ private:
     float angularDamping;
     
     bool gravityEnabled;
-    
+    bool syncRotationFromPhysics;
+
     btRigidBody* rigidBody;
     btCollisionShape* collisionShape;
     btMotionState* motionState;
     
     bool isCollidingFlag;
     std::function<void(PhysicsComponent*)> collisionCallback;
-    
+    std::function<void(PhysicsComponent*)> collisionExitCallback;
+    std::vector<PhysicsComponent*> currentContacts;
+
     bool showCollisionShape;
     
     int collisionFilterGroup;
     int collisionFilterMask;
     
     glm::mat4 lastWorldTransform;
-    
+    glm::vec3 lastShapeScale;
+
     bool destroyed;
     
     void createRigidBody();
     void destroyRigidBody();
     void updateCollisionShape();
+    void checkAndApplyScaleChange();
     btCollisionShape* createBulletCollisionShape();
     
     glm::vec3 bulletToGlm(const void* bulletVec) const;

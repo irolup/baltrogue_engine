@@ -47,6 +47,7 @@ public:
     static std::shared_ptr<Shader> getDefaultShader();
     static std::shared_ptr<Shader> getErrorShader();
     static std::shared_ptr<Shader> getLightingShader();
+    static std::shared_ptr<Shader> getLightingInstancedShader();
     static std::shared_ptr<Shader> getTextShader();
     static std::shared_ptr<Shader> getShadowDepthShader();
 

@@ -2,6 +2,7 @@
 
 #include "Rendering/IRenderer.h"
 #include "Rendering/Frustum.h"
+#include "Rendering/InstanceBatcher.h"
 #include "Rendering/ShadowMap.h"
 #include "Rendering/Vulkan/VulkanDevice.h"
 #include "Rendering/Vulkan/VulkanSwapChain.h"
@@ -61,6 +62,9 @@ public:
     void setFrustumCulling(bool enabled) override { frustumCullingEnabled_ = enabled; }
     bool isFrustumCullingEnabled() const override { return frustumCullingEnabled_; }
 
+    void setInstancingEnabled(bool enabled) { instancingEnabled_ = enabled; }
+    bool isInstancingEnabled() const { return instancingEnabled_; }
+
     void updateLightingUniforms() override;
     glm::vec3 extractCameraPosition(const glm::mat4& viewMatrix) override { return glm::vec3(glm::inverse(viewMatrix)[3]); }
 
@@ -81,7 +85,11 @@ private:
     void sortRenderQueue();
     void cullRenderQueue();
     void buildShadowDrawList();
+    void buildInstanceBatches();
+    void recordInstancedRenderCommands(vk::CommandBuffer cmdBuf, uint32_t imageIndex, vk::DescriptorSet environmentSet);
     void updateFrustum(const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
+
+    static bool isInstanceablePipelineKind(const RenderCommand& command);
 
     VulkanDevice* device_ = nullptr;
     VulkanSwapChain* swapChain_ = nullptr;
@@ -97,6 +105,9 @@ private:
     std::vector<uint8_t> cameraVisible_;
     std::vector<ShadowDrawItem> shadowDraws_;
     std::vector<uint32_t> animationSlots_;
+    bool instancingEnabled_ = true;
+    InstanceBatcher instanceBatcher_;
+    bool instanceBufferReady_ = false;
     RenderStats stats;
 };
 

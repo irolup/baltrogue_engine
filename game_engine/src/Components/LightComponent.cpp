@@ -8,6 +8,7 @@
 #include "Rendering/ShadowMap.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <cmath>
 #include <iostream>
 
 #ifdef EDITOR_BUILD
@@ -149,6 +150,11 @@ glm::vec3 LightComponent::getDirection() const {
 }
 
 void LightComponent::setDirection(const glm::vec3& newDirection) {
+    // A zero-length vector has no direction to normalize. glm::normalize divides by zero and hands back NaN so we need this check
+    if (glm::length(newDirection) < 1e-6f) {
+        return;
+    }
+
     glm::vec3 normalizedDir = glm::normalize(newDirection);
     if (owner) {
         // Calculate rotation to point in the specified direction
@@ -251,9 +257,24 @@ LightComponent::LightData LightComponent::getLightData() const {
     data.attenuation = glm::vec4(quadratic,
                                  static_cast<float>(shadowViewIndex),
                                  shadowStrength,
-                                 shadowBias);
+                                 resolveShadowBias());
 
     return data;
+}
+
+//Primarly for the Vita
+float LightComponent::resolveShadowBias() const {
+    const ShadowSettings& settings = ShadowManager::getInstance().getSettings();
+
+    const int tileSize = (settings.tileSize > 0) ? settings.tileSize : 1;
+    float scale = static_cast<float>(kShadowBiasReferenceTileSize) / static_cast<float>(tileSize);
+
+    if (type == LightType::DIRECTIONAL) {
+        const float extent = (settings.directionalExtent > 1.0f) ? settings.directionalExtent : 1.0f;
+        scale *= extent / kShadowBiasReferenceExtent;
+    }
+
+    return shadowBias * scale;
 }
 
 void LightComponent::drawInspector() {
@@ -286,6 +307,11 @@ void LightComponent::drawInspector() {
     
     // Direction (for directional and spot lights)
     if (type != LightType::POINT) {
+        // Recover lights whose stored direction was already corrupted (scenes saved before setDirection() guarded against a zero length input ene if I dont think we have some).
+        if (!std::isfinite(localDirection.x) || !std::isfinite(localDirection.y) ||
+            !std::isfinite(localDirection.z)) {
+            localDirection = glm::vec3(0.0f, -1.0f, 0.0f);
+        }
         float dirArray[3] = {localDirection.x, localDirection.y, localDirection.z};
         if (ImGui::DragFloat3("Direction", dirArray, 0.1f)) {
             setDirection(glm::vec3(dirArray[0], dirArray[1], dirArray[2]));

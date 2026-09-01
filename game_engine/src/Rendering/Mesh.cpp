@@ -1,4 +1,5 @@
 #include "Rendering/Mesh.h"
+#include "Rendering/InstanceBatcher.h"
 #include "Rendering/Material.h"
 #ifdef ENABLE_VULKAN
 #include "Core/Engine.h"
@@ -768,6 +769,122 @@ void Mesh::setupBuffers() {
 #endif
 }
 
+bool Mesh::setupInstancedVAO(GLuint instanceBuffer) const {
+#ifndef ENABLE_VULKAN
+    if (!VBO || !instanceBuffer) {
+        return false;
+    }
+
+    if (instancedVAO) {
+        glDeleteVertexArrays(1, &instancedVAO);
+        instancedVAO = 0;
+    }
+
+    glGenVertexArrays(1, &instancedVAO);
+    if (!instancedVAO) {
+        return false;
+    }
+
+    glBindVertexArray(instancedVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    if (EBO) {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    }
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
+
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, texCoords));
+
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, tangent));
+
+    for (GLuint location = 4; location <= 10; ++location) {
+        glEnableVertexAttribArray(location);
+        glVertexAttribDivisor(location, 1);
+    }
+    setInstancedVAOBase(instanceBuffer, 0);
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    instancedVAOBuffer = instanceBuffer;
+    instancedVAOFirstInstance = 0;
+    return true;
+#else
+    (void)instanceBuffer;
+    return false;
+#endif
+}
+
+void Mesh::setInstancedVAOBase(GLuint instanceBuffer, size_t firstInstance) const {
+#ifndef ENABLE_VULKAN
+    const size_t base = firstInstance * sizeof(InstanceData);
+
+    glBindBuffer(GL_ARRAY_BUFFER, instanceBuffer);
+
+    for (GLuint column = 0; column < 4; ++column) {
+        glVertexAttribPointer(4 + column, 4, GL_FLOAT, GL_FALSE, sizeof(InstanceData),
+            (void*)(base + offsetof(InstanceData, modelMatrix) + column * sizeof(glm::vec4)));
+    }
+
+    for (GLuint column = 0; column < 3; ++column) {
+        glVertexAttribPointer(8 + column, 4, GL_FLOAT, GL_FALSE, sizeof(InstanceData),
+            (void*)(base + offsetof(InstanceData, normalMatrix) + column * sizeof(glm::vec4)));
+    }
+#else
+    (void)instanceBuffer; (void)firstInstance;
+#endif
+}
+
+bool Mesh::drawInstanced(GLuint instanceBuffer, size_t firstInstance, size_t instanceCount) const {
+#ifndef ENABLE_VULKAN
+    if (!instanceBuffer || instanceCount == 0) {
+        return false;
+    }
+
+    if (!uploaded) {
+        const_cast<Mesh*>(this)->upload();
+    }
+    if (!VAO) {
+        return false;
+    }
+
+    if (!instancedVAO || instancedVAOBuffer != instanceBuffer) {
+        if (!setupInstancedVAO(instanceBuffer)) {
+            return false;
+        }
+    }
+
+    const size_t indexCount = cpuDataCleared ? cachedIndexCount : indices.size();
+    const size_t vertexCount = cpuDataCleared ? cachedVertexCount : vertices.size();
+
+    glBindVertexArray(instancedVAO);
+
+    if (instancedVAOFirstInstance != firstInstance) {
+        setInstancedVAOBase(instanceBuffer, firstInstance);
+        instancedVAOFirstInstance = firstInstance;
+    }
+
+    if (indexCount > 0) {
+        glDrawElementsInstanced(renderMode, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT, 0, static_cast<GLsizei>(instanceCount));
+    } else {
+        glDrawArraysInstanced(renderMode, 0, static_cast<GLsizei>(vertexCount), static_cast<GLsizei>(instanceCount));
+    }
+
+    glBindVertexArray(0);
+    return true;
+#else
+    (void)instanceBuffer; (void)instanceCount;
+    return false;
+#endif
+}
+
 void Mesh::drawDirectCube(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, const glm::vec3& color) const {
     draw();
 }
@@ -1075,6 +1192,11 @@ std::shared_ptr<Mesh> Mesh::createBeam() {
 
 void Mesh::cleanupBuffers() {
 #ifndef ENABLE_VULKAN
+    if (instancedVAO) {
+        glDeleteVertexArrays(1, &instancedVAO);
+        instancedVAO = 0;
+    }
+    instancedVAOBuffer = 0;
     if (VAO) {
         glDeleteVertexArrays(1, &VAO);
         VAO = 0;

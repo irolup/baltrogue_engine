@@ -21,6 +21,12 @@ const char* const kAssetDirectories[] = {
     "vulkan", "fonts", "sounds", "audio", "templates", "live_area"
 };
 
+const char* const kEngineDirectories[] = {
+    "shaders", "linux_shaders", "vulkan", "fonts"
+};
+
+const char* const kDefaultAssetPrefix = "assets";
+
 std::string lastSegment(const std::string& path) {
     const std::size_t slash = path.find_last_of('/');
     return (slash == std::string::npos) ? path : path.substr(slash + 1);
@@ -35,6 +41,7 @@ const char* const kVitaRoot = "app0:/";
 std::string AssetPaths::projectRoot;
 std::string AssetPaths::assetRoot = "assets";
 std::string AssetPaths::assetPrefix = "assets";
+std::string AssetPaths::engineRoot;
 
 void AssetPaths::setProjectRoot(const std::string& root) {
     projectRoot = normalize(root);
@@ -53,6 +60,29 @@ const std::string& AssetPaths::getAssetRoot() {
     return assetRoot;
 }
 
+void AssetPaths::setEngineRoot(const std::string& root) {
+    engineRoot = normalize(root);
+}
+
+const std::string& AssetPaths::getEngineRoot() {
+    return engineRoot;
+}
+
+void AssetPaths::initializeEngineRoot() {
+#ifndef VITA_BUILD
+    std::error_code error;
+    const std::filesystem::path executable = std::filesystem::read_symlink("/proc/self/exe", error);
+    if (error || !executable.has_parent_path()) {
+        return;
+    }
+
+    const std::filesystem::path root = executable.parent_path().parent_path();
+    if (!root.empty()) {
+        setEngineRoot(root.lexically_normal().string());
+    }
+#endif
+}
+
 bool AssetPaths::hasDevicePrefix(const std::string& path) {
     for (const char* prefix : kDevicePrefixes) {
         const std::string device = prefix;
@@ -65,6 +95,16 @@ bool AssetPaths::hasDevicePrefix(const std::string& path) {
 
 bool AssetPaths::isAbsolute(const std::string& path) {
     return !path.empty() && path[0] == '/';
+}
+
+std::string AssetPaths::deriveSceneName(const std::string& scenePath) {
+    size_t slash = scenePath.find_last_of("/\\");
+    std::string filename = (slash == std::string::npos) ? scenePath : scenePath.substr(slash + 1);
+
+    size_t dot = filename.find_last_of('.');
+    std::string stem = (dot == std::string::npos) ? filename : filename.substr(0, dot);
+
+    return (stem == "main_menu") ? "Main Menu" : stem;
 }
 
 bool AssetPaths::exists(const std::string& path) {
@@ -165,7 +205,24 @@ bool AssetPaths::isAssetDirectory(const std::string& segment) {
     return false;
 }
 
-std::string AssetPaths::resolveProjectRelative(const std::string& path) {
+bool AssetPaths::isEngineDirectory(const std::string& segment) {
+    for (const char* directory : kEngineDirectories) {
+        if (segment == directory) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string AssetPaths::resolveAssetRelative(const std::string& path) {
+    const std::string engineRelative = isEngineDirectory(firstSegment(path))
+        ? join(kDefaultAssetPrefix, path)
+        : std::string();
+
+    return resolveProjectRelative(join(assetRoot, path), engineRelative);
+}
+
+std::string AssetPaths::resolveProjectRelative(const std::string& path, const std::string& engineRelative) {
     if (hasDevicePrefix(path) || isAbsolute(path)) {
         return path;
     }
@@ -173,9 +230,14 @@ std::string AssetPaths::resolveProjectRelative(const std::string& path) {
 #ifdef VITA_BUILD
     return kVitaRoot + path;
 #else
-    const std::string candidates[] = { join(projectRoot, path), path, join("..", path) };
+    const std::string candidates[] = {
+        join(projectRoot, path),
+        engineRelative.empty() ? std::string() : join(engineRoot, engineRelative),
+        path,
+        join("..", path)
+    };
     for (const std::string& candidate : candidates) {
-        if (exists(candidate)) {
+        if (!candidate.empty() && exists(candidate)) {
             return candidate;
         }
     }
@@ -194,13 +256,13 @@ std::string AssetPaths::resolve(const std::string& path) {
     }
 
     const std::string segment = firstSegment(normalized);
-    if (segment == assetPrefix) {
-        return resolveProjectRelative(join(assetRoot, dropFirstSegment(normalized)));
+    if (segment == assetPrefix || segment == kDefaultAssetPrefix) {
+        return resolveAssetRelative(dropFirstSegment(normalized));
     }
     if (segment != "config" && isAssetDirectory(segment)) {
-        return resolveProjectRelative(join(assetRoot, normalized));
+        return resolveAssetRelative(normalized);
     }
-    return resolveProjectRelative(normalized);
+    return resolveProjectRelative(normalized, "");
 }
 
 std::string AssetPaths::resolveAsset(const std::string& path) {
@@ -214,10 +276,10 @@ std::string AssetPaths::resolveAsset(const std::string& path) {
     }
 
     const std::string segment = firstSegment(normalized);
-    if (segment == assetPrefix || segment == "config") {
+    if (segment == assetPrefix || segment == kDefaultAssetPrefix || segment == "config") {
         return resolve(normalized);
     }
-    return resolveProjectRelative(join(assetRoot, normalized));
+    return resolveAssetRelative(normalized);
 }
 
 std::string AssetPaths::resolveTexture(const std::string& path) {

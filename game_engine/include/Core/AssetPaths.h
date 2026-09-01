@@ -16,6 +16,10 @@ public:
     static void setAssetRoot(const std::string& root);
     static const std::string& getAssetRoot();
 
+    static void initializeEngineRoot();
+    static void setEngineRoot(const std::string& root);
+    static const std::string& getEngineRoot();
+
     // Project-relative ("assets/scenes/....json", "config/input_mappings.txt")
     // or asset-relative ("scenes/main.json") in, openable path out. Paths that
     // are already absolute or device-prefixed come back untouched.
@@ -33,17 +37,22 @@ public:
     static bool isAbsolute(const std::string& path);
     static bool exists(const std::string& path);
 
+    static std::string deriveSceneName(const std::string& scenePath);
+
 private:
     static std::string normalize(const std::string& path);
     static std::string join(const std::string& base, const std::string& path);
     static std::string firstSegment(const std::string& path);
     static std::string dropFirstSegment(const std::string& path);
     static bool isAssetDirectory(const std::string& segment);
-    static std::string resolveProjectRelative(const std::string& path);
+    static bool isEngineDirectory(const std::string& segment);
+    static std::string resolveAssetRelative(const std::string& path);
+    static std::string resolveProjectRelative(const std::string& path, const std::string& engineRelative);
 
     static std::string projectRoot;
     static std::string assetRoot;
     static std::string assetPrefix;
+    static std::string engineRoot;
 };
 
 }

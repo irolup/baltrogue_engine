@@ -10,7 +10,7 @@ pc:softShadows,1
 pc:directionalExtent,25
 pc:directionalDepth,60
 
-vita:enabled,0
+vita:enabled,1
 vita:tileSize,128
 vita:softShadows,0
 vita:directionalExtent,25

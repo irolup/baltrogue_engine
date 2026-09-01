@@ -37,7 +37,13 @@ public:
 
     static std::string openImageFileDialog(const std::string& title = "Open Image");
 
+    static std::string openProjectFileDialog(const std::string& title = "Open Project");
+    static std::string openFolderDialog(const std::string& title = "Choose Folder");
+
     static std::string toProjectRelativePath(const std::string& path);
+
+private:
+    static std::string runDialog(const std::string& command, const char* what);
 };
 
 } // namespace GameEngine

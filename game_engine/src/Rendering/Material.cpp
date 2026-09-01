@@ -13,6 +13,7 @@
 #ifdef LINUX_BUILD
     #include <filesystem>
     #include "Editor/FileDialog.h"
+    #include "Editor/ProjectAssets.h"
 #endif
 
 #ifdef EDITOR_BUILD
@@ -348,7 +349,9 @@ void Material::useDefaultLitShader() {
 }
 
 std::shared_ptr<Material> Material::clone() const {
-    return std::make_shared<Material>(*this);
+    auto copy = std::make_shared<Material>(*this);
+    copy->sharedInstance = false;
+    return copy;
 }
 
 void Material::rebindTextureFromPath(
@@ -604,11 +607,25 @@ void Material::apply() const {
     glDepthFunc(depthWrite ? GL_LESS : GL_LEQUAL);
     
     auto& shaderManager = ShaderManager::getInstance();
-    bool isLit = (shader == Shader::getLightingShader()) || shaderManager.isLitShader(shader);
-    
+
+    bool isLit = (shader == Shader::getLightingShader()) || (shader == Shader::getLightingInstancedShader()) || shaderManager.isLitShader(shader);
+
     if (isLit) {
         setupLightingUniforms();
     }
+}
+
+void Material::applyWithShader(const std::shared_ptr<Shader>& shaderOverride) const {
+    if (!shaderOverride || !shaderOverride->isValid()) {
+        apply();
+        return;
+    }
+
+    Material* self = const_cast<Material*>(this);
+    std::shared_ptr<Shader> previousShader = self->shader;
+    self->shader = shaderOverride;
+    apply();
+    self->shader = previousShader;
 }
 
 bool Material::drawShaderAssignPopup(
@@ -695,27 +712,57 @@ bool Material::drawShaderAssignPopup(
 
     if (ImGui::Button("Browse Vertex...")) {
 #ifdef LINUX_BUILD
-        std::string filter = "*.vert";
-        std::string selectedPath = FileDialog::openFileDialog("Select Vertex Shader", filter);
-        if (FileDialog::isValidResult(selectedPath)) {
-            strncpy(vertexPathBuffer, selectedPath.c_str(), sizeof(vertexPathBuffer) - 1);
-            vertexPathBuffer[sizeof(vertexPathBuffer) - 1] = '\0';
+        const std::string picked = FileDialog::openFileDialog("Select Vertex Shader", "*.vert");
+        if (FileDialog::isValidResult(picked)) {
+            std::string importError;
+            const std::string imported = ProjectAssets::importIntoProject(picked, importError);
+            if (imported.empty()) {
+                std::cerr << importError << std::endl;
+            } else {
+                strncpy(vertexPathBuffer, imported.c_str(), sizeof(vertexPathBuffer) - 1);
+                vertexPathBuffer[sizeof(vertexPathBuffer) - 1] = '\0';
+            }
         }
 #endif
     }
+#ifdef LINUX_BUILD
+    if (ImGui::BeginDragDropTarget()) {
+        const std::string dropped = ProjectAssets::acceptDrop(ProjectAssets::Kind::Shader);
+        if (!dropped.empty()) {
+            strncpy(vertexPathBuffer, dropped.c_str(), sizeof(vertexPathBuffer) - 1);
+            vertexPathBuffer[sizeof(vertexPathBuffer) - 1] = '\0';
+        }
+        ImGui::EndDragDropTarget();
+    }
+#endif
 
     ImGui::SameLine();
 
     if (ImGui::Button("Browse Fragment...")) {
 #ifdef LINUX_BUILD
-        std::string filter = "*.frag";
-        std::string selectedPath = FileDialog::openFileDialog("Select Fragment Shader", filter);
-        if (FileDialog::isValidResult(selectedPath)) {
-            strncpy(fragmentPathBuffer, selectedPath.c_str(), sizeof(fragmentPathBuffer) - 1);
-            fragmentPathBuffer[sizeof(fragmentPathBuffer) - 1] = '\0';
+        const std::string picked = FileDialog::openFileDialog("Select Fragment Shader", "*.frag");
+        if (FileDialog::isValidResult(picked)) {
+            std::string importError;
+            const std::string imported = ProjectAssets::importIntoProject(picked, importError);
+            if (imported.empty()) {
+                std::cerr << importError << std::endl;
+            } else {
+                strncpy(fragmentPathBuffer, imported.c_str(), sizeof(fragmentPathBuffer) - 1);
+                fragmentPathBuffer[sizeof(fragmentPathBuffer) - 1] = '\0';
+            }
         }
 #endif
     }
+#ifdef LINUX_BUILD
+    if (ImGui::BeginDragDropTarget()) {
+        const std::string dropped = ProjectAssets::acceptDrop(ProjectAssets::Kind::Shader);
+        if (!dropped.empty()) {
+            strncpy(fragmentPathBuffer, dropped.c_str(), sizeof(fragmentPathBuffer) - 1);
+            fragmentPathBuffer[sizeof(fragmentPathBuffer) - 1] = '\0';
+        }
+        ImGui::EndDragDropTarget();
+    }
+#endif
 
     bool assigned = false;
 
@@ -1086,7 +1133,7 @@ std::shared_ptr<Material> Material::getDefaultMaterial() {
     
     if (!defaultMaterial) {
         defaultMaterial = std::make_shared<Material>();
-        defaultMaterial->setColor(glm::vec3(1.0f, 0.5f, 0.2f));
+        defaultMaterial->setColor(glm::vec3(1.0f, 1.0f, 1.0f));
     }
     
     return defaultMaterial;

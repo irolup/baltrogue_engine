@@ -3,6 +3,7 @@
 
 #ifdef EDITOR_BUILD
     #include "imgui.h"
+    #include "Editor/ProjectAssets.h"
 #endif
 
 namespace GameEngine {
@@ -69,6 +70,15 @@ void MaterialComponent::drawTexturePicker(const char* label, std::string& textur
             }
         }
         ImGui::EndCombo();
+    }
+
+    if (ImGui::BeginDragDropTarget()) {
+        const std::string dropped = ProjectAssets::acceptDrop(ProjectAssets::Kind::Texture);
+        if (!dropped.empty()) {
+            texturePath = dropped;
+            ++revision;
+        }
+        ImGui::EndDragDropTarget();
     }
 #else
     (void)label;

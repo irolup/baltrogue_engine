@@ -1,14 +1,15 @@
 #!/bin/bash
-# Builds sce_sys/ for the Vita VPK from the vita block of config/build_settings.txt:
-# the icon, the LiveArea images and template.xml. What it produced is written to
-# the manifest (default build/livearea_files.txt) as <host path>=<path inside the
+# Builds sce_sys/ for the Vita VPK from the vita keys of project.baltproj: the
+# icon, the LiveArea images and template.xml. What it produced is written to the
+# manifest (default build/livearea_files.txt) as <host path>=<path inside the
 # VPK> lines, which the VPK rule turns into vita-pack-vpk -a arguments.
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-CONFIG="config/build_settings.txt"
+CONFIG="project.baltproj"
+[ -f "$CONFIG" ] || CONFIG="$(ls -1 ./*.baltproj 2>/dev/null | sort | head -n 1)"
 MANIFEST="${1:-build/livearea_files.txt}"
 CONTENTS="sce_sys/livearea/contents"
 
@@ -20,7 +21,7 @@ trap 'rm -f "$PENDING"' EXIT
 
 config_value() {
     [ -f "$CONFIG" ] || return 0
-    sed -n "s/^vita:$1=//p" "$CONFIG" | tail -n 1
+    sed -n "s/.*\"vita:$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$CONFIG" | tail -n 1
 }
 
 require_tool() {

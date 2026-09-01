@@ -95,6 +95,9 @@ void MeshRenderer::drawInspector() {
         // Show material inspector if material is present
         if (material) {
             ImGui::Separator();
+            if (material->isSharedInstance()) {
+                material = material->clone();
+            }
             material->drawInspector();
         }
     }

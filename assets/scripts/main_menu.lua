@@ -34,6 +34,42 @@ local function updateSelectorPosition()
     setNodePosition(selectorNodeName, -10.0, entry.y, 0.0)
 end
 
+local function entryIndexForNode(nodeName)
+    if not nodeName then
+        return nil
+    end
+    for i = 1, #menuEntries do
+        if menuEntries[i].node == nodeName then
+            return i - 1
+        end
+    end
+    return nil
+end
+
+local function updatePointerSelection()
+    if not (ui and ui.hitTest and input and input.isPointerActive) then
+        return
+    end
+
+    if not input.isPointerActive() then
+        return
+    end
+
+    local hoveredIndex = entryIndexForNode(ui.hitTest())
+    if not hoveredIndex then
+        return
+    end
+
+    if hoveredIndex ~= selectedIndex then
+        selectedIndex = hoveredIndex
+        updateSelectorPosition()
+    end
+
+    if input.isPointerPressed() then
+        handleMenuSelection()
+    end
+end
+
 local function loadLevelSafe(levelId)
     if not levelId or not levels.loadLevel(levelId) then
         return levels.loadLevel("level_1")
@@ -132,6 +168,8 @@ function update(deltaTime)
     if confirmPressed and not inputState.lastConfirmPressed then
         handleMenuSelection()
     end
+
+    updatePointerSelection()
 
     inputState.lastUpPressed = upPressed
     inputState.lastDownPressed = downPressed

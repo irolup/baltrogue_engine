@@ -200,9 +200,10 @@ bool SceneBinaryFormat::writeBinarySceneFromJsonFile(const std::string& jsonPath
         return false;
     }
 
-    std::ofstream out(binaryPath.c_str(), std::ios::binary);
+    const std::string outputPath = AssetPaths::resolve(binaryPath);
+    std::ofstream out(outputPath.c_str(), std::ios::binary);
     if (!out.is_open()) {
-        std::cerr << "SceneBinaryFormat: Failed to write binary scene: " << binaryPath << std::endl;
+        std::cerr << "SceneBinaryFormat: Failed to write binary scene: " << outputPath << std::endl;
         return false;
     }
 

@@ -59,6 +59,7 @@ public:
     void bind() const;
     void unbind() const;
     void draw() const;
+    bool drawInstanced(GLuint instanceBuffer, size_t firstInstance, size_t instanceCount) const;
     void draw(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) const;
     void draw(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, const class Material& material) const;
     void drawDirectCube(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, const glm::vec3& color) const;
@@ -116,6 +117,10 @@ private:
     std::vector<unsigned int> indices;
     
     GLuint VAO, VBO, EBO;
+
+    mutable GLuint instancedVAO = 0;
+    mutable GLuint instancedVAOBuffer = 0;
+    mutable size_t instancedVAOFirstInstance = 0;
     bool uploaded;
     bool cpuDataCleared;
     size_t cachedVertexCount;
@@ -130,6 +135,8 @@ private:
     void calculateTangents();
     void setupBuffers();
     void cleanupBuffers();
+    bool setupInstancedVAO(GLuint instanceBuffer) const;
+    void setInstancedVAOBase(GLuint instanceBuffer, size_t firstInstance) const;
 };
 
 } // namespace GameEngine

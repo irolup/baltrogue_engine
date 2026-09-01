@@ -67,6 +67,8 @@ public:
     size_t getBodyCount() const;
     
     static std::vector<Area3DComponent*> getComponentsInGroup(const std::string& groupName);
+
+    static void notifyBodyComponentDestroyed(Component* component);
     
     void setShowDebugShape(bool show);
     bool getShowDebugShape() const { return showDebugShape; }
@@ -88,17 +90,20 @@ private:
     
     btCollisionObject* ghostObject;
     btCollisionShape* collisionShape;
+
+    glm::vec3 lastShapeScale;
     
     std::function<void(const std::string&, void*)> onBodyEntered;
     std::function<void(const std::string&, void*)> onBodyExited;
     std::function<void(const std::string&, void*)> onBodyStayed;
     
-    std::unordered_set<std::string> bodiesInArea;
-    std::unordered_set<std::string> previousBodiesInArea;
+    std::unordered_set<Component*> bodiesInArea;
+    std::unordered_set<Component*> previousBodiesInArea;
     
     bool showDebugShape;
     
     static std::unordered_map<std::string, std::vector<Area3DComponent*>> groupRegistry;
+    static std::unordered_set<Area3DComponent*> liveInstances;
     
     void createCollisionShape();
     void createGhostObject();

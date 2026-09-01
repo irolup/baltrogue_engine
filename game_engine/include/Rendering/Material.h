@@ -86,6 +86,7 @@ public:
     void setTexture(const std::string& name, std::shared_ptr<Texture> texture);
     
     void apply() const;
+    void applyWithShader(const std::shared_ptr<Shader>& shaderOverride) const;
     
     glm::vec3 getColor() const { return color; }
     void setColor(const glm::vec3& c) { 
@@ -197,6 +198,10 @@ public:
     // Copy sharing this material's shader and textures, safe to override per instance
     std::shared_ptr<Material> clone() const;
 
+    // True for materials the scene loader handed to more than one node so their draws could be batched
+    bool isSharedInstance() const { return sharedInstance; }
+    void setSharedInstance(bool shared) { sharedInstance = shared; }
+
     void applyOverride(const MaterialOverride& overrides);
 
     // Bumped by every property change. Backends that cache GPU state per material
@@ -281,12 +286,28 @@ private:
     // Copying a material copies a stale revision, so the counter is global
     uint32_t revision = 0;
     static uint32_t nextRevision;
+
+    bool sharedInstance = false;
+
     void bumpRevision() { revision = ++nextRevision; }
 
     void applyProperties() const;
     void rebindTextureFromPath(const std::string& path,
                                void (Material::*setTextureFn)(std::shared_ptr<Texture>, const std::string&));
 };
+
+enum class RenderSortBucket : int {
+    Opaque = 0,
+    Cutout = 1,
+    Blended = 2
+};
+
+inline RenderSortBucket getRenderSortBucket(const Material& material) {
+    if (material.getBlendMode() != BlendMode::Opaque) {
+        return RenderSortBucket::Blended;
+    }
+    return material.getAlphaCutoff() > 0.0f ? RenderSortBucket::Cutout : RenderSortBucket::Opaque;
+}
 
 } // namespace GameEngine
 

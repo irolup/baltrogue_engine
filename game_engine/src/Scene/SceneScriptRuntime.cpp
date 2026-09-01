@@ -1,6 +1,9 @@
 #include "Scene/SceneScriptRuntime.h"
 #include "Components/ScriptComponent.h"
 #include "Core/MenuManager.h"
+#include "Core/AssetPaths.h"
+
+#include <iostream>
 
 extern "C" {
 #include <lua.h>
@@ -106,7 +109,7 @@ bool SceneScriptRuntime::loadScript(ScriptComponent* component, const std::strin
     lua_setmetatable(luaState, -2);
     const int envIndex = lua_gettop(luaState);
 
-    if (luaL_loadfile(luaState, path.c_str()) != LUA_OK) {
+    if (luaL_loadfile(luaState, AssetPaths::resolve(path).c_str()) != LUA_OK) {
         const char* error = lua_tostring(luaState, -1);
 #ifdef VITA_BUILD
         printf("SceneScriptRuntime: Failed to load %s: %s\n", path.c_str(), error ? error : "unknown error");
@@ -181,7 +184,7 @@ bool SceneScriptRuntime::callFunction(ScriptComponent* component, const std::str
 #ifdef VITA_BUILD
         printf("SceneScriptRuntime: Error in %s(): %s\n", name.c_str(), error ? error : "unknown error");
 #else
-        (void)error;
+        std::cerr << "SceneScriptRuntime: Error in " << name << "(): " << (error ? error : "unknown error") << std::endl;
 #endif
         lua_pop(luaState, 1);
         return false;
@@ -210,7 +213,7 @@ bool SceneScriptRuntime::callFunction(ScriptComponent* component, const std::str
 #ifdef VITA_BUILD
         printf("SceneScriptRuntime: Error in %s(): %s\n", name.c_str(), error ? error : "unknown error");
 #else
-        (void)error;
+        std::cerr << "SceneScriptRuntime: Error in " << name << "(): " << (error ? error : "unknown error") << std::endl;
 #endif
         lua_pop(luaState, 1);
         return false;

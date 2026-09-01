@@ -2,6 +2,7 @@
 
 #include "Editor/FileDialog.h"
 #include "Core/AssetPaths.h"
+#include "Core/Project.h"
 #include <iostream>
 #include <cstdlib>
 #include <filesystem>
@@ -9,61 +10,43 @@
 
 namespace GameEngine {
 
-std::string FileDialog::openFileDialog(const std::string& title, const std::string& filter) {
-    ensureScenesDirectoryExists();
-    
-    std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" + 
-                          getDefaultScenesDirectory() + " --file-filter=\"" + filter + " | " + filter + "\"";
-    
+std::string FileDialog::runDialog(const std::string& command, const char* what) {
     FILE* pipe = popen(command.c_str(), "r");
     if (!pipe) {
-        std::cerr << "Failed to open file dialog" << std::endl;
+        std::cerr << "Failed to open " << what << std::endl;
         return "";
     }
-    
+
     char buffer[1024];
-    std::string result = "";
+    std::string result;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         result += buffer;
     }
-    
+
     pclose(pipe);
-    
+
     // Remove trailing newline
-    if (!result.empty() && result[result.length()-1] == '\n') {
-        result.erase(result.length()-1);
+    if (!result.empty() && result[result.length() - 1] == '\n') {
+        result.erase(result.length() - 1);
     }
-    
+
     return result;
+}
+
+std::string FileDialog::openFileDialog(const std::string& title, const std::string& filter) {
+    ensureScenesDirectoryExists();
+
+    const std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" + getDefaultScenesDirectory() + " --file-filter=\"" + filter + " | " + filter + "\"";
+    return runDialog(command, "file dialog");
 }
 
 std::string FileDialog::saveFileDialog(const std::string& title, const std::string& filter, const std::string& defaultName) {
     ensureScenesDirectoryExists();
-    
-    std::string defaultPath = getDefaultScenesDirectory() + "/" + defaultName;
-    std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" + 
-                          defaultPath + " --save --file-filter=\"" + filter + " | " + filter + "\"";
-    
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        std::cerr << "Failed to open save dialog" << std::endl;
-        return "";
-    }
-    
-    char buffer[1024];
-    std::string result = "";
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
-    
-    pclose(pipe);
-    
-    // Remove trailing newline
-    if (!result.empty() && result[result.length()-1] == '\n') {
-        result.erase(result.length()-1);
-    }
-    
-    return result;
+
+    const std::string defaultPath = getDefaultScenesDirectory() + "/" + defaultName;
+    const std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" +
+                                defaultPath + " --save --file-filter=\"" + filter + " | " + filter + "\"";
+    return runDialog(command, "save dialog");
 }
 
 bool FileDialog::isValidResult(const std::string& result) {
@@ -98,87 +81,54 @@ std::string FileDialog::openTemplateFileDialog(const std::string& title) {
     ensureTemplatesDirectoryExists();
 
     const std::string filter = "*.template.json";
-    std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" +
-                          getDefaultTemplatesDirectory() + "/ --file-filter=\"" + filter + " | " + filter + "\"";
-
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        std::cerr << "Failed to open template file dialog" << std::endl;
-        return "";
-    }
-
-    char buffer[1024];
-    std::string result = "";
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
-
-    pclose(pipe);
-
-    if (!result.empty() && result[result.length() - 1] == '\n') {
-        result.erase(result.length() - 1);
-    }
-
-    return result;
+    const std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" +
+                                getDefaultTemplatesDirectory() + "/ --file-filter=\"" + filter + " | " + filter + "\"";
+    return runDialog(command, "template file dialog");
 }
 
 std::string FileDialog::saveTemplateFileDialog(const std::string& title, const std::string& defaultName) {
     ensureTemplatesDirectoryExists();
 
     const std::string filter = "*.template.json";
-    std::string defaultPath = getDefaultTemplatesDirectory() + "/" + defaultName;
-    std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" +
-                          defaultPath + " --save --file-filter=\"" + filter + " | " + filter + "\"";
-
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        std::cerr << "Failed to open template save dialog" << std::endl;
-        return "";
-    }
-
-    char buffer[1024];
-    std::string result = "";
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
-
-    pclose(pipe);
-
-    if (!result.empty() && result[result.length() - 1] == '\n') {
-        result.erase(result.length() - 1);
-    }
-
-    return result;
+    const std::string defaultPath = getDefaultTemplatesDirectory() + "/" + defaultName;
+    const std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" +
+                                defaultPath + " --save --file-filter=\"" + filter + " | " + filter + "\"";
+    return runDialog(command, "template save dialog");
 }
 
 std::string FileDialog::openImageFileDialog(const std::string& title) {
     const std::string filter = "*.png";
-    std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" + AssetPaths::getAssetRoot() + "/" +
-                          " --file-filter=\"" + filter + " | " + filter + "\"";
+    const std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" +
+                                AssetPaths::resolve(AssetPaths::getAssetRoot()) + "/" +
+                                " --file-filter=\"" + filter + " | " + filter + "\"";
+    return runDialog(command, "image file dialog");
+}
 
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        std::cerr << "Failed to open image file dialog" << std::endl;
-        return "";
-    }
+std::string FileDialog::openProjectFileDialog(const std::string& title) {
+    const std::string filter = "*.baltproj";
+    const std::string& root = Project::getInstance().getRootPath();
+    const std::string startDirectory = root.empty()
+        ? std::filesystem::current_path().string()
+        : std::filesystem::path(root).parent_path().string();
 
-    char buffer[1024];
-    std::string result = "";
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-    }
+    const std::string command = "zenity --file-selection --title=\"" + title + "\" --filename=" +
+                                startDirectory + "/ --file-filter=\"" + filter + " | " + filter + "\"";
+    return runDialog(command, "project file dialog");
+}
 
-    pclose(pipe);
+std::string FileDialog::openFolderDialog(const std::string& title) {
+    const std::string& root = Project::getInstance().getRootPath();
+    const std::string startDirectory = root.empty()
+        ? std::filesystem::current_path().string()
+        : std::filesystem::path(root).parent_path().string();
 
-    if (!result.empty() && result[result.length() - 1] == '\n') {
-        result.erase(result.length() - 1);
-    }
-
-    return result;
+    const std::string command = "zenity --file-selection --directory --title=\"" + title +
+                                "\" --filename=" + startDirectory + "/";
+    return runDialog(command, "folder dialog");
 }
 
 std::string FileDialog::toProjectRelativePath(const std::string& path) {
-    const std::string& projectRoot = AssetPaths::getProjectRoot();
+    const std::string& projectRoot = Project::getInstance().getRootPath();
     const std::filesystem::path base = projectRoot.empty() ? std::filesystem::current_path()
                                                            : std::filesystem::path(projectRoot);
 
